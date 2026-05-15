@@ -406,6 +406,40 @@ export async function clearQueue(projectId) {
 }
 
 // ============================================
+// Meetings
+// ============================================
+
+export async function getMeetings(projectId) {
+  const { data, error } = await supabase
+    .from('meetings')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('meeting_date', { ascending: true })
+  if (error) throw error
+  return data || []
+}
+
+export async function createMeeting(projectId, { title, meeting_date, start_time, end_time }) {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('meetings')
+    .insert({ user_id, project_id: projectId, title, meeting_date, start_time: start_time || '09:00', end_time: end_time || '10:00' })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateMeeting(id, fields) {
+  const { error } = await supabase.from('meetings').update(fields).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteMeeting(id) {
+  const { error } = await supabase.from('meetings').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ============================================
 // Notes
 // ============================================
 

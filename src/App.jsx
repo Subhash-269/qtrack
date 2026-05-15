@@ -33,7 +33,7 @@ export default function App({ session }) {
   const [filterType, setFilterType] = useState("all"); const [filterFile, setFilterFile] = useState("all"); const [filterPriority, setFilterPriority] = useState("all"); const [searchQ, setSearchQ] = useState(""); const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
   const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null });
-  const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]); const [viewingNoteId, setViewingNoteId] = useState(null); const [queue, setQueue] = useState([]);
+  const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]); const [viewingNoteId, setViewingNoteId] = useState(null); const [queue, setQueue] = useState([]); const [meetings, setMeetings] = useState([]);
   const tRef = useRef(null); const initRef = useRef(false); const syncRef = useRef(false); const loadedTimerRef = useRef(false);
 
   // Load timer from Supabase on mount
@@ -130,7 +130,7 @@ export default function App({ session }) {
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
 
   async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId(p[0].id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); } } catch (e) { console.error(e); } setLoading(false); }
-  async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } } catch (e) { console.error(e); } }
+  async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } try { setMeetings(await db.getMeetings(pid)); } catch { setMeetings([]); } } catch (e) { console.error(e); } }
   async function loadToday() { if (!activeProjectId) return; try { setTodaySessions(await db.getTodaySessions(activeProjectId)); } catch { setTodaySessions([]); } try { setAllSessions(await db.getAllSessions(activeProjectId)); } catch { setAllSessions([]); } }
   async function reload() { if (activeProjectId) await loadData(activeProjectId); }
 
@@ -146,7 +146,7 @@ export default function App({ session }) {
   const liveElapsed = (tmr.st === "running" && tmr.type === "work") ? (tmr.total - tmr.left) : 0;
   const tfm = Math.round((savedMinutes + liveElapsed) / 60);
 
-  const nav = [{ id: "dashboard", l: "Dashboard", ic: "◫" }, { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 }, { id: "issues", l: "Issues", ic: "◉", cnt: stats.ob + stats.ot }, { id: "tests", l: "Test cases", ic: "▷", cnt: stats.tt }, { id: "files", l: "Files", ic: "⊞", cnt: stats.fc }, { id: "notes", l: "Notes", ic: "☰", cnt: notes.length || 0 }, { id: "board", l: "Board", ic: "▦", cnt: cards.length || 0 }];
+  const nav = [{ id: "dashboard", l: "Dashboard", ic: "◫" }, { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 }, { id: "issues", l: "Issues", ic: "◉", cnt: stats.ob + stats.ot }, { id: "tests", l: "Test cases", ic: "▷", cnt: stats.tt }, { id: "files", l: "Files", ic: "⊞", cnt: stats.fc }, { id: "calendar", l: "Calendar", ic: "▣", cnt: meetings.filter(m => !m.attended).length || 0 }, { id: "notes", l: "Notes", ic: "☰", cnt: notes.length || 0 }, { id: "board", l: "Board", ic: "▦", cnt: cards.length || 0 }];
 
   const addProject = async (n) => { const p = await db.createProject(n); setProjects([...projects, p]); setActiveProjectId(p.id); setModal(null); };
   const renameProject = async (id, n) => { if (!n.trim()) return; await db.renameProject(id, n.trim()); setProjects(projects.map(p => p.id === id ? { ...p, name: n.trim() } : p)); setEditingProjectId(null); };
@@ -203,6 +203,7 @@ export default function App({ session }) {
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
           {view === "notes" && <NotesView notes={notes} issues={issues} files={files} testCases={testCases} projectId={activeProjectId} reload={reload} />}
+          {view === "calendar" && <CalendarView meetings={meetings} issues={issues} testCases={testCases} projectId={activeProjectId} reload={reload} />}
           {view === "board" && <BoardView columns={columns} cards={cards} projectId={activeProjectId} reload={reload} issues={issues} files={files} addIssue={addIssue} />}
         </div>
       </div>
@@ -1030,6 +1031,224 @@ function NotesView({ notes, issues, files, testCases, projectId, reload }) {
       );
     })}
   </div>);
+}
+
+// ============================================
+// Calendar View
+// ============================================
+
+function CalendarView({ meetings, issues, testCases, projectId, reload }) {
+  const [month, setMonth] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [mForm, setMForm] = useState({ title: "", meeting_date: "", start_time: "09:00", end_time: "10:00", recurrence: "none" });
+  const [editingNotes, setEditingNotes] = useState(null);
+  const [noteText, setNoteText] = useState("");
+
+  const y = month.getFullYear(), m = month.getMonth();
+  const firstDay = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dayLabels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+  // Items by date
+  const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const meetingsByDate = {}; meetings.forEach(mt => { const k = mt.meeting_date; if (!meetingsByDate[k]) meetingsByDate[k] = []; meetingsByDate[k].push(mt); });
+  const issueDues = {}; issues.forEach(i => { if (i.due_date) { if (!issueDues[i.due_date]) issueDues[i.due_date] = []; issueDues[i.due_date].push(i); } });
+  const testDues = {}; (testCases || []).forEach(t => { if (t.due_date) { if (!testDues[t.due_date]) testDues[t.due_date] = []; testDues[t.due_date].push(t); } });
+
+  const prevMonth = () => setMonth(new Date(y, m - 1, 1));
+  const nextMonth = () => setMonth(new Date(y, m + 1, 1));
+
+  const addMeeting = async () => {
+    if (!mForm.title.trim() || !mForm.meeting_date) return;
+    try {
+      const dates = [mForm.meeting_date];
+      if (mForm.recurrence !== "none") {
+        const start = new Date(mForm.meeting_date + "T00:00:00");
+        const days = { daily: 1, weekly: 7, biweekly: 14, monthly: 0 };
+        for (let i = 1; i <= (mForm.recurrence === "daily" ? 56 : mForm.recurrence === "monthly" ? 8 : 8); i++) {
+          const d = new Date(start);
+          if (mForm.recurrence === "monthly") d.setMonth(d.getMonth() + i);
+          else d.setDate(d.getDate() + days[mForm.recurrence] * i);
+          dates.push(d.toISOString().split("T")[0]);
+        }
+      }
+      for (const dt of dates) {
+        await db.createMeeting(projectId, { title: mForm.title, meeting_date: dt, start_time: mForm.start_time, end_time: mForm.end_time });
+      }
+      setShowAdd(false); setMForm({ title: "", meeting_date: "", start_time: "09:00", end_time: "10:00", recurrence: "none" }); await reload();
+    } catch (e) { console.error(e); }
+  };
+  const toggleAttended = async (mt) => {
+    try {
+      await db.updateMeeting(mt.id, { attended: !mt.attended });
+      if (!mt.attended) {
+        const startDt = new Date(`${mt.meeting_date}T${mt.start_time}`);
+        const endDt = new Date(`${mt.meeting_date}T${mt.end_time}`);
+        const dur = Math.max(0, Math.round((endDt - startDt) / 1000));
+        if (dur > 0) await db.saveFocusSession(projectId, null, null, "work", dur, "meeting");
+      }
+      await reload();
+    } catch (e) { console.error(e); }
+  };
+  const delMeeting = async (id) => { try { await db.deleteMeeting(id); await reload(); } catch (e) { console.error(e); } };
+  const cancelMeeting = async (id) => { try { await db.updateMeeting(id, { cancelled: true, attended: false }); await reload(); } catch (e) { console.error(e); } };
+  const uncancelMeeting = async (id) => { try { await db.updateMeeting(id, { cancelled: false }); await reload(); } catch (e) { console.error(e); } };
+  const cancelFuture = async (mt) => {
+    if (!confirm(`Cancel all future "${mt.title}" meetings?`)) return;
+    const future = meetings.filter(m => m.title === mt.title && m.start_time === mt.start_time && m.meeting_date >= mt.meeting_date && !m.attended);
+    try { for (const f of future) await db.updateMeeting(f.id, { cancelled: true, attended: false }); await reload(); } catch (e) { console.error(e); }
+  };
+  const saveNotes = async (id) => { try { await db.updateMeeting(id, { meeting_notes: noteText }); setEditingNotes(null); await reload(); } catch (e) { console.error(e); } };
+
+  const selKey = selectedDay ? dateKey(selectedDay) : null;
+  const selMeetings = selKey ? (meetingsByDate[selKey] || []) : [];
+  const selIssues = selKey ? (issueDues[selKey] || []) : [];
+  const selTests = selKey ? (testDues[selKey] || []) : [];
+
+  return (
+    <div>
+      {/* Month nav */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <button onClick={prevMonth} style={{ background: "none", border: "1px solid #2C2C2A", color: "#B4B2A9", cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 12 }}>◂</button>
+        <span style={{ fontSize: 15, fontWeight: 500, minWidth: 160, textAlign: "center" }}>{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span>
+        <button onClick={nextMonth} style={{ background: "none", border: "1px solid #2C2C2A", color: "#B4B2A9", cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 12 }}>▸</button>
+        <span style={{ flex: 1 }} />
+        <Btn primary onClick={() => { setShowAdd(true); setMForm({ title: "", meeting_date: selectedDay ? dateKey(selectedDay) : dateKey(new Date()), start_time: "09:00", end_time: "10:00", recurrence: "none" }); }} small>+ Meeting</Btn>
+      </div>
+
+      <div style={{ display: "flex", gap: 16 }}>
+        {/* Calendar grid */}
+        <div style={{ flex: "0 0 420px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+            {dayLabels.map(d => (<div key={d} style={{ textAlign: "center", fontSize: 10, color: "#5F5E5A", padding: "4px 0" }}>{d}</div>))}
+            {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
+            {Array.from({ length: daysInMonth }).map((_, i) => {
+              const day = new Date(y, m, i + 1);
+              const key = dateKey(day);
+              const isToday = day.getTime() === today.getTime();
+              const isSel = selectedDay && day.getTime() === selectedDay.getTime();
+              const hasMeeting = meetingsByDate[key]?.length > 0;
+              const hasIssueDue = issueDues[key]?.length > 0;
+              const hasTestDue = testDues[key]?.length > 0;
+              return (
+                <div key={i} onClick={() => setSelectedDay(day)} style={{ padding: "6px 4px", borderRadius: 6, cursor: "pointer", textAlign: "center", background: isSel ? "#2C2C2A" : "transparent", border: isToday ? "1px solid #5DCAA5" : "1px solid transparent" }} onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = "#1A1A18"; }} onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = "transparent"; }}>
+                  <div style={{ fontSize: 12, fontWeight: isToday ? 500 : 400, color: isToday ? "#5DCAA5" : isSel ? "#F1EFE8" : "#B4B2A9" }}>{i + 1}</div>
+                  <div style={{ display: "flex", gap: 2, justifyContent: "center", marginTop: 2, minHeight: 6 }}>
+                    {hasMeeting && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#7F77DD" }} />}
+                    {hasIssueDue && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#F09595" }} />}
+                    {hasTestDue && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#85B7EB" }} />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 10, fontSize: 10, color: "#5F5E5A" }}>
+            <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#7F77DD", marginRight: 4 }} />Meeting</span>
+            <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#F09595", marginRight: 4 }} />Issue due</span>
+            <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#85B7EB", marginRight: 4 }} />Test due</span>
+          </div>
+        </div>
+
+        {/* Day detail panel */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {!selectedDay && <div style={{ textAlign: "center", padding: "40px 0", color: "#5F5E5A", fontSize: 12 }}>Click a day to see details</div>}
+          {selectedDay && (
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>{selectedDay.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
+
+              {/* Meetings */}
+              {selMeetings.length > 0 && <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: "#7F77DD", fontWeight: 500, marginBottom: 6 }}>MEETINGS</div>
+                {selMeetings.map(mt => {
+                  const isCancelled = mt.cancelled;
+                  const borderColor = isCancelled ? "#5F5E5A" : mt.attended ? "#5DCAA5" : "#7F77DD";
+                  return (
+                  <div key={mt.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", marginBottom: 6, borderLeft: `3px solid ${borderColor}`, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, opacity: isCancelled ? 0.5 : 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {!isCancelled && <input type="checkbox" checked={mt.attended} onChange={() => toggleAttended(mt)} style={{ cursor: "pointer" }} />}
+                      {isCancelled && <span style={{ fontSize: 10, color: "#F09595", fontWeight: 500 }}>CANCELLED</span>}
+                      <span style={{ flex: 1, fontSize: 12, fontWeight: 500, textDecoration: (mt.attended || isCancelled) ? "line-through" : "none", color: (mt.attended || isCancelled) ? "#5F5E5A" : "#F1EFE8" }}>{mt.title}</span>
+                      <span style={{ fontSize: 10, fontFamily: "'SF Mono', monospace", color: "#5F5E5A" }}>{mt.start_time}–{mt.end_time}</span>
+                      {!isCancelled && !mt.attended && <button onClick={() => cancelMeeting(mt.id)} title="Cancel meeting" style={{ background: "none", border: "1px solid #2C2C2A", color: "#F09595", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>Cancel</button>}
+                      {!isCancelled && !mt.attended && <button onClick={() => cancelFuture(mt)} title="Cancel this and all future" style={{ background: "none", border: "1px solid #2C2C2A", color: "#D85A30", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>Cancel all future</button>}
+                      {isCancelled && <button onClick={() => uncancelMeeting(mt.id)} title="Restore" style={{ background: "none", border: "1px solid #2C2C2A", color: "#5DCAA5", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>Restore</button>}
+                      <button onClick={() => delMeeting(mt.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11 }}>✕</button>
+                    </div>
+                    {mt.attended && !isCancelled && (
+                      <div style={{ marginTop: 6 }}>
+                        {editingNotes === mt.id ? (
+                          <div>
+                            <TextArea value={noteText} onChange={setNoteText} placeholder="Meeting notes..." rows={3} />
+                            <div style={{ display: "flex", gap: 4, marginTop: 4 }}><Btn small primary onClick={() => saveNotes(mt.id)}>Save</Btn><Btn small onClick={() => setEditingNotes(null)}>Cancel</Btn></div>
+                          </div>
+                        ) : (
+                          <div>
+                            {mt.meeting_notes ? <div style={{ fontSize: 11, color: "#888780", whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "4px 0" }}>{mt.meeting_notes}</div> : null}
+                            <button onClick={() => { setEditingNotes(mt.id); setNoteText(mt.meeting_notes || ""); }} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4, marginTop: 2 }}>{mt.meeting_notes ? "Edit notes" : "+ Add notes"}</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>);
+                })}
+              </div>}
+
+              {/* Issue dues */}
+              {selIssues.length > 0 && <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: "#F09595", fontWeight: 500, marginBottom: 6 }}>ISSUES DUE</div>
+                {selIssues.map(i => (
+                  <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#161615", borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
+                    <Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small />
+                    <span style={{ flex: 1, color: "#D3D1C7" }}>{i.title}</span>
+                    <Badge label={i.status} colors={["fixed","verified"].includes(i.status) ? { bg: "#081F12", text: "#5DCAA5", border: "#04342C" } : PC[i.priority]} small />
+                  </div>
+                ))}
+              </div>}
+
+              {/* Test dues */}
+              {selTests.length > 0 && <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: "#85B7EB", fontWeight: 500, marginBottom: 6 }}>TESTS DUE</div>
+                {selTests.map(t => (
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#161615", borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
+                    <span style={{ color: "#85B7EB" }}>▷</span>
+                    <span style={{ flex: 1, color: "#D3D1C7" }}>{t.title}</span>
+                    <Badge label={t.status} colors={TC[t.status]} small />
+                  </div>
+                ))}
+              </div>}
+
+              {selMeetings.length === 0 && selIssues.length === 0 && selTests.length === 0 && (
+                <div style={{ textAlign: "center", padding: "24px 0", color: "#5F5E5A", fontSize: 12 }}>Nothing scheduled for this day</div>
+              )}
+            </div>
+          )}
+
+          {/* Add meeting form */}
+          {showAdd && (
+            <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px", marginTop: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", marginBottom: 10 }}>New meeting</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Input value={mForm.title} onChange={v => setMForm({ ...mForm, title: v })} placeholder="Meeting title" />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input type="date" value={mForm.meeting_date} onChange={e => setMForm({ ...mForm, meeting_date: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+                  <input type="time" value={mForm.start_time} onChange={e => setMForm({ ...mForm, start_time: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+                  <input type="time" value={mForm.end_time} onChange={e => setMForm({ ...mForm, end_time: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "#5F5E5A" }}>Repeat:</span>
+                  <Select value={mForm.recurrence} onChange={v => setMForm({ ...mForm, recurrence: v })} options={[{ value: "none", label: "One-time" }, { value: "daily", label: "Daily (8 weeks)" }, { value: "weekly", label: "Weekly (8 weeks)" }, { value: "biweekly", label: "Biweekly (8 weeks)" }, { value: "monthly", label: "Monthly (8 months)" }]} style={{ flex: 1 }} />
+                </div>
+                {mForm.recurrence !== "none" && <div style={{ fontSize: 10, color: "#5DCAA5", padding: "0 2px" }}>Will create {mForm.recurrence === "daily" ? "57" : mForm.recurrence === "monthly" ? "9" : "9"} meetings starting {mForm.meeting_date || "..."}</div>}
+                <div style={{ display: "flex", gap: 6 }}><Btn small primary onClick={addMeeting}>Add</Btn><Btn small onClick={() => setShowAdd(false)}>Cancel</Btn></div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ============================================
