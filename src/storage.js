@@ -298,3 +298,105 @@ export async function getAllSessions(projectId) {
   if (error) throw error
   return data || []
 }
+
+// ============================================
+// Notes
+// ============================================
+
+export async function getNotes(projectId) {
+  const { data, error } = await supabase
+    .from('notes')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('pinned', { ascending: false })
+    .order('updated_at', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+
+export async function createNote(projectId, { title, content, category, linked_issue_id, linked_file_id }) {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('notes')
+    .insert({ user_id, project_id: projectId, title: title || '', content: content || '', category: category || 'scratch', linked_issue_id: linked_issue_id || null, linked_file_id: linked_file_id || null })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateNote(id, fields) {
+  const { error } = await supabase
+    .from('notes')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteNote(id) {
+  const { error } = await supabase.from('notes').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ============================================
+// Board
+// ============================================
+
+export async function getColumns(projectId) {
+  const { data, error } = await supabase
+    .from('board_columns')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('position', { ascending: true })
+  if (error) throw error
+  return data || []
+}
+
+export async function createColumn(projectId, name, position) {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('board_columns')
+    .insert({ user_id, project_id: projectId, name, position: position || 0 })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateColumn(id, fields) {
+  const { error } = await supabase.from('board_columns').update(fields).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteColumn(id) {
+  const { error } = await supabase.from('board_columns').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function getCards(projectId) {
+  const { data, error } = await supabase
+    .from('board_cards')
+    .select('*, board_columns!inner(project_id)')
+    .eq('board_columns.project_id', projectId)
+    .order('position', { ascending: true })
+  if (error) throw error
+  return data || []
+}
+
+export async function createCard(columnId, text, color, position) {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('board_cards')
+    .insert({ user_id, column_id: columnId, text, color: color || 'yellow', position: position || 0 })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateCard(id, fields) {
+  const { error } = await supabase.from('board_cards').update(fields).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteCard(id) {
+  const { error } = await supabase.from('board_cards').delete().eq('id', id)
+  if (error) throw error
+}

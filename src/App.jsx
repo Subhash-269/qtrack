@@ -33,6 +33,7 @@ export default function App({ session }) {
   const [filterType, setFilterType] = useState("all"); const [filterFile, setFilterFile] = useState("all"); const [filterPriority, setFilterPriority] = useState("all"); const [searchQ, setSearchQ] = useState(""); const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
   const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null });
+  const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]);
   const tRef = useRef(null); const initRef = useRef(false);
 
   useEffect(() => {
@@ -62,7 +63,7 @@ export default function App({ session }) {
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
 
   async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId(p[0].id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); } } catch (e) { console.error(e); } setLoading(false); }
-  async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } } catch (e) { console.error(e); } }
+  async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } } catch (e) { console.error(e); } }
   async function loadToday() { if (!activeProjectId) return; try { setTodaySessions(await db.getTodaySessions(activeProjectId)); } catch { setTodaySessions([]); } try { setAllSessions(await db.getAllSessions(activeProjectId)); } catch { setAllSessions([]); } }
   async function reload() { if (activeProjectId) await loadData(activeProjectId); }
 
@@ -75,7 +76,7 @@ export default function App({ session }) {
   const stats = { ob: issues.filter(i => i.type === "bug" && !["fixed","verified","wont_fix"].includes(i.status)).length, ot: issues.filter(i => i.type === "todo" && !["fixed","verified","wont_fix"].includes(i.status)).length, tp: testCases.filter(t => t.status === "pass").length, tt: testCases.length, fc: files.length, cr: issues.filter(i => i.priority === "critical" && !["fixed","verified","wont_fix"].includes(i.status)).length };
   const tw = todaySessions.filter(s => s.session_type === "work"); const tfm = Math.round(tw.reduce((a, s) => a + s.duration_seconds, 0) / 60);
 
-  const nav = [{ id: "dashboard", l: "Dashboard", ic: "◫" }, { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 }, { id: "issues", l: "Issues", ic: "◉", cnt: stats.ob + stats.ot }, { id: "tests", l: "Test cases", ic: "▷", cnt: stats.tt }, { id: "files", l: "Files", ic: "⊞", cnt: stats.fc }];
+  const nav = [{ id: "dashboard", l: "Dashboard", ic: "◫" }, { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 }, { id: "issues", l: "Issues", ic: "◉", cnt: stats.ob + stats.ot }, { id: "tests", l: "Test cases", ic: "▷", cnt: stats.tt }, { id: "files", l: "Files", ic: "⊞", cnt: stats.fc }, { id: "notes", l: "Notes", ic: "☰", cnt: notes.length || 0 }, { id: "board", l: "Board", ic: "▦", cnt: cards.length || 0 }];
 
   const addProject = async (n) => { const p = await db.createProject(n); setProjects([...projects, p]); setActiveProjectId(p.id); setModal(null); };
   const renameProject = async (id, n) => { if (!n.trim()) return; await db.renameProject(id, n.trim()); setProjects(projects.map(p => p.id === id ? { ...p, name: n.trim() } : p)); setEditingProjectId(null); };
@@ -131,6 +132,8 @@ export default function App({ session }) {
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
+          {view === "notes" && <NotesView notes={notes} issues={issues} files={files} projectId={activeProjectId} reload={reload} />}
+          {view === "board" && <BoardView columns={columns} cards={cards} projectId={activeProjectId} reload={reload} issues={issues} files={files} addIssue={addIssue} />}
         </div>
       </div>
 
@@ -428,6 +431,318 @@ function FilesView({ files, issues, tests, del, onAdd, onNav }) {
   const tp = (fid) => tests.filter(t => t.file_id === fid && t.status === "pass").length;
   if (files.length === 0) return <EmptyState icon="⊞" title="No files yet" sub="Add files to attach issues and tests" action="Add file" onAction={onAdd} />;
   return (<div>{CATEGORIES.filter(c => g[c]).map(cat => (<div key={cat} style={{ marginBottom: 20 }}><div style={{ fontSize: 11, fontWeight: 500, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{cat}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>{g[cat].map(f => { const a = ic(f.id), b = tc(f.id), c = tp(f.id); return (<div key={f.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, fontWeight: 500, color: "#D3D1C7" }}>{f.name}</span><button onClick={() => del(f.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 12 }}>✕</button></div><div style={{ display: "flex", gap: 12, fontSize: 11 }}><span onClick={() => onNav("issues", f.id)} style={{ cursor: "pointer", color: a > 0 ? "#F09595" : "#5F5E5A" }}>{a} issue{a !== 1 ? "s" : ""}</span><span onClick={() => onNav("tests", f.id)} style={{ cursor: "pointer", color: b > 0 ? "#85B7EB" : "#5F5E5A" }}>{c}/{b} tests</span></div></div>); })}</div></div>))}</div>);
+}
+
+// ============================================
+// Notes View
+// ============================================
+
+const NOTE_CATS = ["scratch", "decision", "investigation", "meeting"];
+const NOTE_CAT_COLORS = { scratch: { bg: "#1A1A18", text: "#B4B2A9", border: "#2C2C2A" }, decision: { bg: "#1A0A29", text: "#AFA9EC", border: "#26215C" }, investigation: { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }, meeting: { bg: "#081F12", text: "#5DCAA5", border: "#04342C" } };
+const CODE_LANGS = ["", "sql", "python"];
+const LANG_LABELS = { "": "Plain text", sql: "SQL", python: "Python" };
+
+// Auto-detect language from content
+function detectLang(text) {
+  if (!text) return "";
+  const t = text.toLowerCase();
+  const sqlScore = (t.match(/\b(select|from|where|join|insert|update|delete|create|alter|drop|table|into|values|group by|order by|having|union|coalesce|cast)\b/g) || []).length;
+  const pyScore = (t.match(/\b(def |class |import |from .+ import|if __name__|elif |print\(|self\.|lambda |async def|await )\b/g) || []).length;
+  if (sqlScore >= 2 && sqlScore > pyScore) return "sql";
+  if (pyScore >= 2 && pyScore > sqlScore) return "python";
+  return "";
+}
+
+// Simple syntax highlighter
+function highlight(code, lang) {
+  if (!lang || !code) return [{ text: code, color: null }];
+  const tokens = [];
+  let remaining = code;
+
+  const SQL_KW = /\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|AND|OR|NOT|IN|IS|NULL|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TABLE|INTO|VALUES|SET|AS|ORDER|BY|GROUP|HAVING|LIMIT|OFFSET|UNION|ALL|DISTINCT|CASE|WHEN|THEN|ELSE|END|EXISTS|BETWEEN|LIKE|ILIKE|COUNT|SUM|AVG|MIN|MAX|COALESCE|CAST|WITH|RECURSIVE|PRIMARY|KEY|REFERENCES|DEFAULT|INDEX|IF|BEGIN|COMMIT|ROLLBACK|GRANT|REVOKE|TRIGGER|VIEW|SCHEMA|DATABASE|CONSTRAINT|FOREIGN|UNIQUE|CHECK|ASC|DESC|OVER|PARTITION|ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|FIRST_VALUE|LAST_VALUE|EXTRACT|DATE|TIMESTAMP|INTEGER|TEXT|BOOLEAN|VARCHAR|SERIAL|UUID|JSONB|FLOAT|NUMERIC|BIGINT|SMALLINT)\b/gi;
+  const PY_KW = /\b(def|class|import|from|as|if|elif|else|for|while|return|yield|try|except|finally|with|lambda|and|or|not|in|is|None|True|False|pass|break|continue|raise|assert|global|nonlocal|del|async|await|self|print|len|range|enumerate|zip|map|filter|sorted|isinstance|type|dict|list|set|tuple|int|str|float|bool|open|super)\b/g;
+  const STR_RE = /('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")/g;
+  const NUM_RE = /\b(\d+\.?\d*)\b/g;
+  const COMMENT_SQL = /(--.*$)/gm;
+  const COMMENT_PY = /(#.*$)/gm;
+
+  // Tokenize by splitting on patterns
+  const kw = lang === "sql" ? SQL_KW : PY_KW;
+  const commentRe = lang === "sql" ? COMMENT_SQL : COMMENT_PY;
+
+  // Simple line-by-line approach
+  const lines = code.split("\n");
+  const result = [];
+
+  lines.forEach((line, li) => {
+    if (li > 0) result.push({ text: "\n", color: null });
+    // Check for comments first
+    const commentMatch = lang === "sql" ? line.match(/^(.*?)(--.*$)/) : line.match(/^(.*?)(#.*$)/);
+    const beforeComment = commentMatch ? commentMatch[1] : line;
+    const comment = commentMatch ? commentMatch[2] : null;
+
+    // Tokenize the non-comment part
+    let pos = 0;
+    const parts = [];
+    // Find all strings, keywords, numbers
+    const allMatches = [];
+
+    let m;
+    const strRe = new RegExp(STR_RE.source, "g");
+    while ((m = strRe.exec(beforeComment)) !== null) allMatches.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: "string" });
+    const kwRe = new RegExp(kw.source, kw.flags);
+    while ((m = kwRe.exec(beforeComment)) !== null) {
+      const overlaps = allMatches.some(a => a.type === "string" && m.index >= a.start && m.index < a.end);
+      if (!overlaps) allMatches.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: "keyword" });
+    }
+    const numRe = new RegExp(NUM_RE.source, "g");
+    while ((m = numRe.exec(beforeComment)) !== null) {
+      const overlaps = allMatches.some(a => m.index >= a.start && m.index < a.end);
+      if (!overlaps) allMatches.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: "number" });
+    }
+
+    allMatches.sort((a, b) => a.start - b.start);
+    let cursor = 0;
+    allMatches.forEach(match => {
+      if (match.start > cursor) result.push({ text: beforeComment.slice(cursor, match.start), color: null });
+      const color = match.type === "keyword" ? "#85B7EB" : match.type === "string" ? "#97C459" : "#FAC775";
+      result.push({ text: match.text, color });
+      cursor = match.end;
+    });
+    if (cursor < beforeComment.length) result.push({ text: beforeComment.slice(cursor), color: null });
+    if (comment) result.push({ text: comment, color: "#5F5E5A" });
+  });
+
+  return result;
+}
+
+function CodeBlock({ content, lang }) {
+  const tokens = highlight(content, lang);
+  return (
+    <pre style={{ fontSize: 12, fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      {tokens.map((t, i) => t.color ? <span key={i} style={{ color: t.color }}>{t.text}</span> : <span key={i}>{t.text}</span>)}
+    </pre>
+  );
+}
+
+function NotesView({ notes, issues, files, projectId, reload }) {
+  const [editing, setEditing] = useState(null);
+  const [filterCat, setFilterCat] = useState("all");
+  const [searchQ, setSearchQ] = useState("");
+  const [form, setForm] = useState({ title: "", content: "", category: "scratch", linked_issue_id: "", linked_file_id: "", code_lang: "" });
+
+  const filtered = notes.filter(n => {
+    if (filterCat !== "all" && n.category !== filterCat) return false;
+    if (searchQ && !n.title.toLowerCase().includes(searchQ.toLowerCase()) && !n.content.toLowerCase().includes(searchQ.toLowerCase())) return false;
+    return true;
+  });
+
+  const setContent = (v) => {
+    const detected = detectLang(v);
+    setForm(f => ({ ...f, content: v, code_lang: f.code_lang || detected }));
+  };
+
+  const startNew = (cat) => { setForm({ title: "", content: "", category: cat || "scratch", linked_issue_id: "", linked_file_id: "", code_lang: "" }); setEditing("new"); };
+  const startEdit = (n) => { setForm({ title: n.title, content: n.content, category: n.category, linked_issue_id: n.linked_issue_id || "", linked_file_id: n.linked_file_id || "", code_lang: n.code_lang || detectLang(n.content) }); setEditing(n.id); };
+  const save = async () => {
+    if (!form.content.trim() && !form.title.trim()) return;
+    try {
+      const payload = { ...form, linked_issue_id: form.linked_issue_id || null, linked_file_id: form.linked_file_id || null };
+      if (editing === "new") await db.createNote(projectId, payload);
+      else await db.updateNote(editing, payload);
+      setEditing(null); await reload();
+    } catch (e) { console.error(e); }
+  };
+  const del = async (id) => { try { await db.deleteNote(id); await reload(); } catch (e) { console.error(e); } };
+  const pin = async (id, pinned) => { try { await db.updateNote(id, { pinned: !pinned }); await reload(); } catch (e) { console.error(e); } };
+
+  if (editing) {
+    const detectedLang = detectLang(form.content);
+    return (
+      <div style={{ maxWidth: 640 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}><span style={{ fontSize: 14, fontWeight: 500 }}>{editing === "new" ? "New note" : "Edit note"}</span><Btn onClick={() => setEditing(null)}>Cancel</Btn></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {form.category !== "scratch" && <Input value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="Title (optional for scratch)" />}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Select value={form.category} onChange={v => setForm({ ...form, category: v })} options={NOTE_CATS} style={{ flex: 1 }} />
+            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+              <Select value={form.code_lang} onChange={v => setForm({ ...form, code_lang: v })} options={CODE_LANGS.map(l => ({ value: l, label: LANG_LABELS[l] }))} style={{ flex: 1 }} />
+              {detectedLang && !form.code_lang && <span style={{ fontSize: 10, color: "#5DCAA5" }}>detected: {LANG_LABELS[detectedLang]}</span>}
+            </div>
+          </div>
+          <textarea value={form.content} onChange={e => setContent(e.target.value)} placeholder={form.category === "scratch" ? "Just start writing..." : "Paste code or write notes..."} rows={12} style={{ padding: "10px 12px", borderRadius: 6, fontSize: 13, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", resize: "vertical", fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, boxSizing: "border-box", tabSize: 2 }} onKeyDown={e => { if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; const end = e.target.selectionEnd; const v = form.content; setForm({ ...form, content: v.substring(0, s) + "  " + v.substring(end) }); setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0); } }} />
+          {/* Live preview */}
+          {(form.code_lang || detectedLang) && form.content.trim() && (
+            <div style={{ background: "#111110", border: "1px solid #2C2C2A", borderRadius: 6, padding: "10px 12px", maxHeight: 200, overflowY: "auto" }}>
+              <div style={{ fontSize: 10, color: "#5F5E5A", marginBottom: 6 }}>Preview ({LANG_LABELS[form.code_lang || detectedLang]})</div>
+              <CodeBlock content={form.content} lang={form.code_lang || detectedLang} />
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to issue</div><Select value={form.linked_issue_id} onChange={v => setForm({ ...form, linked_issue_id: v })} options={[{ value: "", label: "None" }, ...issues.map(i => ({ value: i.id, label: i.title }))]} style={{ width: "100%" }} /></div>
+            <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to file</div><Select value={form.linked_file_id} onChange={v => setForm({ ...form, linked_file_id: v })} options={[{ value: "", label: "None" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /></div>
+          </div>
+          <Btn primary onClick={save}>Save note</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  return (<div>
+    <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+      <Pill active={filterCat === "all"} onClick={() => setFilterCat("all")}>All</Pill>
+      {NOTE_CATS.map(c => <Pill key={c} active={filterCat === c} onClick={() => setFilterCat(c)}>{c}</Pill>)}
+      <span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} />
+      <Input value={searchQ} onChange={setSearchQ} placeholder="Search notes..." style={{ width: 160, fontSize: 12 }} />
+      <span style={{ flex: 1 }} />
+      <Btn onClick={() => startNew("scratch")} small>+ Scratch</Btn>
+      <Btn primary onClick={() => startNew()}>+ Note</Btn>
+    </div>
+    {filtered.length === 0 && <EmptyState icon="☰" title="No notes yet" sub="Capture decisions, investigations, and scratch thoughts" action="New note" onAction={() => startNew()} />}
+    {filtered.map(n => {
+      const cc = NOTE_CAT_COLORS[n.category] || NOTE_CAT_COLORS.scratch;
+      const linkedIssue = issues.find(i => i.id === n.linked_issue_id);
+      const linkedFile = files.find(f => f.id === n.linked_file_id);
+      const lang = n.code_lang || detectLang(n.content);
+      return (
+        <div key={n.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8, borderLeft: n.pinned ? "3px solid #FAC775" : "3px solid transparent", borderTopLeftRadius: n.pinned ? 0 : 8, borderBottomLeftRadius: n.pinned ? 0 : 8 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <Badge label={n.category} colors={cc} small />
+                {lang && <Badge label={LANG_LABELS[lang]} colors={{ bg: "#111110", text: "#888780", border: "#2C2C2A" }} small />}
+                {n.title && <span style={{ fontSize: 13, fontWeight: 500 }}>{n.title}</span>}
+                {n.pinned && <span style={{ fontSize: 10, color: "#FAC775" }}>pinned</span>}
+              </div>
+              {lang ? (
+                <div style={{ background: "#111110", borderRadius: 6, padding: "8px 10px", maxHeight: 150, overflowY: "auto" }}>
+                  <CodeBlock content={n.content} lang={lang} />
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: "#D3D1C7", whiteSpace: "pre-wrap", lineHeight: 1.6, maxHeight: 120, overflow: "hidden" }}>{n.content || <span style={{ color: "#5F5E5A", fontStyle: "italic" }}>Empty note</span>}</div>
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", marginTop: 6 }}>
+                <span>{SHORT_DATE(n.updated_at)}</span>
+                {linkedIssue && <><span>·</span><span style={{ color: "#F09595" }}>◉ {linkedIssue.title}</span></>}
+                {linkedFile && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace" }}>{linkedFile.name}</span></>}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+              <button onClick={() => pin(n.id, n.pinned)} title={n.pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", color: n.pinned ? "#FAC775" : "#444441", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>⊙</button>
+              <button onClick={() => startEdit(n)} title="Edit" style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
+              <button onClick={() => del(n.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
+            </div>
+          </div>
+        </div>
+      );
+    })}
+  </div>);
+}
+
+// ============================================
+// Board View (Kanban Sticky Notes)
+// ============================================
+
+const CARD_COLORS = { yellow: { bg: "#2A2309", text: "#FAC775", border: "#412402" }, blue: { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }, green: { bg: "#0E1A08", text: "#97C459", border: "#173404" }, pink: { bg: "#2A0A1A", text: "#ED93B1", border: "#4B1528" }, purple: { bg: "#1A0A29", text: "#AFA9EC", border: "#26215C" }, coral: { bg: "#2A1209", text: "#F0997B", border: "#4A1B0C" } };
+const CARD_COLOR_KEYS = Object.keys(CARD_COLORS);
+
+function BoardView({ columns, cards, projectId, reload, issues, files, addIssue }) {
+  const [newColName, setNewColName] = useState("");
+  const [editingCard, setEditingCard] = useState(null);
+  const [cardForm, setCardForm] = useState({ text: "", color: "yellow" });
+  const [addingTo, setAddingTo] = useState(null);
+  const [editColId, setEditColId] = useState(null);
+  const [editColName, setEditColName] = useState("");
+
+  const addCol = async () => { if (!newColName.trim()) return; try { await db.createColumn(projectId, newColName.trim(), columns.length); setNewColName(""); await reload(); } catch (e) { console.error(e); } };
+  const delCol = async (id) => { if (!confirm("Delete column and all its cards?")) return; try { await db.deleteColumn(id); await reload(); } catch (e) { console.error(e); } };
+  const renameCol = async (id) => { if (!editColName.trim()) { setEditColId(null); return; } try { await db.updateColumn(id, { name: editColName.trim() }); setEditColId(null); await reload(); } catch (e) { console.error(e); } };
+
+  const startAddCard = (colId) => { setAddingTo(colId); setCardForm({ text: "", color: "yellow" }); setEditingCard(null); };
+  const startEditCard = (card) => { setEditingCard(card.id); setCardForm({ text: card.text, color: card.color }); setAddingTo(null); };
+  const saveCard = async (colId) => {
+    if (!cardForm.text.trim()) return;
+    try {
+      if (editingCard) await db.updateCard(editingCard, { text: cardForm.text, color: cardForm.color });
+      else { const colCards = cards.filter(c => c.column_id === colId); await db.createCard(colId, cardForm.text, cardForm.color, colCards.length); }
+      setEditingCard(null); setAddingTo(null); await reload();
+    } catch (e) { console.error(e); }
+  };
+  const delCard = async (id) => { try { await db.deleteCard(id); await reload(); } catch (e) { console.error(e); } };
+  const moveCard = async (cardId, newColId) => { try { await db.updateCard(cardId, { column_id: newColId }); await reload(); } catch (e) { console.error(e); } };
+  const convertToIssue = async (card) => {
+    if (!files.length) { alert("Add a file first to create issues."); return; }
+    try { await addIssue(files[0].id, card.text, "todo", "medium", "", 0, null, "", ""); await db.deleteCard(card.id); await reload(); } catch (e) { console.error(e); }
+  };
+
+  return (<div>
+    {columns.length === 0 && cards.length === 0 && (
+      <EmptyState icon="▦" title="No board yet" sub="Add columns to organize your sticky notes" />
+    )}
+    <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 16, alignItems: "flex-start" }}>
+      {columns.map(col => {
+        const colCards = cards.filter(c => c.column_id === col.id);
+        return (
+          <div key={col.id} style={{ minWidth: 240, maxWidth: 280, flex: "0 0 260px", background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px" }}>
+            {/* Column header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              {editColId === col.id ? (
+                <input autoFocus value={editColName} onChange={e => setEditColName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") renameCol(col.id); if (e.key === "Escape") setEditColId(null); }} onBlur={() => renameCol(col.id)} style={{ flex: 1, padding: "2px 6px", borderRadius: 4, fontSize: 12, fontWeight: 500, background: "#111110", color: "#F1EFE8", border: "1px solid #444441", outline: "none" }} />
+              ) : (
+                <span onDoubleClick={() => { setEditColId(col.id); setEditColName(col.name); }} style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", cursor: "default" }}>{col.name}</span>
+              )}
+              <div style={{ display: "flex", gap: 2 }}>
+                <span style={{ fontSize: 10, color: "#5F5E5A" }}>{colCards.length}</span>
+                <button onClick={() => delCol(col.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✕</button>
+              </div>
+            </div>
+            {/* Cards */}
+            {colCards.map(card => {
+              const cc = CARD_COLORS[card.color] || CARD_COLORS.yellow;
+              if (editingCard === card.id) return (
+                <div key={card.id} style={{ marginBottom: 6, padding: "8px", background: cc.bg, border: `1px solid ${cc.border}`, borderRadius: 6 }}>
+                  <TextArea value={cardForm.text} onChange={v => setCardForm({ ...cardForm, text: v })} placeholder="Card text..." rows={2} />
+                  <div style={{ display: "flex", gap: 3, margin: "6px 0" }}>{CARD_COLOR_KEYS.map(k => (<div key={k} onClick={() => setCardForm({ ...cardForm, color: k })} style={{ width: 16, height: 16, borderRadius: 3, background: CARD_COLORS[k].text, cursor: "pointer", border: cardForm.color === k ? "2px solid #F1EFE8" : "2px solid transparent" }} />))}</div>
+                  <div style={{ display: "flex", gap: 4 }}><Btn small primary onClick={() => saveCard(col.id)}>Save</Btn><Btn small onClick={() => setEditingCard(null)}>Cancel</Btn></div>
+                </div>
+              );
+              return (
+                <div key={card.id} style={{ marginBottom: 6, padding: "8px 10px", background: cc.bg, border: `1px solid ${cc.border}`, borderRadius: 6 }}>
+                  <div style={{ fontSize: 12, color: cc.text, lineHeight: 1.5, whiteSpace: "pre-wrap", marginBottom: 6 }}>{card.text}</div>
+                  <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+                    <select value={card.column_id} onChange={e => moveCard(card.id, e.target.value)} style={{ padding: "2px 4px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}>
+                      {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <span style={{ flex: 1 }} />
+                    <button onClick={() => convertToIssue(card)} title="Convert to issue" style={{ background: "none", border: "1px solid #2C2C2A", color: "#85B7EB", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>→ issue</button>
+                    <button onClick={() => startEditCard(card)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✎</button>
+                    <button onClick={() => delCard(card.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✕</button>
+                  </div>
+                </div>
+              );
+            })}
+            {/* Add card form or button */}
+            {addingTo === col.id ? (
+              <div style={{ padding: "6px", background: "#1A1A18", border: "1px dashed #2C2C2A", borderRadius: 6 }}>
+                <TextArea value={cardForm.text} onChange={v => setCardForm({ ...cardForm, text: v })} placeholder="What's on your mind?" rows={2} />
+                <div style={{ display: "flex", gap: 3, margin: "6px 0" }}>{CARD_COLOR_KEYS.map(k => (<div key={k} onClick={() => setCardForm({ ...cardForm, color: k })} style={{ width: 16, height: 16, borderRadius: 3, background: CARD_COLORS[k].text, cursor: "pointer", border: cardForm.color === k ? "2px solid #F1EFE8" : "2px solid transparent" }} />))}</div>
+                <div style={{ display: "flex", gap: 4 }}><Btn small primary onClick={() => saveCard(col.id)}>Add</Btn><Btn small onClick={() => setAddingTo(null)}>Cancel</Btn></div>
+              </div>
+            ) : (
+              <button onClick={() => startAddCard(col.id)} style={{ width: "100%", padding: "6px", borderRadius: 6, border: "1px dashed #2C2C2A", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>+ Add card</button>
+            )}
+          </div>
+        );
+      })}
+      {/* Add column */}
+      <div style={{ minWidth: 200, flex: "0 0 200px" }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <Input value={newColName} onChange={setNewColName} placeholder="New column..." style={{ fontSize: 12, flex: 1 }} />
+          <Btn small primary onClick={addCol}>+</Btn>
+        </div>
+      </div>
+    </div>
+  </div>);
 }
 
 function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, editIssue, editTest, usedRepos, usedBranches }) {
