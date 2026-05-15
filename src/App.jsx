@@ -29,7 +29,7 @@ function Ring({ size, stroke, timeLeft, totalTime, color }) {
 
 export default function App({ session }) {
   const [projects, setProjects] = useState([]); const [files, setFiles] = useState([]); const [issues, setIssues] = useState([]); const [testCases, setTestCases] = useState([]); const [links, setLinks] = useState([]); const [activeProjectId, setActiveProjectId] = useState(null);
-  const [view, setView] = useState("dashboard"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null);
+  const [view, setView] = useState("dashboard"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null); const [sb, setSb] = useState(() => { try { return localStorage.getItem("qtrack_sb") !== "0"; } catch { return true; } });
   const [filterType, setFilterType] = useState("all"); const [filterFile, setFilterFile] = useState("all"); const [filterPriority, setFilterPriority] = useState("all"); const [searchQ, setSearchQ] = useState(""); const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
   const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null });
@@ -172,23 +172,32 @@ export default function App({ session }) {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#111110", color: "#F1EFE8", fontFamily: "'DM Sans', -apple-system, sans-serif", fontSize: 13 }}>
-      <div style={{ width: 220, borderRight: "1px solid #2C2C2A", display: "flex", flexDirection: "column", flexShrink: 0, background: "#161615" }}>
-        <div style={{ padding: "16px 18px", borderBottom: "1px solid #2C2C2A" }}><div style={{ fontSize: 15, fontWeight: 500, letterSpacing: -0.5, display: "flex", alignItems: "center", gap: 8 }}><span style={{ background: "#D3D1C7", color: "#111110", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>QTrack</div></div>
-        <div style={{ padding: "12px 10px", flex: 1 }}>
-          {nav.map(n => (<button key={n.id} onClick={() => { setView(n.id); setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all"); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 10px", borderRadius: 6, border: "none", background: view === n.id ? "#2C2C2A" : "transparent", color: view === n.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 13, textAlign: "left", marginBottom: 2 }}><span style={{ fontSize: 14, width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span><span style={{ flex: 1 }}>{n.l}</span>{n.cnt ? <span style={{ fontSize: 10, background: n.id === "focus" ? "#2D0A0A" : "#2C2C2A", padding: "1px 6px", borderRadius: 4, color: n.id === "focus" ? "#F09595" : "#888780" }}>{n.cnt}</span> : null}</button>))}
+      {/* Sidebar */}
+      <div style={{ width: sb ? 220 : 54, borderRight: "1px solid #2C2C2A", display: "flex", flexDirection: "column", flexShrink: 0, background: "#161615", transition: "width 0.2s ease" }}>
+        <div style={{ padding: sb ? "14px 18px" : "14px 0", borderBottom: "1px solid #2C2C2A", display: "flex", alignItems: "center", justifyContent: sb ? "space-between" : "center" }}>
+          {sb ? (<div style={{ fontSize: 15, fontWeight: 500, letterSpacing: -0.5, display: "flex", alignItems: "center", gap: 8 }}><span style={{ background: "#D3D1C7", color: "#111110", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>QTrack</div>) : (<span style={{ background: "#D3D1C7", color: "#111110", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>)}
+          <button onClick={() => { const v = !sb; setSb(v); try { localStorage.setItem("qtrack_sb", v ? "1" : "0"); } catch {} }} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px", display: sb ? "block" : "none" }}>{sb ? "◂" : "▸"}</button>
         </div>
-        {tmr.st !== "idle" && view !== "focus" && (<div onClick={() => setView("focus")} style={{ margin: "0 10px 10px", padding: "10px 12px", background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, cursor: "pointer" }}><div style={{ display: "flex", alignItems: "center", gap: 8 }}><Ring size={32} stroke={3} timeLeft={tmr.left} totalTime={tmr.total} color={SC[tmr.type]} /><div><div style={{ fontSize: 14, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: SC[tmr.type] }}>{FMT(tmr.left)}</div><div style={{ fontSize: 10, color: "#5F5E5A" }}>{tmr.type === "work" ? "Focusing" : "Break"}{tmr.st === "paused" ? " (paused)" : ""}</div></div></div>{taskName && <div style={{ fontSize: 10, color: "#888780", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{taskName}</div>}</div>)}
-        <div style={{ padding: "12px 10px", borderTop: "1px solid #2C2C2A" }}>
+        <div style={{ padding: sb ? "12px 10px" : "12px 4px", flex: 1 }}>
+          {nav.map(n => (<button key={n.id} onClick={() => { setView(n.id); setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all"); if (!sb) setSb(false); }} title={sb ? undefined : n.l} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: sb ? "8px 10px" : "8px 0", borderRadius: 6, border: "none", background: view === n.id ? "#2C2C2A" : "transparent", color: view === n.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 13, textAlign: "left", marginBottom: 2, justifyContent: sb ? "flex-start" : "center" }}><span style={{ fontSize: 14, width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span>{sb && <span style={{ flex: 1 }}>{n.l}</span>}{sb && n.cnt ? <span style={{ fontSize: 10, background: n.id === "focus" ? "#2D0A0A" : "#2C2C2A", padding: "1px 6px", borderRadius: 4, color: n.id === "focus" ? "#F09595" : "#888780" }}>{n.cnt}</span> : null}</button>))}
+          {!sb && <button onClick={() => setSb(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", padding: "8px 0", borderRadius: 6, border: "none", background: "transparent", color: "#444441", cursor: "pointer", fontSize: 14, marginTop: 4 }}>▸</button>}
+        </div>
+        {tmr.st !== "idle" && view !== "focus" && (<div onClick={() => setView("focus")} style={{ margin: sb ? "0 10px 10px" : "0 4px 10px", padding: sb ? "10px 12px" : "8px 4px", background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, cursor: "pointer", textAlign: sb ? "left" : "center" }}>{sb ? (<><div style={{ display: "flex", alignItems: "center", gap: 8 }}><Ring size={32} stroke={3} timeLeft={tmr.left} totalTime={tmr.total} color={SC[tmr.type]} /><div><div style={{ fontSize: 14, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: SC[tmr.type] }}>{FMT(tmr.left)}</div><div style={{ fontSize: 10, color: "#5F5E5A" }}>{tmr.type === "work" ? "Focusing" : "Break"}{tmr.st === "paused" ? " (paused)" : ""}</div></div></div>{taskName && <div style={{ fontSize: 10, color: "#888780", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{taskName}</div>}</>) : (<><Ring size={28} stroke={3} timeLeft={tmr.left} totalTime={tmr.total} color={SC[tmr.type]} /><div style={{ fontSize: 10, fontFamily: "'SF Mono', monospace", color: SC[tmr.type], marginTop: 4 }}>{FMT(tmr.left)}</div></>)}</div>)}
+        {sb && <div style={{ padding: "12px 10px", borderTop: "1px solid #2C2C2A" }}>
           <div style={{ fontSize: 10, color: "#5F5E5A", padding: "0 10px 6px", textTransform: "uppercase", letterSpacing: 0.5 }}>Projects</div>
           {projects.map(p => editingProjectId === p.id ? (<div key={p.id} style={{ padding: "3px 6px", marginBottom: 1 }}><input autoFocus value={editingProjectName} onChange={e => setEditingProjectName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") renameProject(p.id, editingProjectName); if (e.key === "Escape") setEditingProjectId(null); }} onBlur={() => renameProject(p.id, editingProjectName)} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #444441", outline: "none", boxSizing: "border-box" }} /></div>) : (<div key={p.id} style={{ display: "flex", alignItems: "center", gap: 2, marginBottom: 1 }}><button onClick={() => setActiveProjectId(p.id)} onDoubleClick={() => { setEditingProjectId(p.id); setEditingProjectName(p.name); }} style={{ flex: 1, padding: "6px 10px", borderRadius: 5, border: "none", background: activeProjectId === p.id ? "#2C2C2A" : "transparent", color: activeProjectId === p.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 12, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</button>{projects.length > 1 && <button onClick={() => delProject(p.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11, padding: "4px", opacity: 0.5 }} onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#F09595"; }} onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#444441"; }}>✕</button>}</div>))}
           <button onClick={() => setModal({ type: "project" })} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>+ New project</button>
-        </div>
-        <div style={{ padding: "8px 10px", borderTop: "1px solid #2C2C2A" }}><button onClick={() => supabase.auth.signOut()} style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Sign out ({session.user.email})</button></div>
+        </div>}
+        <div style={{ padding: sb ? "8px 10px" : "8px 4px", borderTop: "1px solid #2C2C2A" }}><button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: sb ? "left" : "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sb ? `Sign out (${session.user.email})` : "↗"}</button></div>
       </div>
 
+      {/* Main */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <div style={{ padding: "12px 28px", borderBottom: "1px solid #2C2C2A", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 16, fontWeight: 500 }}>{nav.find(n => n.id === view)?.l || ""}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {!sb && <button onClick={() => setSb(true)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 16 }}>☰</button>}
+            <span style={{ fontSize: 16, fontWeight: 500 }}>{nav.find(n => n.id === view)?.l || ""}</span>
+          </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {(view === "issues" || view === "tests") && <Input value={searchQ} onChange={setSearchQ} placeholder="Search..." style={{ width: 180, fontSize: 12 }} />}
             {view === "issues" && <Btn primary onClick={() => setModal({ type: "issue" })}>+ Issue</Btn>}
@@ -240,27 +249,16 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   const [logError, setLogError] = useState(null);
   const [pauseElapsed, setPauseElapsed] = useState(0);
   const color = SC[tmr.type];
+  const isActive = tmr.st !== "idle";
   const openTasks = [...issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status)).map(i => ({ id: i.id, t: "issue", l: i.title, p: i.priority })), ...tests.filter(t => t.status !== "pass").map(t => ({ id: t.id, t: "test", l: t.title, p: "medium" }))];
   const queuedItems = queue.map(q => { const task = openTasks.find(t => t.id === q.item_id && t.t === q.item_type); return task ? { ...task, qid: q.id } : null; }).filter(Boolean);
   const notQueued = openTasks.filter(t => !queue.some(q => q.item_id === t.id));
 
-  // Pause duration counter
-  useEffect(() => {
-    let iv;
-    if (tmr.st === "paused" && tmr.pausedAt) {
-      iv = setInterval(() => setPauseElapsed(Math.floor((Date.now() - new Date(tmr.pausedAt).getTime()) / 1000)), 1000);
-    } else { setPauseElapsed(0); }
-    return () => { if (iv) clearInterval(iv); };
-  }, [tmr.st, tmr.pausedAt]);
+  useEffect(() => { let iv; if (tmr.st === "paused" && tmr.pausedAt) { iv = setInterval(() => setPauseElapsed(Math.floor((Date.now() - new Date(tmr.pausedAt).getTime()) / 1000)), 1000); } else { setPauseElapsed(0); } return () => { if (iv) clearInterval(iv); }; }, [tmr.st, tmr.pausedAt]);
 
-  // Days active this week
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0);
-  const daysActive = new Set((allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString())).size;
-  const todayHasWork = tw.length > 0 || (tmr.st === "running" && tmr.type === "work");
-  const daysWithToday = todayHasWork ? new Set([...Array.from(new Set((allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString()))), new Date().toDateString()]).size : daysActive;
+  const daysWithToday = new Set([...(allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString()), ...(tw.length > 0 || (tmr.st === "running" && tmr.type === "work") ? [new Date().toDateString()] : [])]).size;
   const goalPct = Math.min(100, Math.round((tfm / goalMin) * 100));
-
-  // Today's breakdown
   const ts = todaySessions || [];
   const focusSec = ts.filter(s => s.session_type === "work" && (!s.subtype || s.subtype === "focus" || s.subtype === "manual")).reduce((a, s) => a + s.duration_seconds, 0);
   const waitSec = ts.filter(s => s.subtype === "waiting").reduce((a, s) => a + s.duration_seconds, 0);
@@ -268,140 +266,139 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
 
   const addQ = async (t) => { try { await db.addToQueue(projectId, t.t, t.id, queue.length); await reload(); } catch (e) { console.error(e); } };
   const removeQ = async (qid) => { try { await db.removeFromQueue(qid); await reload(); } catch (e) { console.error(e); } };
-
-  const submitLog = async () => {
-    setLogError(null);
-    try {
-      const startDt = new Date(`${logForm.date}T${logForm.startTime}`);
-      const endDt = new Date(`${logForm.date}T${logForm.endTime}`);
-      if (endDt <= startDt) { setLogError("End time must be after start"); return; }
-      await logManual(logForm.taskType, logForm.taskId, startDt.toISOString(), endDt.toISOString());
-      setShowLog(false);
-    } catch (e) { setLogError(e.message); }
-  };
-
-  const PAUSE_REASONS = [
-    { id: "waiting", label: "Waiting", sub: "Code running", color: "#378ADD" },
-    { id: "interrupted", label: "Interrupted", sub: "Call / meeting", color: "#D85A30" },
-  ];
+  const submitLog = async () => { setLogError(null); try { const s = new Date(`${logForm.date}T${logForm.startTime}`); const e = new Date(`${logForm.date}T${logForm.endTime}`); if (e <= s) { setLogError("End must be after start"); return; } await logManual(logForm.taskType, logForm.taskId, s.toISOString(), e.toISOString()); setShowLog(false); } catch (e) { setLogError(e.message); } };
 
   return (
-    <div style={{ display: "flex", gap: 28 }}>
-      {/* Left: timer */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: "0 0 280px" }}>
-        <div style={{ position: "relative", width: 200, height: 200, marginBottom: 16 }}>
-          <Ring size={200} stroke={8} timeLeft={tmr.left} totalTime={tmr.total} color={color} />
-          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ fontSize: 36, fontWeight: 500, fontFamily: "'SF Mono', monospace", color, letterSpacing: -1 }}>{FMT(tmr.left)}</div>
-            <div style={{ fontSize: 11, color: "#888780", marginTop: 2 }}>{tmr.type === "work" ? "Focus time" : tmr.type === "short_break" ? "Short break" : "Long break"}</div>
-          </div>
+    <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      {/* Goal — whisper thin */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+          <span style={{ fontSize: 10, color: "#5F5E5A" }}>{tfm}m focused</span>
+          <span style={{ fontSize: 10, color: goalPct >= 100 ? "#5DCAA5" : "#444441" }}>{goalPct >= 100 ? "Goal reached" : `${goalMin}m goal`}</span>
         </div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>{[0,1,2,3].map(i => (<div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: i < tmr.done ? "#E24B4A" : "#2C2C2A" }} />))}</div>
-
-        {/* Controls */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", justifyContent: "center" }}>
-          {tmr.st === "idle" && <Btn primary onClick={() => start()} style={{ padding: "8px 24px", fontSize: 13 }}>Start</Btn>}
-          {tmr.st === "running" && <>
-            {PAUSE_REASONS.map(r => (<Btn key={r.id} onClick={() => pauseWith(r.id)} small style={{ color: r.color, borderColor: r.color + "44" }}>{r.label}</Btn>))}
-            <Btn onClick={pause} small>Pause</Btn>
-          </>}
-          {tmr.st === "paused" && <Btn primary onClick={resume} style={{ padding: "8px 24px", fontSize: 13 }}>Resume</Btn>}
-          {tmr.st !== "idle" && <Btn onClick={reset} small style={{ color: "#5F5E5A" }}>Stop</Btn>}
-        </div>
-
-        {/* Pause reason display */}
-        {tmr.st === "paused" && tmr.pauseReason && (
-          <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 14px", width: "100%", textAlign: "center", marginBottom: 12 }}>
-            <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", marginBottom: 4 }}>{tmr.pauseReason === "waiting" ? "Waiting for code to run..." : "Interrupted"}</div>
-            <div style={{ fontSize: 18, fontFamily: "'SF Mono', monospace", color: tmr.pauseReason === "waiting" ? "#378ADD" : "#D85A30" }}>{FMT(pauseElapsed)}</div>
-            <div style={{ fontSize: 10, color: "#5F5E5A", marginTop: 4 }}>This time is logged separately</div>
-          </div>
-        )}
-
-        {/* Current task */}
-        <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 14px", width: "100%", textAlign: "center", marginBottom: 12 }}>
-          {taskName ? (<div><div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", marginBottom: 3 }}>Focusing on</div><div style={{ fontSize: 12, fontWeight: 500 }}>{taskName}</div></div>) : (<button onClick={() => setPicking(true)} style={{ background: "none", border: "1px dashed #444441", color: "#888780", cursor: "pointer", fontSize: 11, padding: "4px 12px", borderRadius: 4 }}>Pick a task</button>)}
-        </div>
-        {picking && (<div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: 10, width: "100%", maxHeight: 180, overflowY: "auto", marginBottom: 12 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontSize: 10, color: "#5F5E5A" }}>Pick a task</span><button onClick={() => setPicking(false)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 10 }}>✕</button></div>{openTasks.map(tk => (<div key={tk.id} role="button" onMouseDown={() => { focusOn(tk.t, tk.id); setPicking(false); }} style={{ padding: "5px 8px", borderRadius: 4, cursor: "pointer", fontSize: 11, color: "#D3D1C7", marginBottom: 1 }} onMouseEnter={e => e.currentTarget.style.background = "#2C2C2A"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{tk.t === "issue" ? "◉" : "▷"} {tk.l}</div>))}</div>)}
-
-        {/* Manual log button */}
-        <button onClick={() => setShowLog(!showLog)} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "6px 12px", borderRadius: 6, width: "100%" }}>{showLog ? "Cancel" : "+ Log past work"}</button>
+        <div style={{ height: 2, background: "#1A1A18", borderRadius: 1 }}><div style={{ height: "100%", width: `${goalPct}%`, background: goalPct >= 100 ? "#5DCAA5" : color, borderRadius: 1, transition: "width 0.5s" }} /></div>
       </div>
 
-      {/* Right: stats + queue */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {/* Daily goal */}
-        <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px", marginBottom: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#B4B2A9" }}>{tfm} min today</span>
-            <span style={{ fontSize: 11, color: goalPct >= 100 ? "#5DCAA5" : "#5F5E5A" }}>{goalPct >= 100 ? "Goal reached" : `${Math.max(0, goalMin - tfm)} min to go`}</span>
-          </div>
-          <div style={{ height: 6, background: "#2C2C2A", borderRadius: 3, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${goalPct}%`, background: goalPct >= 100 ? "#5DCAA5" : "#378ADD", borderRadius: 3, transition: "width 0.5s" }} />
-          </div>
-        </div>
-
-        {/* Stats with breakdown */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
-            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{Math.round(focusSec / 60)}<span style={{ fontSize: 11, color: "#5F5E5A" }}>m</span></div>
-            <div style={{ fontSize: 10, color: "#5F5E5A" }}>focus</div>
-          </div>
-          {waitSec > 0 && <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
-            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{Math.round(waitSec / 60)}<span style={{ fontSize: 11, color: "#5F5E5A" }}>m</span></div>
-            <div style={{ fontSize: 10, color: "#5F5E5A" }}>waiting</div>
-          </div>}
-          {intSec > 0 && <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
-            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{Math.round(intSec / 60)}<span style={{ fontSize: 11, color: "#5F5E5A" }}>m</span></div>
-            <div style={{ fontSize: 10, color: "#5F5E5A" }}>interrupted</div>
-          </div>}
-          <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
-            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#85B7EB" }}>{daysWithToday}<span style={{ fontSize: 11, color: "#5F5E5A" }}>/7</span></div>
-            <div style={{ fontSize: 10, color: "#5F5E5A" }}>this week</div>
+      {/* Timer hero */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 32 }}>
+        <div style={{ position: "relative", width: 260, height: 260 }}>
+          <Ring size={260} stroke={6} timeLeft={tmr.left} totalTime={tmr.total} color={isActive ? color : "#2C2C2A"} />
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ fontSize: 56, fontWeight: 400, fontFamily: "'SF Mono', 'Fira Code', monospace", color: isActive ? color : "#5F5E5A", letterSpacing: -3, lineHeight: 1 }}>{FMT(tmr.left)}</div>
+            <div style={{ fontSize: 11, color: "#5F5E5A", marginTop: 8, letterSpacing: 1, textTransform: "uppercase" }}>{tmr.type === "work" ? "focus" : tmr.type === "short_break" ? "short break" : "long break"}</div>
+            {/* Session dots inside ring */}
+            <div style={{ display: "flex", gap: 6, marginTop: 12 }}>{[0,1,2,3].map(i => (<div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i < tmr.done ? color : "#2C2C2A", transition: "background 0.3s" }} />))}</div>
           </div>
         </div>
 
-        {/* Manual log form */}
-        {showLog && (
-          <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px", marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", marginBottom: 10 }}>Log past work</div>
-            {logError && <div style={{ padding: "6px 10px", borderRadius: 4, marginBottom: 8, fontSize: 11, background: "#2D0A0A", color: "#F09595" }}>{logError}</div>}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <select value={logForm.taskId ? `${logForm.taskType}:${logForm.taskId}` : ""} onChange={e => { if (e.target.value) { const [t, id] = e.target.value.split(":"); setLogForm({ ...logForm, taskType: t, taskId: id }); } }} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }}>
-                <option value="">Select task (optional)</option>
-                {openTasks.map(t => <option key={t.id} value={`${t.t}:${t.id}`}>{t.t === "issue" ? "◉" : "▷"} {t.l}</option>)}
-              </select>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input type="date" value={logForm.date} onChange={e => setLogForm({ ...logForm, date: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-                <input type="time" value={logForm.startTime} onChange={e => setLogForm({ ...logForm, startTime: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-                <input type="time" value={logForm.endTime} onChange={e => setLogForm({ ...logForm, endTime: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-              </div>
-              <Btn primary onClick={submitLog} small>Save session</Btn>
-            </div>
+        {/* Task label */}
+        {taskName && <div style={{ marginTop: 16, fontSize: 13, color: "#888780", textAlign: "center" }}><span style={{ color: "#444441" }}>on </span><span style={{ color: "#D3D1C7" }}>{taskName}</span></div>}
+
+        {/* Controls */}
+        <div style={{ marginTop: 20, display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+          {tmr.st === "idle" && <>
+            <Btn primary onClick={() => start()} style={{ padding: "12px 36px", fontSize: 15, borderRadius: 8 }}>Start</Btn>
+            {!taskName && <Btn onClick={() => setPicking(true)} small style={{ color: "#5F5E5A" }}>Pick task</Btn>}
+            {queuedItems.length > 0 && !taskName && <Btn onClick={() => focusOn(queuedItems[0].t, queuedItems[0].id)} small style={{ color: "#E24B4A" }}>▶ {queuedItems[0].l.substring(0, 20)}{queuedItems[0].l.length > 20 ? "..." : ""}</Btn>}
+          </>}
+          {tmr.st === "running" && <>
+            <Btn onClick={() => pauseWith("waiting")} small style={{ color: "#378ADD", borderColor: "#378ADD33" }}>Waiting</Btn>
+            <Btn onClick={() => pauseWith("interrupted")} small style={{ color: "#D85A30", borderColor: "#D85A3033" }}>Interrupted</Btn>
+            <Btn onClick={pause} small style={{ color: "#888780" }}>Pause</Btn>
+            <Btn onClick={reset} small style={{ color: "#444441" }}>Stop</Btn>
+          </>}
+          {tmr.st === "paused" && !tmr.pauseReason && <>
+            <Btn primary onClick={resume} style={{ padding: "12px 36px", fontSize: 15, borderRadius: 8 }}>Resume</Btn>
+            <Btn onClick={reset} small style={{ color: "#444441" }}>Stop</Btn>
+          </>}
+        </div>
+
+        {/* Pause reason state */}
+        {tmr.st === "paused" && tmr.pauseReason && (
+          <div style={{ marginTop: 20, padding: "20px 32px", background: "#161615", border: `1px solid ${tmr.pauseReason === "waiting" ? "#378ADD22" : "#D85A3022"}`, borderRadius: 12, textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{tmr.pauseReason === "waiting" ? "waiting for code" : "interrupted"}</div>
+            <div style={{ fontSize: 32, fontFamily: "'SF Mono', monospace", color: tmr.pauseReason === "waiting" ? "#378ADD" : "#D85A30", fontWeight: 400 }}>{FMT(pauseElapsed)}</div>
+            <div style={{ fontSize: 10, color: "#444441", margin: "8px 0 14px" }}>tracked separately</div>
+            <Btn primary onClick={resume} style={{ padding: "10px 28px", borderRadius: 8 }}>Resume focus</Btn>
           </div>
         )}
+      </div>
 
-        {/* Task queue */}
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", marginBottom: 8 }}>Up next</div>
-          {queuedItems.length === 0 && <div style={{ fontSize: 11, color: "#5F5E5A", padding: "8px 0" }}>No tasks queued. Add a few to plan your flow.</div>}
+      {/* Task picker */}
+      {picking && (<div style={{ maxWidth: 400, margin: "0 auto 24px", background: "#161615", border: "1px solid #2C2C2A", borderRadius: 10, padding: 14, maxHeight: 220, overflowY: "auto" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Pick a task</span><button onClick={() => setPicking(false)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 10 }}>✕</button></div>{openTasks.map(tk => (<div key={tk.id} role="button" onMouseDown={() => { focusOn(tk.t, tk.id); setPicking(false); }} style={{ padding: "7px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, color: "#D3D1C7", marginBottom: 2 }} onMouseEnter={e => e.currentTarget.style.background = "#1A1A18"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{tk.t === "issue" ? "◉" : "▷"} {tk.l}</div>))}</div>)}
+
+      {/* Bottom panels */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+        {/* Stats */}
+        <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
+          <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Today</div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Focus</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{Math.round(focusSec / 60)}m</span></div>
+          {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Waiting</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{Math.round(waitSec / 60)}m</span></div>}
+          {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Interrupted</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{Math.round(intSec / 60)}m</span></div>}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Sessions</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{tw.length}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>This week</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#85B7EB" }}>{daysWithToday}/7</span></div>
+          <div style={{ borderTop: "1px solid #1A1A18", marginTop: 8, paddingTop: 8 }}>
+            <button onClick={() => setShowLog(!showLog)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10, padding: 0 }}>{showLog ? "Cancel" : "+ Log past work"}</button>
+          </div>
+          {showLog && (<div style={{ marginTop: 8 }}>
+            {logError && <div style={{ fontSize: 10, color: "#F09595", marginBottom: 4 }}>{logError}</div>}
+            <select value={logForm.taskId ? `${logForm.taskType}:${logForm.taskId}` : ""} onChange={e => { if (e.target.value) { const [t, id] = e.target.value.split(":"); setLogForm({ ...logForm, taskType: t, taskId: id }); } }} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none", marginBottom: 4 }}><option value="">Task</option>{openTasks.map(t => <option key={t.id} value={`${t.t}:${t.id}`}>{t.l}</option>)}</select>
+            <input type="date" value={logForm.date} onChange={e => setLogForm({ ...logForm, date: e.target.value })} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none", marginBottom: 4, boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+              <input type="time" value={logForm.startTime} onChange={e => setLogForm({ ...logForm, startTime: e.target.value })} style={{ flex: 1, padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none" }} />
+              <input type="time" value={logForm.endTime} onChange={e => setLogForm({ ...logForm, endTime: e.target.value })} style={{ flex: 1, padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none" }} />
+            </div>
+            <Btn small primary onClick={submitLog} style={{ width: "100%", justifyContent: "center", fontSize: 10 }}>Save</Btn>
+          </div>)}
+        </div>
+
+        {/* Queue */}
+        <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
+          <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Up next</div>
+          {queuedItems.length === 0 && <div style={{ fontSize: 11, color: "#2C2C2A", padding: "8px 0" }}>Queue empty</div>}
           {queuedItems.map((tk, idx) => (
-            <div key={tk.qid} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: idx === 0 ? "#1A1A18" : "transparent", border: idx === 0 ? "1px solid #2C2C2A" : "1px solid transparent", borderRadius: 6, marginBottom: 4 }}>
-              <span style={{ fontSize: 10, color: "#5F5E5A", fontFamily: "'SF Mono', monospace", minWidth: 16 }}>{idx + 1}.</span>
-              <span style={{ color: tk.t === "issue" ? "#F09595" : "#85B7EB", fontSize: 12 }}>{tk.t === "issue" ? "◉" : "▷"}</span>
-              <span style={{ flex: 1, fontSize: 12, color: idx === 0 ? "#F1EFE8" : "#888780", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.l}</span>
-              {idx === 0 && tmr.st === "idle" && <button onClick={() => focusOn(tk.t, tk.id)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#E24B4A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>▶</button>}
-              <button onClick={() => removeQ(tk.qid)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10, padding: "0 2px" }}>✕</button>
+            <div key={tk.qid} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: idx < queuedItems.length - 1 ? "1px solid #1A1A18" : "none" }}>
+              <span style={{ fontSize: 9, color: "#444441", fontFamily: "'SF Mono', monospace" }}>{idx + 1}</span>
+              <span style={{ color: tk.t === "issue" ? "#F09595" : "#85B7EB", fontSize: 11 }}>{tk.t === "issue" ? "◉" : "▷"}</span>
+              <span style={{ flex: 1, fontSize: 11, color: idx === 0 ? "#D3D1C7" : "#5F5E5A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.l}</span>
+              <button onClick={() => removeQ(tk.qid)} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9 }}>✕</button>
             </div>
           ))}
           {queuedItems.length < 5 && notQueued.length > 0 && (
-            <select onChange={e => { if (e.target.value) { const t = openTasks.find(x => x.id === e.target.value); if (t) addQ(t); e.target.value = ""; } }} defaultValue="" style={{ marginTop: 6, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#1A1A18", color: "#888780", border: "1px dashed #2C2C2A", outline: "none", cursor: "pointer", width: "100%" }}>
-              <option value="">+ Add to queue...</option>
-              {notQueued.map(t => <option key={t.id} value={t.id}>{t.t === "issue" ? "◉" : "▷"} {t.l}</option>)}
+            <select onChange={e => { if (e.target.value) { const t = openTasks.find(x => x.id === e.target.value); if (t) addQ(t); e.target.value = ""; } }} defaultValue="" style={{ marginTop: 6, width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "transparent", color: "#444441", border: "1px dashed #1A1A18", outline: "none", cursor: "pointer" }}>
+              <option value="">+ Add...</option>
+              {notQueued.map(t => <option key={t.id} value={t.id}>{t.l}</option>)}
             </select>
           )}
         </div>
+
+        {/* Media */}
+        <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
+          <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Listen</div>
+          <MediaPlayer />
+        </div>
       </div>
+    </div>
+  );
+}
+
+function MediaPlayer() {
+  const [embedUrl, setEmbedUrl] = useState(() => { try { return localStorage.getItem("qtrack_media_embed") || ""; } catch { return ""; } });
+  const [inputVal, setInputVal] = useState("");
+  const [type, setType] = useState(() => { try { return localStorage.getItem("qtrack_media_type") || ""; } catch { return ""; } });
+  const [subtype, setSubtype] = useState(() => { try { return localStorage.getItem("qtrack_media_sub") || ""; } catch { return ""; } });
+  const parseUrl = (raw) => { if (!raw) return null; let m = raw.match(/open\.spotify\.com\/(track|playlist|album|episode)\/([a-zA-Z0-9]+)/); if (m) return { type: "spotify", sub: m[1], embed: `https://open.spotify.com/embed/${m[1]}/${m[2]}?theme=0` }; m = raw.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/); if (m) return { type: "youtube", sub: "video", embed: `https://www.youtube.com/embed/${m[1]}` }; m = raw.match(/music\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/); if (m) return { type: "youtube", sub: "video", embed: `https://www.youtube.com/embed/${m[1]}` }; return null; };
+  const setMedia = () => { const p = parseUrl(inputVal); if (p) { setEmbedUrl(p.embed); setType(p.type); setSubtype(p.sub); setInputVal(""); try { localStorage.setItem("qtrack_media_embed", p.embed); localStorage.setItem("qtrack_media_type", p.type); localStorage.setItem("qtrack_media_sub", p.sub); } catch {} } };
+  const clearMedia = () => { setEmbedUrl(""); setType(""); setSubtype(""); try { localStorage.removeItem("qtrack_media_embed"); localStorage.removeItem("qtrack_media_type"); localStorage.removeItem("qtrack_media_sub"); } catch {} };
+  const spotifyH = (subtype === "playlist" || subtype === "album") ? 380 : 152;
+  return embedUrl ? (
+    <div style={{ opacity: 0.8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 9, color: "#444441" }}>{type === "spotify" ? `Spotify ${subtype}` : "YouTube"}</span><button onClick={clearMedia} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9 }}>✕</button></div>
+      <iframe src={embedUrl} width="100%" height={type === "spotify" ? spotifyH : 160} frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" allowFullScreen style={{ borderRadius: 8 }} />
+    </div>
+  ) : (
+    <div>
+      <input value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") setMedia(); }} placeholder="Spotify or YouTube URL" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #1A1A18", outline: "none", fontFamily: "'SF Mono', monospace", boxSizing: "border-box" }} />
     </div>
   );
 }
