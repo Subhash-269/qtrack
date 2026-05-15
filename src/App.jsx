@@ -33,7 +33,7 @@ export default function App({ session }) {
   const [filterType, setFilterType] = useState("all"); const [filterFile, setFilterFile] = useState("all"); const [filterPriority, setFilterPriority] = useState("all"); const [searchQ, setSearchQ] = useState(""); const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
   const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null });
-  const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]); const [viewingNoteId, setViewingNoteId] = useState(null);
+  const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]); const [viewingNoteId, setViewingNoteId] = useState(null); const [queue, setQueue] = useState([]);
   const tRef = useRef(null); const initRef = useRef(false); const syncRef = useRef(false); const loadedTimerRef = useRef(false);
 
   // Load timer from Supabase on mount
@@ -116,7 +116,7 @@ export default function App({ session }) {
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
 
   async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId(p[0].id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); } } catch (e) { console.error(e); } setLoading(false); }
-  async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } } catch (e) { console.error(e); } }
+  async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } } catch (e) { console.error(e); } }
   async function loadToday() { if (!activeProjectId) return; try { setTodaySessions(await db.getTodaySessions(activeProjectId)); } catch { setTodaySessions([]); } try { setAllSessions(await db.getAllSessions(activeProjectId)); } catch { setAllSessions([]); } }
   async function reload() { if (activeProjectId) await loadData(activeProjectId); }
 
@@ -183,8 +183,8 @@ export default function App({ session }) {
           </div>
         </div>
         <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
-          {view === "dashboard" && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} />}
-          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} />}
+          {view === "dashboard" && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} allSessions={allSessions} notes={notes} />}
+          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} />}
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
@@ -217,39 +217,108 @@ export default function App({ session }) {
   );
 }
 
-function FocusView({ tmr, taskName, issues, tests, start, pause, resume, reset, focusOn, tfm, tw }) {
+function FocusView({ tmr, taskName, issues, tests, start, pause, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions }) {
   const [picking, setPicking] = useState(false);
+  const [goalMin] = useState(120);
   const color = SC[tmr.type];
-  const tasks = [...issues.map(i => ({ id: i.id, t: "issue", l: i.title })), ...tests.map(t => ({ id: t.id, t: "test", l: t.title }))];
+  const openTasks = [...issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status)).map(i => ({ id: i.id, t: "issue", l: i.title, p: i.priority })), ...tests.filter(t => t.status !== "pass").map(t => ({ id: t.id, t: "test", l: t.title, p: "medium" }))];
+  const queuedItems = queue.map(q => { const task = openTasks.find(t => t.id === q.item_id && t.t === q.item_type); return task ? { ...task, qid: q.id } : null; }).filter(Boolean);
+  const notQueued = openTasks.filter(t => !queue.some(q => q.item_id === t.id));
+
+  // Days active this week
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0);
+  const daysActive = new Set((allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString())).size;
+  const todayHasWork = tw.length > 0 || (tmr.st === "running" && tmr.type === "work");
+  const daysWithToday = todayHasWork ? new Set([...Array.from(new Set((allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString()))), new Date().toDateString()]).size : daysActive;
+
+  // Goal progress
+  const goalPct = Math.min(100, Math.round((tfm / goalMin) * 100));
+
+  const addQ = async (t) => { try { await db.addToQueue(projectId, t.t, t.id, queue.length); await reload(); } catch (e) { console.error(e); } };
+  const removeQ = async (qid) => { try { await db.removeFromQueue(qid); await reload(); } catch (e) { console.error(e); } };
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20 }}>
-      <div style={{ position: "relative", width: 220, height: 220, marginBottom: 20 }}>
-        <Ring size={220} stroke={8} timeLeft={tmr.left} totalTime={tmr.total} color={color} />
-        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ fontSize: 40, fontWeight: 500, fontFamily: "'SF Mono', monospace", color, letterSpacing: -1 }}>{FMT(tmr.left)}</div>
-          <div style={{ fontSize: 12, color: "#888780", marginTop: 2 }}>{tmr.type === "work" ? "Focus time" : tmr.type === "short_break" ? "Short break" : "Long break"}</div>
+    <div style={{ display: "flex", gap: 28 }}>
+      {/* Left: timer */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: "0 0 280px" }}>
+        <div style={{ position: "relative", width: 200, height: 200, marginBottom: 16 }}>
+          <Ring size={200} stroke={8} timeLeft={tmr.left} totalTime={tmr.total} color={color} />
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ fontSize: 36, fontWeight: 500, fontFamily: "'SF Mono', monospace", color, letterSpacing: -1 }}>{FMT(tmr.left)}</div>
+            <div style={{ fontSize: 11, color: "#888780", marginTop: 2 }}>{tmr.type === "work" ? "Focus time" : tmr.type === "short_break" ? "Short break" : "Long break"}</div>
+          </div>
         </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>{[0,1,2,3].map(i => (<div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: i < tmr.done ? "#E24B4A" : "#2C2C2A" }} />))}</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {tmr.st === "idle" && <Btn primary onClick={() => start()} style={{ padding: "8px 24px", fontSize: 13 }}>Start</Btn>}
+          {tmr.st === "running" && <Btn onClick={pause} style={{ padding: "8px 24px", fontSize: 13 }}>Pause</Btn>}
+          {tmr.st === "paused" && <Btn primary onClick={resume} style={{ padding: "8px 24px", fontSize: 13 }}>Resume</Btn>}
+          {tmr.st !== "idle" && <Btn onClick={reset} style={{ padding: "8px 24px", fontSize: 13, color: "#5F5E5A" }}>Reset</Btn>}
+        </div>
+        {/* Current task */}
+        <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 14px", width: "100%", textAlign: "center", marginBottom: 12 }}>
+          {taskName ? (<div><div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", marginBottom: 3 }}>Focusing on</div><div style={{ fontSize: 12, fontWeight: 500 }}>{taskName}</div></div>) : (<button onClick={() => setPicking(true)} style={{ background: "none", border: "1px dashed #444441", color: "#888780", cursor: "pointer", fontSize: 11, padding: "4px 12px", borderRadius: 4 }}>Pick a task</button>)}
+        </div>
+        {picking && (<div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: 10, width: "100%", maxHeight: 180, overflowY: "auto", marginBottom: 12 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontSize: 10, color: "#5F5E5A" }}>Pick a task</span><button onClick={() => setPicking(false)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 10 }}>✕</button></div>{openTasks.map(tk => (<div key={tk.id} role="button" onMouseDown={() => { focusOn(tk.t, tk.id); setPicking(false); }} style={{ padding: "5px 8px", borderRadius: 4, cursor: "pointer", fontSize: 11, color: "#D3D1C7", marginBottom: 1 }} onMouseEnter={e => e.currentTarget.style.background = "#2C2C2A"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{tk.t === "issue" ? "◉" : "▷"} {tk.l}</div>))}</div>)}
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>{[0,1,2,3].map(i => (<div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: i < tmr.done ? "#E24B4A" : "#2C2C2A" }} />))}</div>
-      <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
-        {tmr.st === "idle" && <Btn primary onClick={() => start()} style={{ padding: "10px 28px", fontSize: 14 }}>Start</Btn>}
-        {tmr.st === "running" && <Btn onClick={pause} style={{ padding: "10px 28px", fontSize: 14 }}>Pause</Btn>}
-        {tmr.st === "paused" && <Btn primary onClick={resume} style={{ padding: "10px 28px", fontSize: 14 }}>Resume</Btn>}
-        {tmr.st !== "idle" && <Btn onClick={reset} style={{ padding: "10px 28px", fontSize: 14, color: "#5F5E5A" }}>Reset</Btn>}
-      </div>
-      <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 16px", width: 320, textAlign: "center", marginBottom: 24 }}>
-        {taskName ? (<div><div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Focusing on</div><div style={{ fontSize: 13, fontWeight: 500 }}>{taskName}</div></div>) : (<div><div style={{ fontSize: 12, color: "#5F5E5A", marginBottom: 6 }}>No task selected</div><button onClick={() => setPicking(true)} style={{ background: "none", border: "1px dashed #444441", color: "#888780", cursor: "pointer", fontSize: 11, padding: "4px 12px", borderRadius: 4 }}>Pick a task</button></div>)}
-      </div>
-      {picking && (<div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: 12, width: 320, maxHeight: 200, overflowY: "auto", marginBottom: 24 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Pick a task</span><button onClick={() => setPicking(false)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>✕</button></div>{tasks.map(tk => (<div key={tk.id} role="button" onMouseDown={() => { focusOn(tk.t, tk.id); setPicking(false); }} style={{ padding: "6px 10px", borderRadius: 4, cursor: "pointer", fontSize: 12, color: "#D3D1C7", marginBottom: 2 }} onMouseEnter={e => e.currentTarget.style.background = "#2C2C2A"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{tk.t === "issue" ? "◉" : "▷"} {tk.l}</div>))}</div>)}
-      <div style={{ display: "flex", gap: 12, width: 320 }}>
-        <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "12px 14px", border: "1px solid #2C2C2A" }}><div style={{ fontSize: 10, color: "#888780", textTransform: "uppercase", marginBottom: 4 }}>Today</div><div style={{ fontSize: 20, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{tw.length}</div><div style={{ fontSize: 10, color: "#5F5E5A" }}>sessions</div></div>
-        <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "12px 14px", border: "1px solid #2C2C2A" }}><div style={{ fontSize: 10, color: "#888780", textTransform: "uppercase", marginBottom: 4 }}>Focus time</div><div style={{ fontSize: 20, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{tfm}</div><div style={{ fontSize: 10, color: "#5F5E5A" }}>minutes</div></div>
+
+      {/* Right: stats + queue */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Daily goal */}
+        <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px", marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, color: "#B4B2A9" }}>{tfm} min today</span>
+            <span style={{ fontSize: 11, color: goalPct >= 100 ? "#5DCAA5" : "#5F5E5A" }}>{goalPct >= 100 ? "Goal reached" : `${goalMin - tfm} min to go`}</span>
+          </div>
+          <div style={{ height: 6, background: "#2C2C2A", borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${goalPct}%`, background: goalPct >= 100 ? "#5DCAA5" : "#378ADD", borderRadius: 3, transition: "width 0.5s" }} />
+          </div>
+        </div>
+
+        {/* Quick stats */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{tw.length}</div>
+            <div style={{ fontSize: 10, color: "#5F5E5A" }}>sessions</div>
+          </div>
+          <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{tfm}<span style={{ fontSize: 11, color: "#5F5E5A" }}>m</span></div>
+            <div style={{ fontSize: 10, color: "#5F5E5A" }}>focus time</div>
+          </div>
+          <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#85B7EB" }}>{daysWithToday}<span style={{ fontSize: 11, color: "#5F5E5A" }}>/7</span></div>
+            <div style={{ fontSize: 10, color: "#5F5E5A" }}>days this week</div>
+          </div>
+        </div>
+
+        {/* Task queue */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", marginBottom: 8 }}>Up next</div>
+          {queuedItems.length === 0 && <div style={{ fontSize: 11, color: "#5F5E5A", padding: "8px 0" }}>No tasks queued. Add a few to plan your session flow.</div>}
+          {queuedItems.map((tk, idx) => (
+            <div key={tk.qid} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: idx === 0 ? "#1A1A18" : "transparent", border: idx === 0 ? "1px solid #2C2C2A" : "1px solid transparent", borderRadius: 6, marginBottom: 4 }}>
+              <span style={{ fontSize: 10, color: "#5F5E5A", fontFamily: "'SF Mono', monospace", minWidth: 16 }}>{idx + 1}.</span>
+              <span style={{ color: tk.t === "issue" ? "#F09595" : "#85B7EB", fontSize: 12 }}>{tk.t === "issue" ? "◉" : "▷"}</span>
+              <span style={{ flex: 1, fontSize: 12, color: idx === 0 ? "#F1EFE8" : "#888780", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.l}</span>
+              {idx === 0 && tmr.st === "idle" && <button onClick={() => focusOn(tk.t, tk.id)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#E24B4A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>▶</button>}
+              <button onClick={() => removeQ(tk.qid)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10, padding: "0 2px" }}>✕</button>
+            </div>
+          ))}
+          {queuedItems.length < 5 && notQueued.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <select onChange={e => { if (e.target.value) { const t = openTasks.find(x => x.id === e.target.value); if (t) addQ(t); e.target.value = ""; } }} defaultValue="" style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#1A1A18", color: "#888780", border: "1px dashed #2C2C2A", outline: "none", cursor: "pointer", width: "100%" }}>
+                <option value="">+ Add to queue...</option>
+                {notQueued.map(t => <option key={t.id} value={t.id}>{t.t === "issue" ? "◉" : "▷"} {t.l}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw }) {
+function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, allSessions, notes }) {
   const pr = stats.tt > 0 ? Math.round((stats.tp / stats.tt) * 100) : 0;
   const branchColors = ["#E24B4A", "#378ADD", "#5DCAA5", "#D85A30", "#7F77DD", "#D4537E", "#BA7517", "#639922"];
 
@@ -401,9 +470,62 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw }) {
 
       {/* Test summary */}
       <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Test summary</div>
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 24 }}>
         {tests.length === 0 && <div style={{ fontSize: 12, color: "#5F5E5A" }}>No test cases yet</div>}
         {tests.map(t => (<div key={t.id} title={t.title} style={{ width: 28, height: 28, borderRadius: 4, background: TC[t.status].bg, border: `1px solid ${TC[t.status].border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: TC[t.status].text }}>{t.status === "pass" ? "✓" : t.status === "fail" ? "✗" : "·"}</div>))}
+      </div>
+
+      {/* Weekly focus chart + End of day summary */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {/* Weekly chart */}
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>This week</div>
+          <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
+            {(() => {
+              const days = [];
+              for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0,0,0,0); days.push(d); }
+              const dayMins = days.map(d => {
+                const next = new Date(d); next.setDate(next.getDate() + 1);
+                return Math.round((allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= d && new Date(s.completed_at) < next).reduce((a, s) => a + s.duration_seconds, 0) / 60);
+              });
+              const isToday = (d) => d.toDateString() === new Date().toDateString();
+              const maxMin = Math.max(...dayMins, 30);
+              const labels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+              return (
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 100 }}>
+                  {days.map((d, idx) => (
+                    <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 10, fontFamily: "'SF Mono', monospace", color: dayMins[idx] > 0 ? "#D3D1C7" : "#5F5E5A" }}>{dayMins[idx] || ""}</span>
+                      <div style={{ width: "100%", height: Math.max(4, (dayMins[idx] / maxMin) * 70), background: isToday(d) ? "#5DCAA5" : dayMins[idx] > 0 ? "#378ADD" : "#2C2C2A", borderRadius: 3, transition: "height 0.3s" }} />
+                      <span style={{ fontSize: 9, color: isToday(d) ? "#5DCAA5" : "#5F5E5A" }}>{labels[d.getDay()]}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* End of day summary */}
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Today you shipped</div>
+          <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
+            {(() => {
+              const today = new Date(); today.setHours(0,0,0,0);
+              const resolvedToday = issues.filter(i => ["fixed","verified"].includes(i.status) && new Date(i.created_at) >= today);
+              const passedToday = tests.filter(t => t.status === "pass" && t.last_run && new Date(t.last_run) >= today);
+              const notesToday = (notes || []).filter(n => new Date(n.created_at) >= today);
+              const hasAnything = resolvedToday.length || passedToday.length || notesToday.length || tw.length;
+              if (!hasAnything) return <div style={{ fontSize: 12, color: "#5F5E5A", textAlign: "center", padding: "16px 0" }}>Day's just getting started.</div>;
+              return (<div style={{ fontSize: 12, lineHeight: 1.8 }}>
+                {tw.length > 0 && <div style={{ color: "#E24B4A" }}>{tw.length} focus session{tw.length !== 1 ? "s" : ""} ({tfm} min)</div>}
+                {resolvedToday.map(i => <div key={i.id} style={{ color: "#5DCAA5" }}>Resolved: {i.title}</div>)}
+                {passedToday.map(t => <div key={t.id} style={{ color: "#97C459" }}>Passed: {t.title}</div>)}
+                {notesToday.length > 0 && <div style={{ color: "#AFA9EC" }}>{notesToday.length} note{notesToday.length !== 1 ? "s" : ""} written</div>}
+              </div>);
+            })()}
+          </div>
+        </div>
       </div>
     </div>
   );

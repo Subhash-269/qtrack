@@ -347,6 +347,41 @@ export function subscribeTimerState(callback) {
 }
 
 // ============================================
+// Task Queue
+// ============================================
+
+export async function getQueue(projectId) {
+  const { data, error } = await supabase
+    .from('task_queue')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('position', { ascending: true })
+  if (error) throw error
+  return data || []
+}
+
+export async function addToQueue(projectId, itemType, itemId, position) {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('task_queue')
+    .insert({ user_id, project_id: projectId, item_type: itemType, item_id: itemId, position: position || 0 })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function removeFromQueue(id) {
+  const { error } = await supabase.from('task_queue').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function clearQueue(projectId) {
+  const user_id = await uid()
+  const { error } = await supabase.from('task_queue').delete().eq('project_id', projectId).eq('user_id', user_id)
+  if (error) throw error
+}
+
+// ============================================
 // Notes
 // ============================================
 
