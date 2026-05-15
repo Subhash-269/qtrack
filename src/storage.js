@@ -91,7 +91,7 @@ export async function getIssues(projectId) {
   return data
 }
 
-export async function createIssue(projectId, fileId, title, type, priority, description) {
+export async function createIssue(projectId, fileId, title, type, priority, description, estimatedPomodoros, dueDate) {
   const user_id = await uid()
   const { data, error } = await supabase
     .from('issues')
@@ -99,6 +99,8 @@ export async function createIssue(projectId, fileId, title, type, priority, desc
       project_id: projectId,
       file_id: fileId,
       title, type, priority, description,
+      estimated_pomodoros: estimatedPomodoros || 0,
+      due_date: dueDate || null,
       user_id
     })
     .select()
@@ -111,6 +113,14 @@ export async function updateIssueStatus(id, status) {
   const { error } = await supabase
     .from('issues')
     .update({ status })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function updateIssuePlanning(id, estimatedPomodoros, dueDate) {
+  const { error } = await supabase
+    .from('issues')
+    .update({ estimated_pomodoros: estimatedPomodoros, due_date: dueDate || null })
     .eq('id', id)
   if (error) throw error
 }
@@ -134,7 +144,7 @@ export async function getTestCases(projectId) {
   return data
 }
 
-export async function createTestCase(projectId, fileId, title, precondition, steps) {
+export async function createTestCase(projectId, fileId, title, precondition, steps, estimatedPomodoros, dueDate) {
   const user_id = await uid()
   const { data, error } = await supabase
     .from('test_cases')
@@ -142,6 +152,8 @@ export async function createTestCase(projectId, fileId, title, precondition, ste
       project_id: projectId,
       file_id: fileId,
       title, precondition, steps,
+      estimated_pomodoros: estimatedPomodoros || 0,
+      due_date: dueDate || null,
       user_id
     })
     .select()
@@ -154,6 +166,14 @@ export async function updateTestStatus(id, status) {
   const { error } = await supabase
     .from('test_cases')
     .update({ status, last_run: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function updateTestPlanning(id, estimatedPomodoros, dueDate) {
+  const { error } = await supabase
+    .from('test_cases')
+    .update({ estimated_pomodoros: estimatedPomodoros, due_date: dueDate || null })
     .eq('id', id)
   if (error) throw error
 }
