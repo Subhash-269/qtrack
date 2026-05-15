@@ -402,27 +402,78 @@ function MediaPlayer() {
   const [type, setType] = useState(() => { try { return localStorage.getItem("qtrack_media_type") || ""; } catch { return ""; } });
   const [subtype, setSubtype] = useState(() => { try { return localStorage.getItem("qtrack_media_sub") || ""; } catch { return ""; } });
   const [expanded, setExpanded] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [naming, setNaming] = useState(null);
+  const [nameVal, setNameVal] = useState("");
+
+  useEffect(() => { db.getMediaHistory().then(h => setHistory(h || [])).catch(() => {}); }, []);
+
   const parseUrl = (raw) => { if (!raw) return null; let m = raw.match(/open\.spotify\.com\/(track|playlist|album|episode)\/([a-zA-Z0-9]+)/); if (m) return { type: "spotify", sub: m[1], embed: `https://open.spotify.com/embed/${m[1]}/${m[2]}?theme=0` }; m = raw.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/); if (m) return { type: "youtube", sub: "video", embed: `https://www.youtube.com/embed/${m[1]}` }; m = raw.match(/music\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/); if (m) return { type: "youtube", sub: "video", embed: `https://www.youtube.com/embed/${m[1]}` }; return null; };
-  const setMedia = () => { const p = parseUrl(inputVal); if (p) { setEmbedUrl(p.embed); setType(p.type); setSubtype(p.sub); setInputVal(""); try { localStorage.setItem("qtrack_media_embed", p.embed); localStorage.setItem("qtrack_media_type", p.type); localStorage.setItem("qtrack_media_sub", p.sub); } catch {} } };
-  const clearMedia = () => { setEmbedUrl(""); setType(""); setSubtype(""); setExpanded(false); try { localStorage.removeItem("qtrack_media_embed"); localStorage.removeItem("qtrack_media_type"); localStorage.removeItem("qtrack_media_sub"); } catch {} };
+  const defaultName = (t, s) => t === "spotify" ? `Spotify ${s}` : "YouTube";
+
+  const saveHistory = (nh) => { setHistory(nh); db.saveMediaHistory(nh).catch(() => {}); };
+
+  const playUrl = (raw) => {
+    const p = parseUrl(raw);
+    if (!p) return;
+    setEmbedUrl(p.embed); setType(p.type); setSubtype(p.sub); setInputVal("");
+    try { localStorage.setItem("qtrack_media_embed", p.embed); localStorage.setItem("qtrack_media_type", p.type); localStorage.setItem("qtrack_media_sub", p.sub); } catch {}
+    const existing = history.find(h => h.embed === p.embed);
+    if (existing) { saveHistory([existing, ...history.filter(h => h.embed !== p.embed)]); }
+    else { setNaming(p.embed); setNameVal(defaultName(p.type, p.sub)); }
+  };
+  const saveName = () => {
+    const name = nameVal.trim() || defaultName(type, subtype);
+    saveHistory([{ embed: embedUrl, type, sub: subtype, name }, ...history.filter(h => h.embed !== embedUrl)].slice(0, 8));
+    setNaming(null);
+  };
+  const playFromHistory = (h) => { setEmbedUrl(h.embed); setType(h.type); setSubtype(h.sub); try { localStorage.setItem("qtrack_media_embed", h.embed); localStorage.setItem("qtrack_media_type", h.type); localStorage.setItem("qtrack_media_sub", h.sub); } catch {} };
+  const clearMedia = () => { setEmbedUrl(""); setType(""); setSubtype(""); setExpanded(false); setNaming(null); try { localStorage.removeItem("qtrack_media_embed"); localStorage.removeItem("qtrack_media_type"); localStorage.removeItem("qtrack_media_sub"); } catch {} };
+  const removeHistory = (embed) => { saveHistory(history.filter(h => h.embed !== embed)); };
+  const renameHistory = (embed, newName) => { saveHistory(history.map(h => h.embed === embed ? { ...h, name: newName } : h)); };
+
   const isPlaylist = subtype === "playlist" || subtype === "album";
-  const compactH = type === "spotify" ? (isPlaylist ? 152 : 152) : 160;
-  const expandedH = type === "spotify" ? 380 : 280;
-  const h = expanded ? expandedH : compactH;
+  const h = expanded ? (type === "spotify" ? 380 : 280) : (type === "spotify" ? 152 : 160);
+
   return embedUrl ? (
-    <div style={{ opacity: 0.85, display: "flex", gap: 8, alignItems: "flex-start" }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <iframe src={embedUrl} width="100%" height={h} frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" allowFullScreen style={{ borderRadius: 8, transition: "height 0.2s ease" }} />
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingTop: 4, flexShrink: 0 }}>
-        {isPlaylist && <button onClick={() => setExpanded(!expanded)} title={expanded ? "Collapse" : "Show tracks"} style={{ background: "none", border: "1px solid #1A1A18", color: "#444441", cursor: "pointer", fontSize: 10, padding: "2px 6px", borderRadius: 3 }}>{expanded ? "▾" : "▴"}</button>}
-        <button onClick={clearMedia} title="Remove" style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 10 }}>✕</button>
+    <div style={{ opacity: 0.85 }}>
+      {/* Name prompt for new URLs */}
+      {naming && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+          <span style={{ fontSize: 10, color: "#5F5E5A" }}>Name this:</span>
+          <input autoFocus value={nameVal} onChange={e => setNameVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); }} placeholder="e.g. Lo-fi beats, Focus mix..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#161615", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+          <Btn small onClick={saveName}>Save</Btn>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <iframe src={embedUrl} width="100%" height={h} frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" allowFullScreen style={{ borderRadius: 8, transition: "height 0.2s ease" }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingTop: 4, flexShrink: 0 }}>
+          {isPlaylist && <button onClick={() => setExpanded(!expanded)} title={expanded ? "Collapse" : "Show tracks"} style={{ background: "none", border: "1px solid #1A1A18", color: "#444441", cursor: "pointer", fontSize: 10, padding: "2px 6px", borderRadius: 3 }}>{expanded ? "▾" : "▴"}</button>}
+          <button onClick={clearMedia} title="Stop" style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10 }}>✕</button>
+        </div>
       </div>
     </div>
   ) : (
-    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      <span style={{ fontSize: 10, color: "#2C2C2A", flexShrink: 0 }}>♪</span>
-      <input value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") setMedia(); }} placeholder="Paste Spotify or YouTube URL to play while you work..." style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 11, background: "transparent", color: "#5F5E5A", border: "1px solid #1A1A18", outline: "none", fontFamily: "'SF Mono', monospace" }} />
+    <div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <span style={{ fontSize: 10, color: "#2C2C2A", flexShrink: 0 }}>♪</span>
+        <input value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") playUrl(inputVal); }} placeholder="Paste Spotify or YouTube URL..." style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 11, background: "transparent", color: "#5F5E5A", border: "1px solid #1A1A18", outline: "none", fontFamily: "'SF Mono', monospace" }} />
+      </div>
+      {history.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 9, color: "#444441", marginBottom: 4 }}>Recent playlists</div>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {history.map((hi, idx) => (
+              <div key={idx} style={{ display: "inline-flex", alignItems: "center", gap: 0, background: "#161615", border: "1px solid #1A1A18", borderRadius: 4, overflow: "hidden" }}>
+                <button onClick={() => playFromHistory(hi)} style={{ padding: "4px 10px", fontSize: 10, cursor: "pointer", border: "none", background: "transparent", color: "#D3D1C7" }}>{hi.type === "spotify" ? "♫" : "▶"} {hi.name || defaultName(hi.type, hi.sub)}</button>
+                <button onClick={() => removeHistory(hi.embed)} title="Remove" style={{ padding: "4px 6px", border: "none", borderLeft: "1px solid #1A1A18", background: "transparent", color: "#444441", cursor: "pointer", fontSize: 9 }} onMouseEnter={e => e.currentTarget.style.color = "#F09595"} onMouseLeave={e => e.currentTarget.style.color = "#444441"}>✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

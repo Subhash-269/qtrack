@@ -372,6 +372,24 @@ export function subscribeTimerState(callback) {
     .subscribe()
 }
 
+export async function getMediaHistory() {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('timer_state')
+    .select('media_history')
+    .eq('user_id', user_id)
+    .single()
+  if (error) return []
+  return data?.media_history || []
+}
+
+export async function saveMediaHistory(history) {
+  const user_id = await uid()
+  await supabase
+    .from('timer_state')
+    .upsert({ user_id, media_history: history }, { onConflict: 'user_id' })
+}
+
 // ============================================
 // Task Queue
 // ============================================
