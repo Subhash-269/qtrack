@@ -212,3 +212,49 @@ export async function unlinkIssueFromTest(issueId, testCaseId) {
     .eq('test_case_id', testCaseId)
   if (error) throw error
 }
+
+// ============================================
+// Focus Sessions (Pomodoro)
+// ============================================
+
+export async function saveFocusSession(projectId, issueId, testCaseId, sessionType, durationSeconds) {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('focus_sessions')
+    .insert({
+      user_id,
+      project_id: projectId || null,
+      issue_id: issueId || null,
+      test_case_id: testCaseId || null,
+      session_type: sessionType,
+      duration_seconds: durationSeconds,
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function getTodaySessions(projectId) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const { data, error } = await supabase
+    .from('focus_sessions')
+    .select('*')
+    .eq('project_id', projectId)
+    .gte('completed_at', today.toISOString())
+    .order('completed_at', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+
+export async function getAllSessions(projectId) {
+  const { data, error } = await supabase
+    .from('focus_sessions')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('completed_at', { ascending: false })
+    .limit(100)
+  if (error) throw error
+  return data || []
+}
