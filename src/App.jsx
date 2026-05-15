@@ -81,8 +81,8 @@ export default function App({ session }) {
   const renameProject = async (id, n) => { if (!n.trim()) return; await db.renameProject(id, n.trim()); setProjects(projects.map(p => p.id === id ? { ...p, name: n.trim() } : p)); setEditingProjectId(null); };
   const delProject = async (id) => { if (projects.length <= 1 || !confirm("Delete project and all data?")) return; await db.deleteProject(id); const r = projects.filter(p => p.id !== id); setProjects(r); if (activeProjectId === id) setActiveProjectId(r[0]?.id); };
   const addFile = async (n, c) => { await db.createFile(activeProjectId, n, c); await reload(); setModal(null); };
-  const addIssue = async (fid, t, ty, pr, d, ep, dd) => { await db.createIssue(activeProjectId, fid, t, ty, pr, d, ep, dd); await reload(); setModal(null); };
-  const addTest = async (fid, t, pre, st, ep, dd) => { await db.createTestCase(activeProjectId, fid, t, pre, st, ep, dd); await reload(); setModal(null); };
+  const addIssue = async (fid, t, ty, pr, d, ep, dd, rn, bn) => { await db.createIssue(activeProjectId, fid, t, ty, pr, d, ep, dd, rn, bn); await reload(); setModal(null); };
+  const addTest = async (fid, t, pre, st, ep, dd, rn, bn) => { await db.createTestCase(activeProjectId, fid, t, pre, st, ep, dd, rn, bn); await reload(); setModal(null); };
 
   // Count completed pomodoros per task
   const pomCount = (type, id) => allSessions.filter(s => s.session_type === "work" && (type === "issue" ? s.issue_id === id : s.test_case_id === id)).length;
@@ -218,6 +218,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
             {i.description && <div style={{ fontSize: 12, color: "#888780", marginBottom: 6, lineHeight: 1.5 }}>{i.description}</div>}
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", flexWrap: "wrap" }}>
               <span style={{ fontFamily: "'SF Mono', monospace" }}>{fm[i.file_id]?.name || "—"}</span><span>·</span><span>{SHORT_DATE(i.created_at)}</span>
+              {i.repo_name && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#888780" }}>{i.repo_name}{i.branch_name ? ` : ${i.branch_name}` : ""}</span></>}
               {est > 0 && <><span>·</span><span style={{ color: done >= est ? "#97C459" : "#E24B4A" }}>{done}/{est} pomodoros</span></>}
               {due && <><span>·</span><span style={{ color: due.color }}>{due.text}</span></>}
             </div>
@@ -254,6 +255,7 @@ function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, u
               <span style={{ fontFamily: "'SF Mono', monospace" }}>{fm[t.file_id]?.name || "—"}</span>
               {t.last_run && <><span>·</span><span>{SHORT_DATE(t.last_run)}</span></>}
               <span>·</span><span>{(t.steps||[]).length} step{(t.steps||[]).length !== 1 ? "s" : ""}</span>
+              {t.repo_name && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#888780" }}>{t.repo_name}{t.branch_name ? ` : ${t.branch_name}` : ""}</span></>}
               {est > 0 && <><span>·</span><span style={{ color: done >= est ? "#97C459" : "#E24B4A" }}>{done}/{est} pomodoros</span></>}
               {due && <><span>·</span><span style={{ color: due.color }}>{due.text}</span></>}
             </div>
@@ -292,6 +294,7 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
   const isEdit = !!e;
   const [n, setN] = useState(e?.title || ""); const [cat, setCat] = useState("other"); const [fid, setFid] = useState(e?.file_id || files[0]?.id || ""); const [ty, setTy] = useState(e?.type || "bug"); const [pr, setPr] = useState(e?.priority || "high"); const [desc, setDesc] = useState(e?.description || ""); const [pre, setPre] = useState(e?.precondition || ""); const [steps, setSteps] = useState(e?.steps?.length ? e.steps : [{ step: "", expected: "" }]); const [saving, setSaving] = useState(false);
   const [ep, setEp] = useState(e?.estimated_pomodoros || 0); const [dd, setDd] = useState(e?.due_date || "");
+  const [rn, setRn] = useState(e?.repo_name || ""); const [bn, setBn] = useState(e?.branch_name || "");
   const addStep = () => setSteps([...steps, { step: "", expected: "" }]);
   const updStep = (i, f, v) => { const s = [...steps]; s[i][f] = v; setSteps(s); };
   const submit = async () => {
@@ -300,19 +303,29 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
       if (modal.type === "project" && n.trim()) await addProject(n.trim());
       if (modal.type === "file" && n.trim()) await addFile(n.trim(), cat);
       if (modal.type === "issue" && n.trim() && fid) {
-        if (isEdit) await editIssue(e.id, { title: n.trim(), type: ty, priority: pr, description: desc, file_id: fid, estimated_pomodoros: ep, due_date: dd || null });
-        else await addIssue(fid, n.trim(), ty, pr, desc, ep, dd || null);
+        if (isEdit) await editIssue(e.id, { title: n.trim(), type: ty, priority: pr, description: desc, file_id: fid, estimated_pomodoros: ep, due_date: dd || null, repo_name: rn, branch_name: bn });
+        else await addIssue(fid, n.trim(), ty, pr, desc, ep, dd || null, rn, bn);
       }
       if (modal.type === "test" && n.trim() && fid) {
         const cleanSteps = steps.filter(s => s.step.trim());
-        if (isEdit) await editTest(e.id, { title: n.trim(), precondition: pre, steps: cleanSteps, file_id: fid, estimated_pomodoros: ep, due_date: dd || null });
-        else if (cleanSteps.length) await addTest(fid, n.trim(), pre, cleanSteps, ep, dd || null);
+        if (isEdit) await editTest(e.id, { title: n.trim(), precondition: pre, steps: cleanSteps, file_id: fid, estimated_pomodoros: ep, due_date: dd || null, repo_name: rn, branch_name: bn });
+        else if (cleanSteps.length) await addTest(fid, n.trim(), pre, cleanSteps, ep, dd || null, rn, bn);
       }
     } catch (err) { console.error(err); }
     setSaving(false);
   };
   const titles = isEdit ? { issue: "Edit issue", test: "Edit test case" } : { project: "New project", file: "Add file", issue: "New issue", test: "New test case" };
-  const planFields = (modal.type === "issue" || modal.type === "test") ? (
+  const planFields = (modal.type === "issue" || modal.type === "test") ? (<>
+    <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Repo</div>
+        <Input value={rn} onChange={setRn} placeholder="e.g. my-org/my-repo" mono style={{ fontSize: 12 }} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Branch</div>
+        <Input value={bn} onChange={setBn} placeholder="e.g. main" mono style={{ fontSize: 12 }} />
+      </div>
+    </div>
     <div style={{ display: "flex", gap: 8 }}>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Estimated pomodoros</div>
@@ -326,7 +339,7 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
         <input type="date" value={dd} onChange={e => setDd(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", boxSizing: "border-box" }} />
       </div>
     </div>
-  ) : null;
+  </>) : null;
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 440, maxHeight: "80vh", overflowY: "auto" }}>

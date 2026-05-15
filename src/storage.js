@@ -91,7 +91,7 @@ export async function getIssues(projectId) {
   return data
 }
 
-export async function createIssue(projectId, fileId, title, type, priority, description, estimatedPomodoros, dueDate) {
+export async function createIssue(projectId, fileId, title, type, priority, description, estimatedPomodoros, dueDate, repoName, branchName) {
   const user_id = await uid()
   const { data, error } = await supabase
     .from('issues')
@@ -101,6 +101,8 @@ export async function createIssue(projectId, fileId, title, type, priority, desc
       title, type, priority, description,
       estimated_pomodoros: estimatedPomodoros || 0,
       due_date: dueDate || null,
+      repo_name: repoName || '',
+      branch_name: branchName || '',
       user_id
     })
     .select()
@@ -125,10 +127,10 @@ export async function updateIssuePlanning(id, estimatedPomodoros, dueDate) {
   if (error) throw error
 }
 
-export async function updateIssue(id, { title, type, priority, description, file_id, estimated_pomodoros, due_date }) {
+export async function updateIssue(id, { title, type, priority, description, file_id, estimated_pomodoros, due_date, repo_name, branch_name }) {
   const { error } = await supabase
     .from('issues')
-    .update({ title, type, priority, description, file_id, estimated_pomodoros, due_date: due_date || null })
+    .update({ title, type, priority, description, file_id, estimated_pomodoros, due_date: due_date || null, repo_name: repo_name || '', branch_name: branch_name || '' })
     .eq('id', id)
   if (error) throw error
 }
@@ -152,7 +154,7 @@ export async function getTestCases(projectId) {
   return data
 }
 
-export async function createTestCase(projectId, fileId, title, precondition, steps, estimatedPomodoros, dueDate) {
+export async function createTestCase(projectId, fileId, title, precondition, steps, estimatedPomodoros, dueDate, repoName, branchName) {
   const user_id = await uid()
   const { data, error } = await supabase
     .from('test_cases')
@@ -162,6 +164,8 @@ export async function createTestCase(projectId, fileId, title, precondition, ste
       title, precondition, steps,
       estimated_pomodoros: estimatedPomodoros || 0,
       due_date: dueDate || null,
+      repo_name: repoName || '',
+      branch_name: branchName || '',
       user_id
     })
     .select()
@@ -186,10 +190,10 @@ export async function updateTestPlanning(id, estimatedPomodoros, dueDate) {
   if (error) throw error
 }
 
-export async function updateTestCase(id, { title, precondition, steps, file_id, estimated_pomodoros, due_date }) {
+export async function updateTestCase(id, { title, precondition, steps, file_id, estimated_pomodoros, due_date, repo_name, branch_name }) {
   const { error } = await supabase
     .from('test_cases')
-    .update({ title, precondition, steps, file_id, estimated_pomodoros, due_date: due_date || null })
+    .update({ title, precondition, steps, file_id, estimated_pomodoros, due_date: due_date || null, repo_name: repo_name || '', branch_name: branch_name || '' })
     .eq('id', id)
   if (error) throw error
 }
