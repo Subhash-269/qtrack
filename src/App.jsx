@@ -92,6 +92,8 @@ export default function App({ session }) {
   const delI = async (id) => { await db.deleteIssue(id); await reload(); };
   const delT = async (id) => { await db.deleteTestCase(id); await reload(); };
   const delF = async (id) => { await db.deleteFile(id); await reload(); };
+  const editIssue = async (id, fields) => { await db.updateIssue(id, fields); await reload(); setModal(null); };
+  const editTest = async (id, fields) => { await db.updateTestCase(id, fields); await reload(); setModal(null); };
   const lnk = async (iid, tid) => { await db.linkIssueToTest(iid, tid); await reload(); };
   const ulnk = async (iid, tid) => { await db.unlinkIssueFromTest(iid, tid); await reload(); };
 
@@ -126,13 +128,13 @@ export default function App({ session }) {
         <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
           {view === "dashboard" && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} />}
           {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} />}
-          {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} />}
-          {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} />}
+          {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} />}
+          {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
         </div>
       </div>
 
-      {modal && <Modal modal={modal} files={files} onClose={() => setModal(null)} addProject={addProject} addFile={addFile} addIssue={addIssue} addTest={addTest} />}
+      {modal && <Modal modal={modal} files={files} onClose={() => setModal(null)} addProject={addProject} addFile={addFile} addIssue={addIssue} addTest={addTest} editIssue={editIssue} editTest={editTest} />}
       {linkModal && <LinkModal lm={linkModal} issues={issues} tests={testCases} links={links} lnk={lnk} onClose={() => setLinkModal(null)} />}
     </div>
   );
@@ -202,7 +204,7 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw }) {
   );
 }
 
-function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, setFilterFile, filterPriority, setFilterPriority, updS, del, onAdd, links, tests, ulnk, openLink, focusOn, pomCount, fmtDue }) {
+function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, setFilterFile, filterPriority, setFilterPriority, updS, del, onAdd, onEdit, links, tests, ulnk, openLink, focusOn, pomCount, fmtDue }) {
   const ltIds = (iid) => links.filter(l => l.issue_id === iid).map(l => l.test_case_id);
   const tm = Object.fromEntries(tests.map(t => [t.id, t]));
   return (<div>
@@ -224,6 +226,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
             <button onClick={() => focusOn("issue", i.id)} title="Focus" style={{ background: "none", border: "1px solid #2C2C2A", color: "#E24B4A", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }}>▶</button>
             <Badge label={i.priority} colors={PC[i.priority]} />
             <Select value={i.status} onChange={s => updS(i.id, s)} options={ISSUE_STATUSES} style={{ fontSize: 11, padding: "3px 6px" }} />
+            <button onClick={() => onEdit(i)} title="Edit" style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
             <button onClick={() => del(i.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
           </div>
         </div>
@@ -235,7 +238,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
   </div>);
 }
 
-function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, updS, del, onAdd, links, allIssues, ulnk, openLink, focusOn, pomCount, fmtDue }) {
+function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, updS, del, onAdd, onEdit, links, allIssues, ulnk, openLink, focusOn, pomCount, fmtDue }) {
   const liIds = (tid) => links.filter(l => l.test_case_id === tid).map(l => l.issue_id);
   const im = Object.fromEntries(allIssues.map(i => [i.id, i]));
   return (<div>
@@ -259,6 +262,7 @@ function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, u
             <button onClick={() => focusOn("test", t.id)} title="Focus" style={{ background: "none", border: "1px solid #2C2C2A", color: "#E24B4A", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }}>▶</button>
             <Btn small onClick={() => updS(t.id, "pass")} style={{ color: t.status === "pass" ? "#97C459" : "#5F5E5A", borderColor: t.status === "pass" ? "#3B6D11" : undefined }}>✓</Btn>
             <Btn small onClick={() => updS(t.id, "fail")} style={{ color: t.status === "fail" ? "#F09595" : "#5F5E5A", borderColor: t.status === "fail" ? "#A32D2D" : undefined }}>✗</Btn>
+            <button onClick={() => onEdit(t)} title="Edit" style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
             <button onClick={() => del(t.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
           </div>
         </div>
@@ -283,13 +287,31 @@ function FilesView({ files, issues, tests, del, onAdd, onNav }) {
   return (<div>{CATEGORIES.filter(c => g[c]).map(cat => (<div key={cat} style={{ marginBottom: 20 }}><div style={{ fontSize: 11, fontWeight: 500, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{cat}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>{g[cat].map(f => { const a = ic(f.id), b = tc(f.id), c = tp(f.id); return (<div key={f.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, fontWeight: 500, color: "#D3D1C7" }}>{f.name}</span><button onClick={() => del(f.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 12 }}>✕</button></div><div style={{ display: "flex", gap: 12, fontSize: 11 }}><span onClick={() => onNav("issues", f.id)} style={{ cursor: "pointer", color: a > 0 ? "#F09595" : "#5F5E5A" }}>{a} issue{a !== 1 ? "s" : ""}</span><span onClick={() => onNav("tests", f.id)} style={{ cursor: "pointer", color: b > 0 ? "#85B7EB" : "#5F5E5A" }}>{c}/{b} tests</span></div></div>); })}</div></div>))}</div>);
 }
 
-function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest }) {
-  const [n, setN] = useState(""); const [cat, setCat] = useState("other"); const [fid, setFid] = useState(files[0]?.id || ""); const [ty, setTy] = useState("bug"); const [pr, setPr] = useState("high"); const [desc, setDesc] = useState(""); const [pre, setPre] = useState(""); const [steps, setSteps] = useState([{ step: "", expected: "" }]); const [saving, setSaving] = useState(false);
-  const [ep, setEp] = useState(0); const [dd, setDd] = useState("");
+function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, editIssue, editTest }) {
+  const e = modal.edit;
+  const isEdit = !!e;
+  const [n, setN] = useState(e?.title || ""); const [cat, setCat] = useState("other"); const [fid, setFid] = useState(e?.file_id || files[0]?.id || ""); const [ty, setTy] = useState(e?.type || "bug"); const [pr, setPr] = useState(e?.priority || "high"); const [desc, setDesc] = useState(e?.description || ""); const [pre, setPre] = useState(e?.precondition || ""); const [steps, setSteps] = useState(e?.steps?.length ? e.steps : [{ step: "", expected: "" }]); const [saving, setSaving] = useState(false);
+  const [ep, setEp] = useState(e?.estimated_pomodoros || 0); const [dd, setDd] = useState(e?.due_date || "");
   const addStep = () => setSteps([...steps, { step: "", expected: "" }]);
   const updStep = (i, f, v) => { const s = [...steps]; s[i][f] = v; setSteps(s); };
-  const submit = async () => { setSaving(true); try { if (modal.type === "project" && n.trim()) await addProject(n.trim()); if (modal.type === "file" && n.trim()) await addFile(n.trim(), cat); if (modal.type === "issue" && n.trim() && fid) await addIssue(fid, n.trim(), ty, pr, desc, ep, dd || null); if (modal.type === "test" && n.trim() && fid && steps[0].step) await addTest(fid, n.trim(), pre, steps.filter(s => s.step.trim()), ep, dd || null); } catch (e) { console.error(e); } setSaving(false); };
-  const titles = { project: "New project", file: "Add file", issue: "New issue", test: "New test case" };
+  const submit = async () => {
+    setSaving(true);
+    try {
+      if (modal.type === "project" && n.trim()) await addProject(n.trim());
+      if (modal.type === "file" && n.trim()) await addFile(n.trim(), cat);
+      if (modal.type === "issue" && n.trim() && fid) {
+        if (isEdit) await editIssue(e.id, { title: n.trim(), type: ty, priority: pr, description: desc, file_id: fid, estimated_pomodoros: ep, due_date: dd || null });
+        else await addIssue(fid, n.trim(), ty, pr, desc, ep, dd || null);
+      }
+      if (modal.type === "test" && n.trim() && fid) {
+        const cleanSteps = steps.filter(s => s.step.trim());
+        if (isEdit) await editTest(e.id, { title: n.trim(), precondition: pre, steps: cleanSteps, file_id: fid, estimated_pomodoros: ep, due_date: dd || null });
+        else if (cleanSteps.length) await addTest(fid, n.trim(), pre, cleanSteps, ep, dd || null);
+      }
+    } catch (err) { console.error(err); }
+    setSaving(false);
+  };
+  const titles = isEdit ? { issue: "Edit issue", test: "Edit test case" } : { project: "New project", file: "Add file", issue: "New issue", test: "New test case" };
   const planFields = (modal.type === "issue" || modal.type === "test") ? (
     <div style={{ display: "flex", gap: 8 }}>
       <div style={{ flex: 1 }}>
@@ -315,7 +337,7 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest }
           {modal.type === "issue" && <><Select value={fid} onChange={setFid} options={files.map(f => ({ value: f.id, label: f.name }))} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Issue title" /><div style={{ display: "flex", gap: 8 }}><Select value={ty} onChange={setTy} options={ISSUE_TYPES} style={{ flex: 1 }} /><Select value={pr} onChange={setPr} options={PRIORITIES} style={{ flex: 1 }} /></div><TextArea value={desc} onChange={setDesc} placeholder="Description (optional)" />{planFields}</>}
           {modal.type === "test" && <><Select value={fid} onChange={setFid} options={files.map(f => ({ value: f.id, label: f.name }))} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Test case title" /><TextArea value={pre} onChange={setPre} placeholder="Precondition (optional)" rows={1} />{planFields}<div style={{ fontSize: 11, fontWeight: 500, color: "#888780", marginTop: 4 }}>STEPS</div>{steps.map((s, i) => (<div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><span style={{ fontSize: 11, color: "#5F5E5A", marginTop: 8, fontFamily: "'SF Mono', monospace", minWidth: 16 }}>{i + 1}.</span><div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}><Input value={s.step} onChange={v => updStep(i, "step", v)} placeholder="What to do" /><Input value={s.expected} onChange={v => updStep(i, "expected", v)} placeholder="Expected result" /></div>{steps.length > 1 && <button onClick={() => setSteps(steps.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", marginTop: 6 }}>✕</button>}</div>))}<button onClick={addStep} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#5F5E5A", cursor: "pointer", padding: 6, borderRadius: 6, fontSize: 12, width: "100%" }}>+ Add step</button></>}
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}><Btn onClick={onClose}>Cancel</Btn><Btn primary onClick={submit} style={{ opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : "Create"}</Btn></div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}><Btn onClick={onClose}>Cancel</Btn><Btn primary onClick={submit} style={{ opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : isEdit ? "Save" : "Create"}</Btn></div>
       </div>
     </div>
   );

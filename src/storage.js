@@ -125,6 +125,14 @@ export async function updateIssuePlanning(id, estimatedPomodoros, dueDate) {
   if (error) throw error
 }
 
+export async function updateIssue(id, { title, type, priority, description, file_id, estimated_pomodoros, due_date }) {
+  const { error } = await supabase
+    .from('issues')
+    .update({ title, type, priority, description, file_id, estimated_pomodoros, due_date: due_date || null })
+    .eq('id', id)
+  if (error) throw error
+}
+
 export async function deleteIssue(id) {
   const { error } = await supabase.from('issues').delete().eq('id', id)
   if (error) throw error
@@ -174,6 +182,14 @@ export async function updateTestPlanning(id, estimatedPomodoros, dueDate) {
   const { error } = await supabase
     .from('test_cases')
     .update({ estimated_pomodoros: estimatedPomodoros, due_date: dueDate || null })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function updateTestCase(id, { title, precondition, steps, file_id, estimated_pomodoros, due_date }) {
+  const { error } = await supabase
+    .from('test_cases')
+    .update({ title, precondition, steps, file_id, estimated_pomodoros, due_date: due_date || null })
     .eq('id', id)
   if (error) throw error
 }
