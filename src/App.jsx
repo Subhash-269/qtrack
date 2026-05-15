@@ -143,9 +143,10 @@ export default function App({ session }) {
 
   const stats = { ob: issues.filter(i => i.type === "bug" && !["fixed","verified","wont_fix"].includes(i.status)).length, ot: issues.filter(i => i.type === "todo" && !["fixed","verified","wont_fix"].includes(i.status)).length, tp: testCases.filter(t => t.status === "pass").length, tt: testCases.length, fc: files.length, cr: issues.filter(i => i.priority === "critical" && !["fixed","verified","wont_fix"].includes(i.status)).length };
   const tw = todaySessions.filter(s => s.session_type === "work");
-  const savedMinutes = tw.reduce((a, s) => a + s.duration_seconds, 0);
+  const focusWork = tw.filter(s => !s.subtype || s.subtype === "focus" || s.subtype === "manual");
+  const savedSeconds = focusWork.reduce((a, s) => a + s.duration_seconds, 0);
   const liveElapsed = (tmr.st === "running" && tmr.type === "work") ? (tmr.total - tmr.left) : 0;
-  const tfm = Math.round((savedMinutes + liveElapsed) / 60);
+  const tfm = Math.round((savedSeconds + liveElapsed) / 60);
 
   const nav = [{ id: "dashboard", l: "Dashboard", ic: "◫" }, { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 }, { id: "issues", l: "Issues", ic: "◉", cnt: stats.ob + stats.ot }, { id: "tests", l: "Test cases", ic: "▷", cnt: stats.tt }, { id: "files", l: "Files", ic: "⊞", cnt: stats.fc }, { id: "calendar", l: "Calendar", ic: "▣", cnt: meetings.filter(m => !m.attended).length || 0 }, { id: "notes", l: "Notes", ic: "☰", cnt: notes.length || 0 }, { id: "board", l: "Board", ic: "▦", cnt: cards.length || 0 }];
 
@@ -207,7 +208,7 @@ export default function App({ session }) {
           </div>
         </div>
         <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
-          {view === "dashboard" && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} allSessions={allSessions} notes={notes} />}
+          {view === "dashboard" && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} />}
           {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} />}
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
@@ -337,7 +338,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Focus</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{Math.round(focusSec / 60)}m</span></div>
           {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Waiting</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{Math.round(waitSec / 60)}m</span></div>}
           {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Interrupted</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{Math.round(intSec / 60)}m</span></div>}
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Sessions</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{tw.length}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Sessions</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{ts.filter(s => s.session_type === "work" && (!s.subtype || s.subtype === "focus" || s.subtype === "manual")).length}</span></div>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>This week</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#85B7EB" }}>{daysWithToday}/7</span></div>
           <div style={{ borderTop: "1px solid #1A1A18", marginTop: 8, paddingTop: 8 }}>
             <button onClick={() => setShowLog(!showLog)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10, padding: 0 }}>{showLog ? "Cancel" : "+ Log past work"}</button>
@@ -405,7 +406,7 @@ function MediaPlayer() {
   );
 }
 
-function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, allSessions, notes }) {
+function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork, allSessions, notes }) {
   const pr = stats.tt > 0 ? Math.round((stats.tp / stats.tt) * 100) : 0;
   const branchColors = ["#E24B4A", "#378ADD", "#5DCAA5", "#D85A30", "#7F77DD", "#D4537E", "#BA7517", "#639922"];
 
@@ -436,7 +437,7 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, allSession
         <MetricCard label="Open to-dos" value={stats.ot} color="#85B7EB" />
         <MetricCard label="Test pass rate" value={stats.tt > 0 ? `${pr}%` : "—"} color={pr >= 80 ? "#97C459" : pr >= 50 ? "#FAC775" : "#F09595"} sub={`${stats.tp}/${stats.tt} passing`} />
         <MetricCard label="Files" value={stats.fc} color="#B4B2A9" />
-        <MetricCard label="Today's focus" value={`${tfm}m`} color="#E24B4A" sub={`${tw.length} sessions`} />
+        <MetricCard label="Today's focus" value={`${tfm}m`} color="#E24B4A" sub={`${focusWork.length} sessions`} />
       </div>
 
       {/* Repo+branch sections */}
@@ -602,10 +603,10 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, allSession
               const resolvedRecent = issues.filter(i => ["fixed","verified"].includes(i.status)).slice(-5);
               const passedToday = tests.filter(t => t.status === "pass" && t.last_run && new Date(t.last_run) >= today);
               const notesToday = (notes || []).filter(n => new Date(n.created_at) >= today);
-              const hasAnything = resolvedRecent.length || passedToday.length || notesToday.length || tw.length;
+              const hasAnything = resolvedRecent.length || passedToday.length || notesToday.length || focusWork.length;
               if (!hasAnything) return <div style={{ fontSize: 12, color: "#5F5E5A", textAlign: "center", padding: "16px 0" }}>Day's just getting started.</div>;
               return (<div style={{ fontSize: 12, lineHeight: 1.8 }}>
-                {tw.length > 0 && <div style={{ color: "#E24B4A" }}>{tw.length} focus session{tw.length !== 1 ? "s" : ""} ({tfm} min)</div>}
+                {focusWork.length > 0 && <div style={{ color: "#E24B4A" }}>{focusWork.length} focus session{focusWork.length !== 1 ? "s" : ""} ({tfm} min)</div>}
                 {resolvedRecent.map(i => <div key={i.id} style={{ color: "#5DCAA5" }}>Resolved: {i.title}</div>)}
                 {passedToday.map(t => <div key={t.id} style={{ color: "#97C459" }}>Passed: {t.title}</div>)}
                 {notesToday.length > 0 && <div style={{ color: "#AFA9EC" }}>{notesToday.length} note{notesToday.length !== 1 ? "s" : ""} written</div>}
