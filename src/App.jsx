@@ -102,6 +102,8 @@ export default function App({ session }) {
   const [searchQ, setSearchQ] = useState("");
   const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editingProjectId, setEditingProjectId] = useState(null);
+  const [editingProjectName, setEditingProjectName] = useState("");
   const initRef = useRef(false);
 
   // Load projects on mount (ref prevents StrictMode double-creation)
@@ -192,9 +194,6 @@ export default function App({ session }) {
 
   // ---- Supabase-backed actions ----
 
-  const [editingProjectId, setEditingProjectId] = useState(null);
-  const [editingProjectName, setEditingProjectName] = useState("");
-
   const addProject = async (name) => {
     const p = await db.createProject(name);
     setProjects([...projects, p]);
@@ -207,6 +206,15 @@ export default function App({ session }) {
     await db.renameProject(id, name.trim());
     setProjects(projects.map((p) => p.id === id ? { ...p, name: name.trim() } : p));
     setEditingProjectId(null);
+  };
+
+  const deleteProjectById = async (id) => {
+    if (projects.length <= 1) return;
+    if (!confirm("Delete this project and all its files, issues, and test cases?")) return;
+    await db.deleteProject(id);
+    const remaining = projects.filter((p) => p.id !== id);
+    setProjects(remaining);
+    if (activeProjectId === id) setActiveProjectId(remaining[0]?.id || null);
   };
 
   const addFile = async (name, category) => {
@@ -300,12 +308,21 @@ export default function App({ session }) {
                 />
               </div>
             ) : (
-              <button key={p.id}
-                onClick={() => setActiveProjectId(p.id)}
-                onDoubleClick={() => { setEditingProjectId(p.id); setEditingProjectName(p.name); }}
-                style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: activeProjectId === p.id ? "#2C2C2A" : "transparent", color: activeProjectId === p.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 12, textAlign: "left", marginBottom: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {p.name}
-              </button>
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 2, marginBottom: 1 }}>
+                <button
+                  onClick={() => setActiveProjectId(p.id)}
+                  onDoubleClick={() => { setEditingProjectId(p.id); setEditingProjectName(p.name); }}
+                  style={{ flex: 1, display: "block", padding: "6px 10px", borderRadius: 5, border: "none", background: activeProjectId === p.id ? "#2C2C2A" : "transparent", color: activeProjectId === p.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 12, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.name}
+                </button>
+                {projects.length > 1 && (
+                  <button onClick={() => deleteProjectById(p.id)} title="Delete project" style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11, padding: "4px", borderRadius: 4, opacity: 0.5, flexShrink: 0 }}
+                    onMouseEnter={(e) => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#F09595"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#444441"; }}>
+                    ✕
+                  </button>
+                )}
+              </div>
             )
           ))}
           <button onClick={() => setModal({ type: "project" })} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>
