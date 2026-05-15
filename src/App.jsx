@@ -101,8 +101,16 @@ export default function App({ session }) {
   const startTmr = (tt, ti) => { if (Notification.permission === "default") Notification.requestPermission(); setTmr(p => ({ ...p, st: "running", tType: tt || p.tType, tId: ti || p.tId, startedAt: new Date().toISOString() })); };
   const pauseTmr = () => setTmr(p => ({ ...p, st: "paused", startedAt: null }));
   const resumeTmr = () => setTmr(p => ({ ...p, st: "running", startedAt: new Date(Date.now() - (p.total - p.left) * 1000).toISOString() }));
-  const resetTmr = () => { if (tmr.st !== "idle" && !confirm("Stop the current timer? Progress on this session will be lost.")) return; setTmr({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null }); };
-  const focusOn = (type, id) => { if (tmr.st !== "idle" && !confirm("Switch task? The current timer will reset.")) return; setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id, startedAt: new Date().toISOString() }); setView("focus"); if (Notification.permission === "default") Notification.requestPermission(); };
+
+  const savePartial = async (t) => {
+    if (t.type !== "work" || t.st === "idle") return;
+    const elapsed = t.total - t.left;
+    if (elapsed < 10) return; // skip if less than 10 seconds
+    try { await db.saveFocusSession(activeProjectId, t.tType === "issue" ? t.tId : null, t.tType === "test" ? t.tId : null, "work", elapsed); loadToday(); } catch (e) { console.error(e); }
+  };
+
+  const resetTmr = async () => { if (tmr.st !== "idle" && !confirm("Stop the current timer?")) return; await savePartial(tmr); setTmr({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null }); };
+  const focusOn = async (type, id) => { if (tmr.st !== "idle" && !confirm("Switch task? Current progress will be saved.")) return; await savePartial(tmr); setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id, startedAt: new Date().toISOString() }); setView("focus"); if (Notification.permission === "default") Notification.requestPermission(); };
 
   useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); } }, []);
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
@@ -119,7 +127,10 @@ export default function App({ session }) {
   if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#111110", color: "#888780" }}>Loading...</div>;
 
   const stats = { ob: issues.filter(i => i.type === "bug" && !["fixed","verified","wont_fix"].includes(i.status)).length, ot: issues.filter(i => i.type === "todo" && !["fixed","verified","wont_fix"].includes(i.status)).length, tp: testCases.filter(t => t.status === "pass").length, tt: testCases.length, fc: files.length, cr: issues.filter(i => i.priority === "critical" && !["fixed","verified","wont_fix"].includes(i.status)).length };
-  const tw = todaySessions.filter(s => s.session_type === "work"); const tfm = Math.round(tw.reduce((a, s) => a + s.duration_seconds, 0) / 60);
+  const tw = todaySessions.filter(s => s.session_type === "work");
+  const savedMinutes = tw.reduce((a, s) => a + s.duration_seconds, 0);
+  const liveElapsed = (tmr.st === "running" && tmr.type === "work") ? (tmr.total - tmr.left) : 0;
+  const tfm = Math.round((savedMinutes + liveElapsed) / 60);
 
   const nav = [{ id: "dashboard", l: "Dashboard", ic: "◫" }, { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 }, { id: "issues", l: "Issues", ic: "◉", cnt: stats.ob + stats.ot }, { id: "tests", l: "Test cases", ic: "▷", cnt: stats.tt }, { id: "files", l: "Files", ic: "⊞", cnt: stats.fc }, { id: "notes", l: "Notes", ic: "☰", cnt: notes.length || 0 }, { id: "board", l: "Board", ic: "▦", cnt: cards.length || 0 }];
 
