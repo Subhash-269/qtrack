@@ -128,11 +128,11 @@ export async function updateIssuePlanning(id, estimatedPomodoros, dueDate) {
   if (error) throw error
 }
 
-export async function updateIssue(id, { title, type, priority, description, file_id, estimated_pomodoros, due_date, repo_name, branch_name, meeting_tag }) {
-  const { error } = await supabase
-    .from('issues')
-    .update({ title, type, priority, description, file_id, estimated_pomodoros, due_date: due_date || null, repo_name: repo_name || '', branch_name: branch_name || '', meeting_tag: meeting_tag || null })
-    .eq('id', id)
+export async function updateIssue(id, { title, type, priority, description, file_id, estimated_pomodoros, due_date, repo_name, branch_name, meeting_tag, scratch_notes, scratch_checklist }) {
+  const fields = { title, type, priority, description, file_id, estimated_pomodoros, due_date: due_date || null, repo_name: repo_name || '', branch_name: branch_name || '', meeting_tag: meeting_tag || null };
+  if (scratch_notes !== undefined) fields.scratch_notes = scratch_notes;
+  if (scratch_checklist !== undefined) fields.scratch_checklist = scratch_checklist;
+  const { error } = await supabase.from('issues').update(fields).eq('id', id)
   if (error) throw error
 }
 
@@ -192,11 +192,11 @@ export async function updateTestPlanning(id, estimatedPomodoros, dueDate) {
   if (error) throw error
 }
 
-export async function updateTestCase(id, { title, precondition, steps, file_id, estimated_pomodoros, due_date, repo_name, branch_name, meeting_tag }) {
-  const { error } = await supabase
-    .from('test_cases')
-    .update({ title, precondition, steps, file_id, estimated_pomodoros, due_date: due_date || null, repo_name: repo_name || '', branch_name: branch_name || '', meeting_tag: meeting_tag || null })
-    .eq('id', id)
+export async function updateTestCase(id, { title, precondition, steps, file_id, estimated_pomodoros, due_date, repo_name, branch_name, meeting_tag, scratch_notes, scratch_checklist }) {
+  const fields = { title, precondition, steps, file_id, estimated_pomodoros, due_date: due_date || null, repo_name: repo_name || '', branch_name: branch_name || '', meeting_tag: meeting_tag || null };
+  if (scratch_notes !== undefined) fields.scratch_notes = scratch_notes;
+  if (scratch_checklist !== undefined) fields.scratch_checklist = scratch_checklist;
+  const { error } = await supabase.from('test_cases').update(fields).eq('id', id)
   if (error) throw error
 }
 

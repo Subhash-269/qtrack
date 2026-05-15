@@ -210,7 +210,7 @@ export default function App({ session }) {
         </div>
         <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
           {view === "dashboard" && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} />}
-          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} markDone={async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } }} />}
+          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} markDone={async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } }} />}
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
@@ -250,13 +250,18 @@ export default function App({ session }) {
   );
 }
 
-function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions, todaySessions, logManual, markDone }) {
+function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions, todaySessions, logManual, allNotes, markDone }) {
   const [picking, setPicking] = useState(false);
   const [goalMin] = useState(120);
   const [showLog, setShowLog] = useState(false);
   const [logForm, setLogForm] = useState({ taskType: "", taskId: "", date: new Date().toISOString().split("T")[0], startTime: "09:00", endTime: "10:00" });
   const [logError, setLogError] = useState(null);
   const [pauseElapsed, setPauseElapsed] = useState(0);
+  const [scratch, setScratch] = useState("");
+  const [checklist, setChecklist] = useState([]);
+  const [newCheck, setNewCheck] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [taskInfoOpen, setTaskInfoOpen] = useState(false);
   const color = SC[tmr.type];
   const isActive = tmr.st !== "idle";
   const openTasks = [...issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status)).map(i => ({ id: i.id, t: "issue", l: i.title, p: i.priority })), ...tests.filter(t => t.status !== "pass").map(t => ({ id: t.id, t: "test", l: t.title, p: "medium" }))];
@@ -264,6 +269,27 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   const notQueued = openTasks.filter(t => !queue.some(q => q.item_id === t.id));
 
   useEffect(() => { let iv; if (tmr.st === "paused" && tmr.pausedAt) { iv = setInterval(() => setPauseElapsed(Math.floor((Date.now() - new Date(tmr.pausedAt).getTime()) / 1000)), 1000); } else { setPauseElapsed(0); } return () => { if (iv) clearInterval(iv); }; }, [tmr.st, tmr.pausedAt]);
+
+  // Load scratch + checklist from task
+  useEffect(() => {
+    const t = tmr.tId ? (tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId) : tests.find(t => t.id === tmr.tId)) : null;
+    setScratch(t?.scratch_notes || "");
+    try { setChecklist(Array.isArray(t?.scratch_checklist) ? t.scratch_checklist : JSON.parse(t?.scratch_checklist || "[]")); } catch { setChecklist([]); }
+    if (t) setDrawerOpen(true);
+  }, [tmr.tId]);
+
+  // Debounced save
+  const saveTimer = useRef(null);
+  const saveScratch = (newScratch, newChecklist) => {
+    if (!tmr.tId) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const fn = tmr.tType === "issue" ? db.updateIssue : db.updateTestCase;
+      fn(tmr.tId, { scratch_notes: newScratch, scratch_checklist: JSON.stringify(newChecklist) }).catch(() => {});
+    }, 1500);
+  };
+  const updateScratch = (v) => { setScratch(v); saveScratch(v, checklist); };
+  const updateChecklist = (cl) => { setChecklist(cl); saveScratch(scratch, cl); };
 
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0);
   const daysWithToday = new Set([...(allSessions || []).filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString()), ...(tw.length > 0 || (tmr.st === "running" && tmr.type === "work") ? [new Date().toDateString()] : [])]).size;
@@ -276,19 +302,212 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   const addQ = async (t) => { try { await db.addToQueue(projectId, t.t, t.id, queue.length); await reload(); } catch (e) { console.error(e); } };
   const removeQ = async (qid) => { try { await db.removeFromQueue(qid); await reload(); } catch (e) { console.error(e); } };
   const dragIdx = useRef(null);
-  const reorderQ = async (fromIdx, toIdx) => {
-    if (fromIdx === toIdx) return;
-    const items = [...queuedItems];
-    const [moved] = items.splice(fromIdx, 1);
-    items.splice(toIdx, 0, moved);
-    const orderedIds = items.map(t => t.qid);
-    try { await db.reorderQueue(orderedIds); await reload(); } catch (e) { console.error(e); }
-  };
+  const reorderQ = async (fromIdx, toIdx) => { if (fromIdx === toIdx) return; const items = [...queuedItems]; const [moved] = items.splice(fromIdx, 1); items.splice(toIdx, 0, moved); try { await db.reorderQueue(items.map(t => t.qid)); await reload(); } catch (e) { console.error(e); } };
   const submitLog = async () => { setLogError(null); try { const s = new Date(`${logForm.date}T${logForm.startTime}`); const e = new Date(`${logForm.date}T${logForm.endTime}`); if (e <= s) { setLogError("End must be after start"); return; } await logManual(logForm.taskType, logForm.taskId, s.toISOString(), e.toISOString()); setShowLog(false); } catch (e) { setLogError(e.message); } };
 
+  const task = tmr.tId ? (tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId) : tests.find(t => t.id === tmr.tId)) : null;
+  const isDone = task ? (tmr.tType === "issue" ? ["fixed","verified","wont_fix"].includes(task.status) : task.status === "pass") : false;
+  const linkedNotes = task ? (allNotes || []).filter(n => (tmr.tType === "issue" && n.linked_issue_id === tmr.tId) || (tmr.tType === "test" && n.linked_test_id === tmr.tId)) : [];
+  const hasTask = !!task;
+  const checkedCount = checklist.filter(c => c.done).length;
+
+  // Save scratchpad as a real note
+  const promoteToNote = async () => {
+    if (!scratch.trim() && checklist.length === 0) return;
+    let content = scratch;
+    if (checklist.length > 0) content += (content ? "\n\n" : "") + "Checklist:\n" + checklist.map(c => `${c.done ? "[x]" : "[ ]"} ${c.text}`).join("\n");
+    try {
+      await db.createNote(projectId, { title: taskName || "Focus notes", content, category: "investigation", linked_issue_id: tmr.tType === "issue" ? tmr.tId : null, linked_test_id: tmr.tType === "test" ? tmr.tId : null, linked_file_id: null, code_lang: "", meeting_tag: null });
+      await reload();
+    } catch (e) { console.error(e); }
+  };
+
+  // --- Slide-out context drawer ---
+  const drawer = hasTask && (
+    <div style={{ position: "relative" }}>
+      {/* Toggle tab */}
+      {!drawerOpen && (
+        <button onClick={() => setDrawerOpen(true)} style={{ position: "absolute", right: 0, top: 80, background: "#161615", border: "1px solid #1A1A18", borderRight: "none", borderRadius: "6px 0 0 6px", padding: "8px 6px", cursor: "pointer", color: "#5F5E5A", fontSize: 11, writingMode: "vertical-rl" }}>
+          {checkedCount > 0 ? `${checkedCount}/${checklist.length}` : "Notes"} ◂
+        </button>
+      )}
+      {/* Panel */}
+      <div style={{ width: drawerOpen ? 300 : 0, overflow: "hidden", transition: "width 0.25s ease", flexShrink: 0, height: "100%" }}>
+        <div style={{ width: 300, height: "100%", display: "flex", flexDirection: "column", background: "#161615", borderRadius: 10, border: "1px solid #1A1A18" }}>
+          {/* Header */}
+          <div style={{ padding: "10px 14px", borderBottom: "1px solid #1A1A18", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {task.repo_name && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{task.repo_name}</span>}
+              <Badge label={task.status} colors={TC[task.status] || { bg: "#2C2C2A", text: "#888780", border: "#444441" }} small />
+            </div>
+            <button onClick={() => setDrawerOpen(false)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 12 }}>▸</button>
+          </div>
+
+          {/* Checklist */}
+          <div style={{ padding: "10px 14px", borderBottom: "1px solid #1A1A18", flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>Steps</span>
+              {checklist.length > 0 && <span style={{ fontSize: 9, color: checkedCount === checklist.length && checklist.length > 0 ? "#5DCAA5" : "#5F5E5A" }}>{checkedCount}/{checklist.length}</span>}
+            </div>
+            {checklist.map((c, idx) => (
+              <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "3px 0" }}>
+                <input type="checkbox" checked={c.done} onChange={() => { const cl = [...checklist]; cl[idx].done = !cl[idx].done; updateChecklist(cl); }} style={{ cursor: "pointer", marginTop: 2, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: c.done ? "#5F5E5A" : "#D3D1C7", textDecoration: c.done ? "line-through" : "none", flex: 1, lineHeight: 1.4 }}>{c.text}</span>
+                <button onClick={() => updateChecklist(checklist.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9, flexShrink: 0 }}>✕</button>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+              <input value={newCheck} onChange={e => setNewCheck(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && newCheck.trim()) { updateChecklist([...checklist, { text: newCheck.trim(), done: false }]); setNewCheck(""); } }} placeholder="+ add step..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#F1EFE8", border: "1px solid #1A1A18", outline: "none" }} />
+            </div>
+          </div>
+
+          {/* Scratchpad */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+            <div style={{ padding: "8px 14px 0", display: "flex", justifyContent: "space-between", flexShrink: 0 }}>
+              <span style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>Scratch</span>
+              <span style={{ fontSize: 9, color: "#2C2C2A" }}>syncs</span>
+            </div>
+            <textarea
+              value={scratch}
+              onChange={e => updateScratch(e.target.value)}
+              placeholder={"SQL, errors, notes...\n\n-- paste code here\n-- jot thoughts"}
+              style={{ flex: 1, padding: "8px 14px", fontSize: 12, background: "transparent", color: "#D3D1C7", border: "none", outline: "none", resize: "none", fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, minHeight: 120 }}
+              onKeyDown={e => { if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; const end = e.target.selectionEnd; updateScratch(scratch.substring(0, s) + "  " + scratch.substring(end)); setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0); } }}
+            />
+          </div>
+
+          {/* Links + promote */}
+          <div style={{ padding: "8px 14px 10px", borderTop: "1px solid #1A1A18", flexShrink: 0 }}>
+            {linkedNotes.length > 0 && linkedNotes.map(n => <div key={n.id} style={{ fontSize: 10, color: "#AFA9EC", padding: "2px 0" }}>☰ {n.title || n.content.substring(0, 30)}</div>)}
+            <button onClick={promoteToNote} style={{ background: "none", border: "1px dashed #1A1A18", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "4px 8px", borderRadius: 4, width: "100%", marginTop: 4 }}>↗ Save as note</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // --- Timer + controls (reused) ---
+  const timerSection = (size) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div style={{ position: "relative", width: size, height: size }}>
+        <Ring size={size} stroke={size > 200 ? 6 : 5} timeLeft={tmr.left} totalTime={tmr.total} color={isActive ? color : "#2C2C2A"} />
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ fontSize: size > 200 ? 56 : 40, fontWeight: 400, fontFamily: "'SF Mono', 'Fira Code', monospace", color: isActive ? color : "#5F5E5A", letterSpacing: -2, lineHeight: 1 }}>{FMT(tmr.left)}</div>
+          <div style={{ fontSize: 10, color: "#5F5E5A", marginTop: 6, letterSpacing: 1, textTransform: "uppercase" }}>{tmr.type === "work" ? "focus" : tmr.type === "short_break" ? "short break" : "long break"}</div>
+          <div style={{ display: "flex", gap: 5, marginTop: 8 }}>{[0,1,2,3].map(i => (<div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: i < tmr.done ? color : "#2C2C2A" }} />))}</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const controls = (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginTop: 16 }}>
+      {tmr.st === "idle" && <>
+        <Btn primary onClick={() => start()} style={{ padding: "10px 28px", fontSize: 14, borderRadius: 8 }}>Start</Btn>
+        {!taskName && <Btn onClick={() => setPicking(true)} small style={{ color: "#5F5E5A" }}>Pick task</Btn>}
+        {queuedItems.length > 0 && !taskName && <Btn onClick={() => focusOn(queuedItems[0].t, queuedItems[0].id)} small style={{ color: "#E24B4A" }}>▶ {queuedItems[0].l.substring(0, 16)}</Btn>}
+      </>}
+      {tmr.st === "running" && <>
+        <Btn onClick={() => pauseWith("waiting")} small style={{ color: "#378ADD", borderColor: "#378ADD33" }}>Waiting</Btn>
+        <Btn onClick={() => pauseWith("interrupted")} small style={{ color: "#D85A30", borderColor: "#D85A3033" }}>Interrupted</Btn>
+        <Btn onClick={pause} small style={{ color: "#888780" }}>Pause</Btn>
+        <Btn onClick={reset} small style={{ color: "#444441" }}>Stop</Btn>
+      </>}
+      {tmr.st === "paused" && !tmr.pauseReason && <>
+        <Btn primary onClick={resume} style={{ padding: "10px 28px", fontSize: 14, borderRadius: 8 }}>Resume</Btn>
+        <Btn onClick={reset} small style={{ color: "#444441" }}>Stop</Btn>
+      </>}
+    </div>
+  );
+
+  // ===============================
+  // TASK ACTIVE: 70/30 split
+  // ===============================
+  if (hasTask) {
+    return (
+      <div style={{ display: "flex", gap: 0, minHeight: "calc(100vh - 160px)" }}>
+        {/* 70%: Timer area */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", paddingRight: 16 }}>
+          {/* Goal bar */}
+          <div style={{ width: "100%", maxWidth: 500, marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+              <span style={{ fontSize: 10, color: "#5F5E5A" }}>{tfm}m focused</span>
+              <span style={{ fontSize: 10, color: goalPct >= 100 ? "#5DCAA5" : "#444441" }}>{goalPct >= 100 ? "Goal reached" : `${goalMin}m goal`}</span>
+            </div>
+            <div style={{ height: 2, background: "#1A1A18", borderRadius: 1 }}><div style={{ height: "100%", width: `${goalPct}%`, background: goalPct >= 100 ? "#5DCAA5" : color, borderRadius: 1, transition: "width 0.5s" }} /></div>
+          </div>
+
+          {/* Task info bar — compact by default, expandable */}
+          <div style={{ marginBottom: 16, width: "100%", maxWidth: 500 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
+              <Badge label={tmr.tType === "issue" ? task.type : "test"} colors={tmr.tType === "issue" ? (task.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }) : { bg: "#0E1A08", text: "#97C459", border: "#173404" }} small />
+              {tmr.tType === "issue" && <Badge label={task.priority} colors={PC[task.priority]} small />}
+              <span style={{ fontSize: 13, color: "#D3D1C7", fontWeight: 500 }}>{taskName}</span>
+              {isDone ? <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#081F12", color: "#5DCAA5", border: "1px solid #04342C" }}>✓ done</span>
+              : <button onClick={markDone} style={{ fontSize: 10, padding: "3px 10px", borderRadius: 4, background: "none", color: "#5DCAA5", border: "1px solid #04342C", cursor: "pointer", fontWeight: 500 }}>✓ Finish</button>}
+              <button onClick={() => setTaskInfoOpen(!taskInfoOpen)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10 }}>{taskInfoOpen ? "▴" : "▾"}</button>
+            </div>
+            {taskInfoOpen && (
+              <div style={{ marginTop: 10, background: "#161615", border: "1px solid #1A1A18", borderRadius: 8, padding: "12px 16px" }}>
+                {task.description && <div style={{ fontSize: 12, color: "#888780", lineHeight: 1.6, marginBottom: 10 }}>{task.description}</div>}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <Badge label={task.status} colors={TC[task.status] || { bg: "#2C2C2A", text: "#888780", border: "#444441" }} small />
+                  {task.repo_name && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{task.repo_name}</span>}
+                  {task.branch_name && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", fontFamily: "'SF Mono', monospace" }}>{task.branch_name}</span>}
+                  {task.due_date && <span style={{ fontSize: 10, color: "#5F5E5A" }}>Due {task.due_date}</span>}
+                  {task.estimated_pomodoros > 0 && <span style={{ fontSize: 10, color: "#5F5E5A" }}>{task.estimated_pomodoros} pom</span>}
+                  {parseMtags(task.meeting_tag).length > 0 && parseMtags(task.meeting_tag).map(t => <span key={t} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C" }}>{t}</span>)}
+                </div>
+                {linkedNotes.length > 0 && <div style={{ marginTop: 8, borderTop: "1px solid #1A1A18", paddingTop: 8 }}>{linkedNotes.map(n => <div key={n.id} style={{ fontSize: 10, color: "#AFA9EC", padding: "2px 0" }}>☰ {n.title || n.content.substring(0, 40)}</div>)}</div>}
+              </div>
+            )}
+          </div>
+
+          {timerSection(200)}
+          {controls}
+
+          {/* Pause reason */}
+          {tmr.st === "paused" && tmr.pauseReason && (
+            <div style={{ marginTop: 16, padding: "16px 24px", background: "#161615", border: `1px solid ${tmr.pauseReason === "waiting" ? "#378ADD22" : "#D85A3022"}`, borderRadius: 10, textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>{tmr.pauseReason === "waiting" ? "waiting for code" : "interrupted"}</div>
+              <div style={{ fontSize: 28, fontFamily: "'SF Mono', monospace", color: tmr.pauseReason === "waiting" ? "#378ADD" : "#D85A30" }}>{FMT(pauseElapsed)}</div>
+              <Btn primary onClick={resume} small style={{ marginTop: 10 }}>Resume focus</Btn>
+            </div>
+          )}
+
+          {/* Compact stats + queue row */}
+          <div style={{ display: "flex", gap: 12, marginTop: 24, width: "100%", maxWidth: 500 }}>
+            <div style={{ flex: 1, background: "#161615", borderRadius: 8, padding: "10px 12px", border: "1px solid #1A1A18", fontSize: 11 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Focus</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{Math.round(focusSec / 60)}m</span></div>
+              {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Waiting</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{Math.round(waitSec / 60)}m</span></div>}
+              {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Interrupted</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{Math.round(intSec / 60)}m</span></div>}
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Sessions</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").length}</span></div>
+            </div>
+            <div style={{ flex: 1, background: "#161615", borderRadius: 8, padding: "10px 12px", border: "1px solid #1A1A18", fontSize: 10 }}>
+              <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Up next</div>
+              {queuedItems.slice(0, 3).map((tk, idx) => (
+                <div key={tk.qid} draggable onDragStart={() => { dragIdx.current = idx; }} onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderTop = "2px solid #7F77DD"; }} onDragLeave={e => { e.currentTarget.style.borderTop = "none"; }} onDrop={e => { e.preventDefault(); e.currentTarget.style.borderTop = "none"; if (dragIdx.current !== null) { reorderQ(dragIdx.current, idx); dragIdx.current = null; } }} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 0", cursor: "grab" }}>
+                  <span style={{ color: "#2C2C2A", fontSize: 9 }}>⠿</span>
+                  <span style={{ color: tk.t === "issue" ? "#F09595" : "#85B7EB", fontSize: 10 }}>{tk.t === "issue" ? "◉" : "▷"}</span>
+                  <span style={{ flex: 1, color: "#5F5E5A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.l}</span>
+                </div>
+              ))}
+              {queuedItems.length === 0 && <div style={{ color: "#2C2C2A" }}>Empty</div>}
+            </div>
+          </div>
+        </div>
+
+        {/* 30%: Context drawer */}
+        {drawer}
+      </div>
+    );
+  }
+
+  // ===============================
+  // NO TASK: centered hero
+  // ===============================
   return (
     <div style={{ maxWidth: 720, margin: "0 auto" }}>
-      {/* Goal — whisper thin */}
       <div style={{ marginBottom: 32 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
           <span style={{ fontSize: 10, color: "#5F5E5A" }}>{tfm}m focused</span>
@@ -297,70 +516,14 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
         <div style={{ height: 2, background: "#1A1A18", borderRadius: 1 }}><div style={{ height: "100%", width: `${goalPct}%`, background: goalPct >= 100 ? "#5DCAA5" : color, borderRadius: 1, transition: "width 0.5s" }} /></div>
       </div>
 
-      {/* Timer hero */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 32 }}>
-        <div style={{ position: "relative", width: 260, height: 260 }}>
-          <Ring size={260} stroke={6} timeLeft={tmr.left} totalTime={tmr.total} color={isActive ? color : "#2C2C2A"} />
-          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ fontSize: 56, fontWeight: 400, fontFamily: "'SF Mono', 'Fira Code', monospace", color: isActive ? color : "#5F5E5A", letterSpacing: -3, lineHeight: 1 }}>{FMT(tmr.left)}</div>
-            <div style={{ fontSize: 11, color: "#5F5E5A", marginTop: 8, letterSpacing: 1, textTransform: "uppercase" }}>{tmr.type === "work" ? "focus" : tmr.type === "short_break" ? "short break" : "long break"}</div>
-            {/* Session dots inside ring */}
-            <div style={{ display: "flex", gap: 6, marginTop: 12 }}>{[0,1,2,3].map(i => (<div key={i} style={{ width: 6, height: 6, borderRadius: "50%", background: i < tmr.done ? color : "#2C2C2A", transition: "background 0.3s" }} />))}</div>
-          </div>
-        </div>
-
-        {/* Task label + finish */}
-        {taskName && (() => {
-          const task = tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId) : tests.find(t => t.id === tmr.tId);
-          const isDone = tmr.tType === "issue" ? ["fixed","verified","wont_fix"].includes(task?.status) : task?.status === "pass";
-          return (
-            <div style={{ marginTop: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <span style={{ fontSize: 13, color: "#888780" }}><span style={{ color: "#444441" }}>on </span><span style={{ color: "#D3D1C7" }}>{taskName}</span></span>
-              {isDone ? (
-                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#081F12", color: "#5DCAA5", border: "1px solid #04342C" }}>✓ done</span>
-              ) : (
-                <button onClick={markDone} style={{ fontSize: 10, padding: "3px 10px", borderRadius: 4, background: "none", color: "#5DCAA5", border: "1px solid #04342C", cursor: "pointer", fontWeight: 500 }}>✓ Finish task</button>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* Controls */}
-        <div style={{ marginTop: 20, display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-          {tmr.st === "idle" && <>
-            <Btn primary onClick={() => start()} style={{ padding: "12px 36px", fontSize: 15, borderRadius: 8 }}>Start</Btn>
-            {!taskName && <Btn onClick={() => setPicking(true)} small style={{ color: "#5F5E5A" }}>Pick task</Btn>}
-            {queuedItems.length > 0 && !taskName && <Btn onClick={() => focusOn(queuedItems[0].t, queuedItems[0].id)} small style={{ color: "#E24B4A" }}>▶ {queuedItems[0].l.substring(0, 20)}{queuedItems[0].l.length > 20 ? "..." : ""}</Btn>}
-          </>}
-          {tmr.st === "running" && <>
-            <Btn onClick={() => pauseWith("waiting")} small style={{ color: "#378ADD", borderColor: "#378ADD33" }}>Waiting</Btn>
-            <Btn onClick={() => pauseWith("interrupted")} small style={{ color: "#D85A30", borderColor: "#D85A3033" }}>Interrupted</Btn>
-            <Btn onClick={pause} small style={{ color: "#888780" }}>Pause</Btn>
-            <Btn onClick={reset} small style={{ color: "#444441" }}>Stop</Btn>
-          </>}
-          {tmr.st === "paused" && !tmr.pauseReason && <>
-            <Btn primary onClick={resume} style={{ padding: "12px 36px", fontSize: 15, borderRadius: 8 }}>Resume</Btn>
-            <Btn onClick={reset} small style={{ color: "#444441" }}>Stop</Btn>
-          </>}
-        </div>
-
-        {/* Pause reason state */}
-        {tmr.st === "paused" && tmr.pauseReason && (
-          <div style={{ marginTop: 20, padding: "20px 32px", background: "#161615", border: `1px solid ${tmr.pauseReason === "waiting" ? "#378ADD22" : "#D85A3022"}`, borderRadius: 12, textAlign: "center" }}>
-            <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{tmr.pauseReason === "waiting" ? "waiting for code" : "interrupted"}</div>
-            <div style={{ fontSize: 32, fontFamily: "'SF Mono', monospace", color: tmr.pauseReason === "waiting" ? "#378ADD" : "#D85A30", fontWeight: 400 }}>{FMT(pauseElapsed)}</div>
-            <div style={{ fontSize: 10, color: "#444441", margin: "8px 0 14px" }}>tracked separately</div>
-            <Btn primary onClick={resume} style={{ padding: "10px 28px", borderRadius: 8 }}>Resume focus</Btn>
-          </div>
-        )}
+        {timerSection(260)}
+        {controls}
       </div>
 
-      {/* Task picker */}
       {picking && (<div style={{ maxWidth: 400, margin: "0 auto 24px", background: "#161615", border: "1px solid #2C2C2A", borderRadius: 10, padding: 14, maxHeight: 220, overflowY: "auto" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Pick a task</span><button onClick={() => setPicking(false)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 10 }}>✕</button></div>{openTasks.map(tk => (<div key={tk.id} role="button" onMouseDown={() => { focusOn(tk.t, tk.id); setPicking(false); }} style={{ padding: "7px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, color: "#D3D1C7", marginBottom: 2 }} onMouseEnter={e => e.currentTarget.style.background = "#1A1A18"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{tk.t === "issue" ? "◉" : "▷"} {tk.l}</div>))}</div>)}
 
-      {/* Bottom panels */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        {/* Stats */}
         <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
           <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Today</div>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Focus</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{Math.round(focusSec / 60)}m</span></div>
@@ -368,7 +531,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Interrupted</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{Math.round(intSec / 60)}m</span></div>}
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Sessions</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").length}</span></div>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>This week</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#85B7EB" }}>{daysWithToday}/7</span></div>
-          <div style={{ borderTop: "1px solid #1A1A18", marginTop: 8, paddingTop: 8 }}>
+          <div style={{ borderTop: "1px solid #1A1A18", marginTop: 6, paddingTop: 6 }}>
             <button onClick={() => setShowLog(!showLog)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10, padding: 0 }}>{showLog ? "Cancel" : "+ Log past work"}</button>
           </div>
           {showLog && (<div style={{ marginTop: 8 }}>
@@ -383,14 +546,12 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           </div>)}
         </div>
 
-        {/* Queue */}
         <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
           <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Up next</div>
           {queuedItems.length === 0 && <div style={{ fontSize: 11, color: "#2C2C2A", padding: "8px 0" }}>Queue empty</div>}
           {queuedItems.map((tk, idx) => (
             <div key={tk.qid} draggable onDragStart={() => { dragIdx.current = idx; }} onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderTop = "2px solid #7F77DD"; }} onDragLeave={e => { e.currentTarget.style.borderTop = "none"; }} onDrop={e => { e.preventDefault(); e.currentTarget.style.borderTop = "none"; if (dragIdx.current !== null) { reorderQ(dragIdx.current, idx); dragIdx.current = null; } }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: idx < queuedItems.length - 1 ? "1px solid #1A1A18" : "none", cursor: "grab" }}>
               <span style={{ fontSize: 10, color: "#2C2C2A", cursor: "grab" }}>⠿</span>
-              <span style={{ fontSize: 9, color: "#444441", fontFamily: "'SF Mono', monospace" }}>{idx + 1}</span>
               <span style={{ color: tk.t === "issue" ? "#F09595" : "#85B7EB", fontSize: 11 }}>{tk.t === "issue" ? "◉" : "▷"}</span>
               <span style={{ flex: 1, fontSize: 11, color: idx === 0 ? "#D3D1C7" : "#5F5E5A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.l}</span>
               <button onClick={() => removeQ(tk.qid)} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9 }}>✕</button>
