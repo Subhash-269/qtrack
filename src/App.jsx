@@ -32,7 +32,7 @@ export default function App({ session }) {
   const [view, setView] = useState("dashboard"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null);
   const [filterType, setFilterType] = useState("all"); const [filterFile, setFilterFile] = useState("all"); const [filterPriority, setFilterPriority] = useState("all"); const [searchQ, setSearchQ] = useState(""); const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
-  const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null });
+  const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null });
   const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]); const [viewingNoteId, setViewingNoteId] = useState(null); const [queue, setQueue] = useState([]);
   const tRef = useRef(null); const initRef = useRef(false); const syncRef = useRef(false); const loadedTimerRef = useRef(false);
 
@@ -98,19 +98,33 @@ export default function App({ session }) {
     setTmr({ st: "idle", left: DUR[nt], total: DUR[nt], type: nt, done: nc, tType: p.tType, tId: p.tId, startedAt: null });
   };
 
-  const startTmr = (tt, ti) => { if (Notification.permission === "default") Notification.requestPermission(); setTmr(p => ({ ...p, st: "running", tType: tt || p.tType, tId: ti || p.tId, startedAt: new Date().toISOString() })); };
-  const pauseTmr = () => setTmr(p => ({ ...p, st: "paused", startedAt: null }));
-  const resumeTmr = () => setTmr(p => ({ ...p, st: "running", startedAt: new Date(Date.now() - (p.total - p.left) * 1000).toISOString() }));
+  const startTmr = (tt, ti) => { if (Notification.permission === "default") Notification.requestPermission(); setTmr(p => ({ ...p, st: "running", tType: tt || p.tType, tId: ti || p.tId, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null })); };
+  const pauseWithReason = (reason) => setTmr(p => ({ ...p, st: "paused", startedAt: null, pauseReason: reason || null, pausedAt: new Date().toISOString() }));
+  const pauseTmr = () => pauseWithReason(null);
+  const resumeTmr = async () => {
+    // Log the pause duration if there was a reason
+    if (tmr.pauseReason && tmr.pausedAt) {
+      const pauseDur = Math.round((Date.now() - new Date(tmr.pausedAt).getTime()) / 1000);
+      if (pauseDur >= 10) {
+        try { await db.saveFocusSession(activeProjectId, tmr.tType === "issue" ? tmr.tId : null, tmr.tType === "test" ? tmr.tId : null, "work", pauseDur, tmr.pauseReason); loadToday(); } catch (e) { console.error(e); }
+      }
+    }
+    setTmr(p => ({ ...p, st: "running", startedAt: new Date(Date.now() - (p.total - p.left) * 1000).toISOString(), pauseReason: null, pausedAt: null }));
+  };
 
   const savePartial = async (t) => {
     if (t.type !== "work" || t.st === "idle") return;
     const elapsed = t.total - t.left;
-    if (elapsed < 10) return; // skip if less than 10 seconds
+    if (elapsed < 10) return;
     try { await db.saveFocusSession(activeProjectId, t.tType === "issue" ? t.tId : null, t.tType === "test" ? t.tId : null, "work", elapsed); loadToday(); } catch (e) { console.error(e); }
   };
 
-  const resetTmr = async () => { if (tmr.st !== "idle" && !confirm("Stop the current timer?")) return; await savePartial(tmr); setTmr({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null }); };
-  const focusOn = async (type, id) => { if (tmr.st !== "idle" && !confirm("Switch task? Current progress will be saved.")) return; await savePartial(tmr); setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id, startedAt: new Date().toISOString() }); setView("focus"); if (Notification.permission === "default") Notification.requestPermission(); };
+  const logManual = async (taskType, taskId, startTime, endTime) => {
+    try { await db.saveManualSession(activeProjectId, taskType === "issue" ? taskId : null, taskType === "test" ? taskId : null, startTime, endTime); loadToday(); } catch (e) { console.error(e); throw e; }
+  };
+
+  const resetTmr = async () => { if (tmr.st !== "idle" && !confirm("Stop the current timer?")) return; await savePartial(tmr); setTmr({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null }); };
+  const focusOn = async (type, id) => { if (tmr.st !== "idle" && !confirm("Switch task? Current progress will be saved.")) return; await savePartial(tmr); setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null }); setView("focus"); if (Notification.permission === "default") Notification.requestPermission(); };
 
   useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); } }, []);
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
@@ -184,7 +198,7 @@ export default function App({ session }) {
         </div>
         <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
           {view === "dashboard" && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} allSessions={allSessions} notes={notes} />}
-          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} />}
+          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} />}
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
@@ -217,25 +231,58 @@ export default function App({ session }) {
   );
 }
 
-function FocusView({ tmr, taskName, issues, tests, start, pause, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions }) {
+function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions, todaySessions, logManual }) {
   const [picking, setPicking] = useState(false);
   const [goalMin] = useState(120);
+  const [showLog, setShowLog] = useState(false);
+  const [logForm, setLogForm] = useState({ taskType: "", taskId: "", date: new Date().toISOString().split("T")[0], startTime: "09:00", endTime: "10:00" });
+  const [logError, setLogError] = useState(null);
+  const [pauseElapsed, setPauseElapsed] = useState(0);
   const color = SC[tmr.type];
   const openTasks = [...issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status)).map(i => ({ id: i.id, t: "issue", l: i.title, p: i.priority })), ...tests.filter(t => t.status !== "pass").map(t => ({ id: t.id, t: "test", l: t.title, p: "medium" }))];
   const queuedItems = queue.map(q => { const task = openTasks.find(t => t.id === q.item_id && t.t === q.item_type); return task ? { ...task, qid: q.id } : null; }).filter(Boolean);
   const notQueued = openTasks.filter(t => !queue.some(q => q.item_id === t.id));
+
+  // Pause duration counter
+  useEffect(() => {
+    let iv;
+    if (tmr.st === "paused" && tmr.pausedAt) {
+      iv = setInterval(() => setPauseElapsed(Math.floor((Date.now() - new Date(tmr.pausedAt).getTime()) / 1000)), 1000);
+    } else { setPauseElapsed(0); }
+    return () => { if (iv) clearInterval(iv); };
+  }, [tmr.st, tmr.pausedAt]);
 
   // Days active this week
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0);
   const daysActive = new Set((allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString())).size;
   const todayHasWork = tw.length > 0 || (tmr.st === "running" && tmr.type === "work");
   const daysWithToday = todayHasWork ? new Set([...Array.from(new Set((allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString()))), new Date().toDateString()]).size : daysActive;
-
-  // Goal progress
   const goalPct = Math.min(100, Math.round((tfm / goalMin) * 100));
+
+  // Today's breakdown
+  const ts = todaySessions || [];
+  const focusSec = ts.filter(s => s.session_type === "work" && (!s.subtype || s.subtype === "focus" || s.subtype === "manual")).reduce((a, s) => a + s.duration_seconds, 0);
+  const waitSec = ts.filter(s => s.subtype === "waiting").reduce((a, s) => a + s.duration_seconds, 0);
+  const intSec = ts.filter(s => s.subtype === "interrupted").reduce((a, s) => a + s.duration_seconds, 0);
 
   const addQ = async (t) => { try { await db.addToQueue(projectId, t.t, t.id, queue.length); await reload(); } catch (e) { console.error(e); } };
   const removeQ = async (qid) => { try { await db.removeFromQueue(qid); await reload(); } catch (e) { console.error(e); } };
+
+  const submitLog = async () => {
+    setLogError(null);
+    try {
+      const startDt = new Date(`${logForm.date}T${logForm.startTime}`);
+      const endDt = new Date(`${logForm.date}T${logForm.endTime}`);
+      if (endDt <= startDt) { setLogError("End time must be after start"); return; }
+      await logManual(logForm.taskType, logForm.taskId, startDt.toISOString(), endDt.toISOString());
+      setShowLog(false);
+    } catch (e) { setLogError(e.message); }
+  };
+
+  const PAUSE_REASONS = [
+    { id: "waiting", label: "Waiting", sub: "Code running", color: "#378ADD" },
+    { id: "interrupted", label: "Interrupted", sub: "Call / meeting", color: "#D85A30" },
+  ];
 
   return (
     <div style={{ display: "flex", gap: 28 }}>
@@ -249,17 +296,35 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, resume, reset, 
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>{[0,1,2,3].map(i => (<div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: i < tmr.done ? "#E24B4A" : "#2C2C2A" }} />))}</div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+
+        {/* Controls */}
+        <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", justifyContent: "center" }}>
           {tmr.st === "idle" && <Btn primary onClick={() => start()} style={{ padding: "8px 24px", fontSize: 13 }}>Start</Btn>}
-          {tmr.st === "running" && <Btn onClick={pause} style={{ padding: "8px 24px", fontSize: 13 }}>Pause</Btn>}
+          {tmr.st === "running" && <>
+            {PAUSE_REASONS.map(r => (<Btn key={r.id} onClick={() => pauseWith(r.id)} small style={{ color: r.color, borderColor: r.color + "44" }}>{r.label}</Btn>))}
+            <Btn onClick={pause} small>Pause</Btn>
+          </>}
           {tmr.st === "paused" && <Btn primary onClick={resume} style={{ padding: "8px 24px", fontSize: 13 }}>Resume</Btn>}
-          {tmr.st !== "idle" && <Btn onClick={reset} style={{ padding: "8px 24px", fontSize: 13, color: "#5F5E5A" }}>Reset</Btn>}
+          {tmr.st !== "idle" && <Btn onClick={reset} small style={{ color: "#5F5E5A" }}>Stop</Btn>}
         </div>
+
+        {/* Pause reason display */}
+        {tmr.st === "paused" && tmr.pauseReason && (
+          <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 14px", width: "100%", textAlign: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", marginBottom: 4 }}>{tmr.pauseReason === "waiting" ? "Waiting for code to run..." : "Interrupted"}</div>
+            <div style={{ fontSize: 18, fontFamily: "'SF Mono', monospace", color: tmr.pauseReason === "waiting" ? "#378ADD" : "#D85A30" }}>{FMT(pauseElapsed)}</div>
+            <div style={{ fontSize: 10, color: "#5F5E5A", marginTop: 4 }}>This time is logged separately</div>
+          </div>
+        )}
+
         {/* Current task */}
         <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 14px", width: "100%", textAlign: "center", marginBottom: 12 }}>
           {taskName ? (<div><div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", marginBottom: 3 }}>Focusing on</div><div style={{ fontSize: 12, fontWeight: 500 }}>{taskName}</div></div>) : (<button onClick={() => setPicking(true)} style={{ background: "none", border: "1px dashed #444441", color: "#888780", cursor: "pointer", fontSize: 11, padding: "4px 12px", borderRadius: 4 }}>Pick a task</button>)}
         </div>
         {picking && (<div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: 10, width: "100%", maxHeight: 180, overflowY: "auto", marginBottom: 12 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontSize: 10, color: "#5F5E5A" }}>Pick a task</span><button onClick={() => setPicking(false)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 10 }}>✕</button></div>{openTasks.map(tk => (<div key={tk.id} role="button" onMouseDown={() => { focusOn(tk.t, tk.id); setPicking(false); }} style={{ padding: "5px 8px", borderRadius: 4, cursor: "pointer", fontSize: 11, color: "#D3D1C7", marginBottom: 1 }} onMouseEnter={e => e.currentTarget.style.background = "#2C2C2A"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{tk.t === "issue" ? "◉" : "▷"} {tk.l}</div>))}</div>)}
+
+        {/* Manual log button */}
+        <button onClick={() => setShowLog(!showLog)} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "6px 12px", borderRadius: 6, width: "100%" }}>{showLog ? "Cancel" : "+ Log past work"}</button>
       </div>
 
       {/* Right: stats + queue */}
@@ -268,33 +333,57 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, resume, reset, 
         <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px", marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
             <span style={{ fontSize: 12, color: "#B4B2A9" }}>{tfm} min today</span>
-            <span style={{ fontSize: 11, color: goalPct >= 100 ? "#5DCAA5" : "#5F5E5A" }}>{goalPct >= 100 ? "Goal reached" : `${goalMin - tfm} min to go`}</span>
+            <span style={{ fontSize: 11, color: goalPct >= 100 ? "#5DCAA5" : "#5F5E5A" }}>{goalPct >= 100 ? "Goal reached" : `${Math.max(0, goalMin - tfm)} min to go`}</span>
           </div>
           <div style={{ height: 6, background: "#2C2C2A", borderRadius: 3, overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${goalPct}%`, background: goalPct >= 100 ? "#5DCAA5" : "#378ADD", borderRadius: 3, transition: "width 0.5s" }} />
           </div>
         </div>
 
-        {/* Quick stats */}
+        {/* Stats with breakdown */}
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
           <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
-            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{tw.length}</div>
-            <div style={{ fontSize: 10, color: "#5F5E5A" }}>sessions</div>
+            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{Math.round(focusSec / 60)}<span style={{ fontSize: 11, color: "#5F5E5A" }}>m</span></div>
+            <div style={{ fontSize: 10, color: "#5F5E5A" }}>focus</div>
           </div>
-          <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
-            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{tfm}<span style={{ fontSize: 11, color: "#5F5E5A" }}>m</span></div>
-            <div style={{ fontSize: 10, color: "#5F5E5A" }}>focus time</div>
-          </div>
+          {waitSec > 0 && <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{Math.round(waitSec / 60)}<span style={{ fontSize: 11, color: "#5F5E5A" }}>m</span></div>
+            <div style={{ fontSize: 10, color: "#5F5E5A" }}>waiting</div>
+          </div>}
+          {intSec > 0 && <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{Math.round(intSec / 60)}<span style={{ fontSize: 11, color: "#5F5E5A" }}>m</span></div>
+            <div style={{ fontSize: 10, color: "#5F5E5A" }}>interrupted</div>
+          </div>}
           <div style={{ flex: 1, background: "#1A1A18", borderRadius: 8, padding: "10px 12px", border: "1px solid #2C2C2A", textAlign: "center" }}>
             <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#85B7EB" }}>{daysWithToday}<span style={{ fontSize: 11, color: "#5F5E5A" }}>/7</span></div>
-            <div style={{ fontSize: 10, color: "#5F5E5A" }}>days this week</div>
+            <div style={{ fontSize: 10, color: "#5F5E5A" }}>this week</div>
           </div>
         </div>
+
+        {/* Manual log form */}
+        {showLog && (
+          <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px", marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", marginBottom: 10 }}>Log past work</div>
+            {logError && <div style={{ padding: "6px 10px", borderRadius: 4, marginBottom: 8, fontSize: 11, background: "#2D0A0A", color: "#F09595" }}>{logError}</div>}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <select value={logForm.taskId ? `${logForm.taskType}:${logForm.taskId}` : ""} onChange={e => { if (e.target.value) { const [t, id] = e.target.value.split(":"); setLogForm({ ...logForm, taskType: t, taskId: id }); } }} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }}>
+                <option value="">Select task (optional)</option>
+                {openTasks.map(t => <option key={t.id} value={`${t.t}:${t.id}`}>{t.t === "issue" ? "◉" : "▷"} {t.l}</option>)}
+              </select>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input type="date" value={logForm.date} onChange={e => setLogForm({ ...logForm, date: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+                <input type="time" value={logForm.startTime} onChange={e => setLogForm({ ...logForm, startTime: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+                <input type="time" value={logForm.endTime} onChange={e => setLogForm({ ...logForm, endTime: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+              </div>
+              <Btn primary onClick={submitLog} small>Save session</Btn>
+            </div>
+          </div>
+        )}
 
         {/* Task queue */}
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", marginBottom: 8 }}>Up next</div>
-          {queuedItems.length === 0 && <div style={{ fontSize: 11, color: "#5F5E5A", padding: "8px 0" }}>No tasks queued. Add a few to plan your session flow.</div>}
+          {queuedItems.length === 0 && <div style={{ fontSize: 11, color: "#5F5E5A", padding: "8px 0" }}>No tasks queued. Add a few to plan your flow.</div>}
           {queuedItems.map((tk, idx) => (
             <div key={tk.qid} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: idx === 0 ? "#1A1A18" : "transparent", border: idx === 0 ? "1px solid #2C2C2A" : "1px solid transparent", borderRadius: 6, marginBottom: 4 }}>
               <span style={{ fontSize: 10, color: "#5F5E5A", fontFamily: "'SF Mono', monospace", minWidth: 16 }}>{idx + 1}.</span>
@@ -305,12 +394,10 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, resume, reset, 
             </div>
           ))}
           {queuedItems.length < 5 && notQueued.length > 0 && (
-            <div style={{ marginTop: 6 }}>
-              <select onChange={e => { if (e.target.value) { const t = openTasks.find(x => x.id === e.target.value); if (t) addQ(t); e.target.value = ""; } }} defaultValue="" style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#1A1A18", color: "#888780", border: "1px dashed #2C2C2A", outline: "none", cursor: "pointer", width: "100%" }}>
-                <option value="">+ Add to queue...</option>
-                {notQueued.map(t => <option key={t.id} value={t.id}>{t.t === "issue" ? "◉" : "▷"} {t.l}</option>)}
-              </select>
-            </div>
+            <select onChange={e => { if (e.target.value) { const t = openTasks.find(x => x.id === e.target.value); if (t) addQ(t); e.target.value = ""; } }} defaultValue="" style={{ marginTop: 6, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#1A1A18", color: "#888780", border: "1px dashed #2C2C2A", outline: "none", cursor: "pointer", width: "100%" }}>
+              <option value="">+ Add to queue...</option>
+              {notQueued.map(t => <option key={t.id} value={t.id}>{t.t === "issue" ? "◉" : "▷"} {t.l}</option>)}
+            </select>
           )}
         </div>
       </div>

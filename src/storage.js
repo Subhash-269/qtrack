@@ -257,7 +257,7 @@ export async function unlinkIssueFromTest(issueId, testCaseId) {
 // Focus Sessions (Pomodoro)
 // ============================================
 
-export async function saveFocusSession(projectId, issueId, testCaseId, sessionType, durationSeconds) {
+export async function saveFocusSession(projectId, issueId, testCaseId, sessionType, durationSeconds, subtype) {
   const user_id = await uid()
   const { data, error } = await supabase
     .from('focus_sessions')
@@ -268,6 +268,30 @@ export async function saveFocusSession(projectId, issueId, testCaseId, sessionTy
       test_case_id: testCaseId || null,
       session_type: sessionType,
       duration_seconds: durationSeconds,
+      subtype: subtype || 'focus',
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function saveManualSession(projectId, issueId, testCaseId, startedAt, endedAt) {
+  const user_id = await uid()
+  const duration = Math.round((new Date(endedAt) - new Date(startedAt)) / 1000)
+  if (duration < 60) throw new Error('Session must be at least 1 minute')
+  const { data, error } = await supabase
+    .from('focus_sessions')
+    .insert({
+      user_id,
+      project_id: projectId || null,
+      issue_id: issueId || null,
+      test_case_id: testCaseId || null,
+      session_type: 'work',
+      duration_seconds: duration,
+      subtype: 'manual',
+      started_at: startedAt,
+      completed_at: endedAt,
     })
     .select()
     .single()
