@@ -162,3 +162,53 @@ export async function deleteTestCase(id) {
   const { error } = await supabase.from('test_cases').delete().eq('id', id)
   if (error) throw error
 }
+
+// ============================================
+// Issue ↔ Test Case Links
+// ============================================
+
+export async function getLinks(projectId) {
+  try {
+    const { data: issues } = await supabase
+      .from('issues')
+      .select('id')
+      .eq('project_id', projectId)
+
+    if (!issues || issues.length === 0) return []
+
+    const issueIds = issues.map(i => i.id)
+    const { data, error } = await supabase
+      .from('issue_test_links')
+      .select('*')
+      .in('issue_id', issueIds)
+
+    if (error) {
+      console.warn('Links table not ready:', error.message)
+      return []
+    }
+    return data || []
+  } catch (err) {
+    console.warn('Links not available:', err.message)
+    return []
+  }
+}
+
+export async function linkIssueToTest(issueId, testCaseId) {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('issue_test_links')
+    .insert({ issue_id: issueId, test_case_id: testCaseId, user_id })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function unlinkIssueFromTest(issueId, testCaseId) {
+  const { error } = await supabase
+    .from('issue_test_links')
+    .delete()
+    .eq('issue_id', issueId)
+    .eq('test_case_id', testCaseId)
+  if (error) throw error
+}

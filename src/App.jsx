@@ -97,6 +97,7 @@ export default function App({ session }) {
 
   const [view, setView] = useState("dashboard");
   const [modal, setModal] = useState(null);
+  const [linkModal, setLinkModal] = useState(null);
   const [filterType, setFilterType] = useState("all");
   const [filterFile, setFilterFile] = useState("all");
   const [filterPriority, setFilterPriority] = useState("all");
@@ -140,18 +141,24 @@ export default function App({ session }) {
 
   async function loadProjectData(projectId) {
     try {
-      const [f, i, t, l] = await Promise.all([
+      const [f, i, t] = await Promise.all([
         db.getFiles(projectId),
         db.getIssues(projectId),
         db.getTestCases(projectId),
-        db.getLinks(projectId),
       ]);
       setFiles(f);
       setIssues(i);
       setTestCases(t);
-      setLinks(l);
     } catch (err) {
       console.error("Failed to load project data:", err);
+    }
+    // Load links separately so it never blocks core data
+    try {
+      const l = await db.getLinks(projectId);
+      setLinks(l);
+    } catch (err) {
+      console.warn("Links not available yet:", err);
+      setLinks([]);
     }
   }
 
@@ -373,10 +380,10 @@ export default function App({ session }) {
             <DashboardView stats={stats} projIssues={issues} projTests={testCases} projFiles={files} fileMap={fileMap} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} />
           )}
           {view === "issues" && (
-            <IssuesView issues={filteredIssues} files={files} fileMap={fileMap} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} onStatusChange={updateIssueStatus} onDelete={deleteIssue} onAdd={() => setModal({ type: "issue" })} links={links} testCases={testCases} onLink={linkIssueTest} onUnlink={unlinkIssueTest} />
+            <IssuesView issues={filteredIssues} files={files} fileMap={fileMap} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} onStatusChange={updateIssueStatus} onDelete={deleteIssue} onAdd={() => setModal({ type: "issue" })} links={links} testCases={testCases} onUnlink={unlinkIssueTest} onOpenLink={(issueId) => setLinkModal({ issueId })} />
           )}
           {view === "tests" && (
-            <TestsView tests={filteredTests} files={files} fileMap={fileMap} filterFile={filterFile} setFilterFile={setFilterFile} expandedTC={expandedTC} setExpandedTC={setExpandedTC} onStatusChange={updateTestStatus} onDelete={deleteTest} onAdd={() => setModal({ type: "test" })} links={links} allIssues={issues} onLink={linkIssueTest} onUnlink={unlinkIssueTest} />
+            <TestsView tests={filteredTests} files={files} fileMap={fileMap} filterFile={filterFile} setFilterFile={setFilterFile} expandedTC={expandedTC} setExpandedTC={setExpandedTC} onStatusChange={updateTestStatus} onDelete={deleteTest} onAdd={() => setModal({ type: "test" })} links={links} allIssues={issues} onUnlink={unlinkIssueTest} onOpenLink={(testId) => setLinkModal({ testId })} />
           )}
           {view === "files" && (
             <FilesView files={files} issues={issues} tests={testCases} onDelete={deleteFile} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />
@@ -385,6 +392,7 @@ export default function App({ session }) {
       </div>
 
       {modal && <Modal modal={modal} files={files} onClose={() => setModal(null)} addProject={addProject} addFile={addFile} addIssue={addIssue} addTestCase={addTestCase} />}
+      {linkModal && <LinkModal linkModal={linkModal} issues={issues} testCases={testCases} links={links} onLink={linkIssueTest} onClose={() => setLinkModal(null)} />}
     </div>
   );
 }
@@ -449,9 +457,7 @@ function DashboardView({ stats, projIssues, projTests, projFiles, fileMap, onNav
   );
 }
 
-function IssuesView({ issues, files, fileMap, filterType, setFilterType, filterFile, setFilterFile, filterPriority, setFilterPriority, onStatusChange, onDelete, onAdd, links, testCases, onLink, onUnlink }) {
-  const [linkingIssueId, setLinkingIssueId] = useState(null);
-
+function IssuesView({ issues, files, fileMap, filterType, setFilterType, filterFile, setFilterFile, filterPriority, setFilterPriority, onStatusChange, onDelete, onAdd, links, testCases, onUnlink, onOpenLink }) {
   const linkedTestIds = (issueId) => links.filter((l) => l.issue_id === issueId).map((l) => l.test_case_id);
   const testMap = Object.fromEntries(testCases.map((t) => [t.id, t]));
 
@@ -468,9 +474,8 @@ function IssuesView({ issues, files, fileMap, filterType, setFilterType, filterF
       {issues.length === 0 && <EmptyState icon="◉" title="No issues found" sub="Create issues to track bugs and to-dos across your files" action="New issue" onAction={onAdd} />}
       {issues.map((i) => {
         const ltIds = linkedTestIds(i.id);
-        const unlinkedTests = testCases.filter((t) => !ltIds.includes(t.id));
         return (
-          <div key={i.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8, transition: "border-color 0.1s" }} onMouseEnter={(e) => e.currentTarget.style.borderColor = "#444441"} onMouseLeave={(e) => e.currentTarget.style.borderColor = "#2C2C2A"}>
+          <div key={i.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8 }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
@@ -490,7 +495,6 @@ function IssuesView({ issues, files, fileMap, filterType, setFilterType, filterF
                 <button onClick={() => onDelete(i.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }} title="Delete">✕</button>
               </div>
             </div>
-            {/* Linked test cases */}
             <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
               {ltIds.map((tid) => {
                 const tc = testMap[tid];
@@ -502,18 +506,9 @@ function IssuesView({ issues, files, fileMap, filterType, setFilterType, filterF
                   </span>
                 );
               })}
-              {linkingIssueId === i.id ? (
-                <Select
-                  value=""
-                  onChange={(tid) => { if (tid) { onLink(i.id, tid); setLinkingIssueId(null); } }}
-                  options={[{ value: "", label: "Select test case..." }, ...unlinkedTests.map((t) => ({ value: t.id, label: t.title }))]}
-                  style={{ fontSize: 11, padding: "2px 6px" }}
-                />
-              ) : (
-                <button onClick={() => setLinkingIssueId(i.id)} style={{ background: "none", border: "1px dashed #444441", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>
-                  + Link test
-                </button>
-              )}
+              <button onClick={() => onOpenLink(i.id)} style={{ background: "none", border: "1px dashed #444441", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>
+                + Link test
+              </button>
             </div>
           </div>
         );
@@ -522,9 +517,7 @@ function IssuesView({ issues, files, fileMap, filterType, setFilterType, filterF
   );
 }
 
-function TestsView({ tests, files, fileMap, filterFile, setFilterFile, expandedTC, setExpandedTC, onStatusChange, onDelete, onAdd, links, allIssues, onLink, onUnlink }) {
-  const [linkingTestId, setLinkingTestId] = useState(null);
-
+function TestsView({ tests, files, fileMap, filterFile, setFilterFile, expandedTC, setExpandedTC, onStatusChange, onDelete, onAdd, links, allIssues, onUnlink, onOpenLink }) {
   const linkedIssueIds = (testId) => links.filter((l) => l.test_case_id === testId).map((l) => l.issue_id);
   const issueMap = Object.fromEntries(allIssues.map((i) => [i.id, i]));
 
@@ -537,9 +530,8 @@ function TestsView({ tests, files, fileMap, filterFile, setFilterFile, expandedT
       {tests.map((t) => {
         const expanded = expandedTC === t.id;
         const liIds = linkedIssueIds(t.id);
-        const unlinkedIssues = allIssues.filter((i) => !liIds.includes(i.id));
         return (
-          <div key={t.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, marginBottom: 8, transition: "border-color 0.1s" }} onMouseEnter={(e) => e.currentTarget.style.borderColor = "#444441"} onMouseLeave={(e) => e.currentTarget.style.borderColor = "#2C2C2A"}>
+          <div key={t.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, marginBottom: 8 }}>
             <div style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 8 }} onClick={() => setExpandedTC(expanded ? null : t.id)}>
               <span style={{ color: "#5F5E5A", fontSize: 12, marginTop: 2, transition: "transform 0.15s", transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}>▸</span>
               <div style={{ flex: 1 }}>
@@ -559,6 +551,22 @@ function TestsView({ tests, files, fileMap, filterFile, setFilterFile, expandedT
                 <button onClick={() => onDelete(t.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px" }} title="Delete">✕</button>
               </div>
             </div>
+            <div style={{ padding: "0 14px 10px 32px", display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+              {liIds.map((iid) => {
+                const issue = issueMap[iid];
+                if (!issue) return null;
+                const ic = issue.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" };
+                return (
+                  <span key={iid} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: ic.bg, color: ic.text, border: `1px solid ${ic.border}` }}>
+                    {issue.type === "bug" ? "◉" : "○"} {issue.title}
+                    <button onClick={() => onUnlink(iid, t.id)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 10, padding: 0, marginLeft: 2, opacity: 0.6 }}>✕</button>
+                  </span>
+                );
+              })}
+              <button onClick={() => onOpenLink(t.id)} style={{ background: "none", border: "1px dashed #444441", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>
+                + Link issue
+              </button>
+            </div>
             {expanded && (
               <div style={{ padding: "0 14px 14px 32px", borderTop: "1px solid #2C2C2A" }}>
                 {t.precondition && <div style={{ fontSize: 12, color: "#888780", margin: "10px 0 8px", padding: "6px 10px", background: "#1A1A18", borderRadius: 6 }}><span style={{ color: "#5F5E5A", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.3 }}>Precondition: </span>{t.precondition}</div>}
@@ -571,35 +579,6 @@ function TestsView({ tests, files, fileMap, filterFile, setFilterFile, expandedT
                     </div>
                   </div>
                 ))}
-                {/* Linked issues */}
-                <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #1A1A18" }}>
-                  <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 6 }}>Linked issues</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
-                    {liIds.map((iid) => {
-                      const issue = issueMap[iid];
-                      if (!issue) return null;
-                      const ic = issue.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" };
-                      return (
-                        <span key={iid} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: ic.bg, color: ic.text, border: `1px solid ${ic.border}` }}>
-                          {issue.type === "bug" ? "◉" : "○"} {issue.title}
-                          <button onClick={() => onUnlink(iid, t.id)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 10, padding: 0, marginLeft: 2, opacity: 0.6 }}>✕</button>
-                        </span>
-                      );
-                    })}
-                    {linkingTestId === t.id ? (
-                      <Select
-                        value=""
-                        onChange={(iid) => { if (iid) { onLink(iid, t.id); setLinkingTestId(null); } }}
-                        options={[{ value: "", label: "Select issue..." }, ...unlinkedIssues.map((i) => ({ value: i.id, label: `[${i.type}] ${i.title}` }))]}
-                        style={{ fontSize: 11, padding: "2px 6px" }}
-                      />
-                    ) : (
-                      <button onClick={() => setLinkingTestId(t.id)} style={{ background: "none", border: "1px dashed #444441", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>
-                        + Link issue
-                      </button>
-                    )}
-                  </div>
-                </div>
               </div>
             )}
           </div>
@@ -726,6 +705,71 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTestCa
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
           <Btn onClick={onClose}>Cancel</Btn>
           <Btn primary onClick={submit} style={{ opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : "Create"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LinkModal({ linkModal, issues, testCases, links, onLink, onClose }) {
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const isFromIssue = !!linkModal.issueId;
+  const title = isFromIssue ? "Link a test case" : "Link an issue";
+
+  let items = [];
+  if (isFromIssue) {
+    const already = links.filter((l) => l.issue_id === linkModal.issueId).map((l) => l.test_case_id);
+    items = testCases.filter((t) => !already.includes(t.id)).map((t) => ({
+      id: t.id, label: t.title, sub: t.status, icon: "▷", colors: TEST_STATUS_COLORS[t.status],
+    }));
+  } else {
+    const already = links.filter((l) => l.test_case_id === linkModal.testId).map((l) => l.issue_id);
+    items = issues.filter((i) => !already.includes(i.id)).map((i) => ({
+      id: i.id, label: i.title, sub: i.type, icon: i.type === "bug" ? "◉" : "○",
+      colors: i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" },
+    }));
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onMouseDown={onClose}>
+      <div onMouseDown={(e) => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 380, maxHeight: "60vh", display: "flex", flexDirection: "column", boxSizing: "border-box", overflow: "hidden" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <span style={{ fontSize: 15, fontWeight: 500 }}>{title}</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button>
+        </div>
+        {error && <div style={{ padding: "8px 12px", borderRadius: 6, marginBottom: 10, fontSize: 12, background: "#2D0A0A", color: "#F09595" }}>{error}</div>}
+        <div style={{ flex: 1 }}>
+          {items.length === 0 && <div style={{ textAlign: "center", padding: 24, color: "#5F5E5A", fontSize: 13 }}>Nothing available to link</div>}
+          {items.map((item) => (
+            <div
+              key={item.id}
+              role="button"
+              tabIndex={0}
+              onMouseDown={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (saving) return;
+                setSaving(true);
+                setError(null);
+                try {
+                  if (isFromIssue) await onLink(linkModal.issueId, item.id);
+                  else await onLink(item.id, linkModal.testId);
+                  onClose();
+                } catch (err) {
+                  setError(err.message || "Failed to link");
+                  setSaving(false);
+                }
+              }}
+              style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 6, background: "transparent", color: "#F1EFE8", cursor: saving ? "wait" : "pointer", fontSize: 13, textAlign: "left", marginBottom: 2, opacity: saving ? 0.5 : 1 }}
+              onMouseEnter={(e) => { if (!saving) e.currentTarget.style.background = "#2C2C2A"; }}
+              onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+            >
+              <span style={{ fontSize: 14 }}>{item.icon}</span>
+              <span style={{ flex: 1 }}>{item.label}</span>
+              <Badge label={item.sub} colors={item.colors} small />
+            </div>
+          ))}
         </div>
       </div>
     </div>
