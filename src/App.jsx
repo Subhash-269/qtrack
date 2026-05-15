@@ -439,94 +439,93 @@ function FilesView({ files, issues, tests, del, onAdd, onNav }) {
 
 const NOTE_CATS = ["scratch", "decision", "investigation", "meeting"];
 const NOTE_CAT_COLORS = { scratch: { bg: "#1A1A18", text: "#B4B2A9", border: "#2C2C2A" }, decision: { bg: "#1A0A29", text: "#AFA9EC", border: "#26215C" }, investigation: { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }, meeting: { bg: "#081F12", text: "#5DCAA5", border: "#04342C" } };
-const CODE_LANGS = ["", "sql", "python"];
-const LANG_LABELS = { "": "Plain text", sql: "SQL", python: "Python" };
 
-// Auto-detect language from content
 function detectLang(text) {
   if (!text) return "";
   const t = text.toLowerCase();
-  const sqlScore = (t.match(/\b(select|from|where|join|insert|update|delete|create|alter|drop|table|into|values|group by|order by|having|union|coalesce|cast)\b/g) || []).length;
+  const sqlScore = (t.match(/\b(select|from|where|join|insert|update|delete|create|alter|drop|table|values|group by|order by|having|union|coalesce)\b/g) || []).length;
   const pyScore = (t.match(/\b(def |class |import |from .+ import|if __name__|elif |print\(|self\.|lambda |async def|await )\b/g) || []).length;
   if (sqlScore >= 2 && sqlScore > pyScore) return "sql";
   if (pyScore >= 2 && pyScore > sqlScore) return "python";
   return "";
 }
 
-// Simple syntax highlighter
 function highlight(code, lang) {
   if (!lang || !code) return [{ text: code, color: null }];
-  const tokens = [];
-  let remaining = code;
-
-  const SQL_KW = /\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|AND|OR|NOT|IN|IS|NULL|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TABLE|INTO|VALUES|SET|AS|ORDER|BY|GROUP|HAVING|LIMIT|OFFSET|UNION|ALL|DISTINCT|CASE|WHEN|THEN|ELSE|END|EXISTS|BETWEEN|LIKE|ILIKE|COUNT|SUM|AVG|MIN|MAX|COALESCE|CAST|WITH|RECURSIVE|PRIMARY|KEY|REFERENCES|DEFAULT|INDEX|IF|BEGIN|COMMIT|ROLLBACK|GRANT|REVOKE|TRIGGER|VIEW|SCHEMA|DATABASE|CONSTRAINT|FOREIGN|UNIQUE|CHECK|ASC|DESC|OVER|PARTITION|ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|FIRST_VALUE|LAST_VALUE|EXTRACT|DATE|TIMESTAMP|INTEGER|TEXT|BOOLEAN|VARCHAR|SERIAL|UUID|JSONB|FLOAT|NUMERIC|BIGINT|SMALLINT)\b/gi;
-  const PY_KW = /\b(def|class|import|from|as|if|elif|else|for|while|return|yield|try|except|finally|with|lambda|and|or|not|in|is|None|True|False|pass|break|continue|raise|assert|global|nonlocal|del|async|await|self|print|len|range|enumerate|zip|map|filter|sorted|isinstance|type|dict|list|set|tuple|int|str|float|bool|open|super)\b/g;
+  const SQL_KW = /\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|AND|OR|NOT|IN|IS|NULL|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TABLE|INTO|VALUES|SET|AS|ORDER|BY|GROUP|HAVING|LIMIT|OFFSET|UNION|ALL|DISTINCT|CASE|WHEN|THEN|ELSE|END|EXISTS|BETWEEN|LIKE|ILIKE|COUNT|SUM|AVG|MIN|MAX|COALESCE|CAST|WITH|RECURSIVE|PRIMARY|KEY|REFERENCES|DEFAULT|INDEX|IF|BEGIN|COMMIT|ROLLBACK|VIEW|SCHEMA|CONSTRAINT|FOREIGN|UNIQUE|CHECK|ASC|DESC|OVER|PARTITION|ROW_NUMBER|RANK|EXTRACT|DATE|TIMESTAMP|INTEGER|TEXT|BOOLEAN|VARCHAR|SERIAL|UUID|JSONB|FLOAT|NUMERIC|BIGINT)\b/gi;
+  const PY_KW = /\b(def|class|import|from|as|if|elif|else|for|while|return|yield|try|except|finally|with|lambda|and|or|not|in|is|None|True|False|pass|break|continue|raise|assert|global|del|async|await|self|print|len|range|enumerate|zip|map|filter|sorted|isinstance|type|dict|list|set|tuple|int|str|float|bool|open|super)\b/g;
   const STR_RE = /('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")/g;
   const NUM_RE = /\b(\d+\.?\d*)\b/g;
-  const COMMENT_SQL = /(--.*$)/gm;
-  const COMMENT_PY = /(#.*$)/gm;
-
-  // Tokenize by splitting on patterns
   const kw = lang === "sql" ? SQL_KW : PY_KW;
-  const commentRe = lang === "sql" ? COMMENT_SQL : COMMENT_PY;
-
-  // Simple line-by-line approach
   const lines = code.split("\n");
   const result = [];
-
   lines.forEach((line, li) => {
     if (li > 0) result.push({ text: "\n", color: null });
-    // Check for comments first
     const commentMatch = lang === "sql" ? line.match(/^(.*?)(--.*$)/) : line.match(/^(.*?)(#.*$)/);
-    const beforeComment = commentMatch ? commentMatch[1] : line;
+    const before = commentMatch ? commentMatch[1] : line;
     const comment = commentMatch ? commentMatch[2] : null;
-
-    // Tokenize the non-comment part
-    let pos = 0;
-    const parts = [];
-    // Find all strings, keywords, numbers
-    const allMatches = [];
-
+    const allM = [];
     let m;
-    const strRe = new RegExp(STR_RE.source, "g");
-    while ((m = strRe.exec(beforeComment)) !== null) allMatches.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: "string" });
-    const kwRe = new RegExp(kw.source, kw.flags);
-    while ((m = kwRe.exec(beforeComment)) !== null) {
-      const overlaps = allMatches.some(a => a.type === "string" && m.index >= a.start && m.index < a.end);
-      if (!overlaps) allMatches.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: "keyword" });
-    }
-    const numRe = new RegExp(NUM_RE.source, "g");
-    while ((m = numRe.exec(beforeComment)) !== null) {
-      const overlaps = allMatches.some(a => m.index >= a.start && m.index < a.end);
-      if (!overlaps) allMatches.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: "number" });
-    }
-
-    allMatches.sort((a, b) => a.start - b.start);
-    let cursor = 0;
-    allMatches.forEach(match => {
-      if (match.start > cursor) result.push({ text: beforeComment.slice(cursor, match.start), color: null });
-      const color = match.type === "keyword" ? "#85B7EB" : match.type === "string" ? "#97C459" : "#FAC775";
-      result.push({ text: match.text, color });
-      cursor = match.end;
-    });
-    if (cursor < beforeComment.length) result.push({ text: beforeComment.slice(cursor), color: null });
+    const sr = new RegExp(STR_RE.source, "g");
+    while ((m = sr.exec(before)) !== null) allM.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: "string" });
+    const kr = new RegExp(kw.source, kw.flags);
+    while ((m = kr.exec(before)) !== null) { if (!allM.some(a => a.type === "string" && m.index >= a.start && m.index < a.end)) allM.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: "keyword" }); }
+    const nr = new RegExp(NUM_RE.source, "g");
+    while ((m = nr.exec(before)) !== null) { if (!allM.some(a => m.index >= a.start && m.index < a.end)) allM.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: "number" }); }
+    allM.sort((a, b) => a.start - b.start);
+    let cur = 0;
+    allM.forEach(match => { if (match.start > cur) result.push({ text: before.slice(cur, match.start), color: null }); result.push({ text: match.text, color: match.type === "keyword" ? "#85B7EB" : match.type === "string" ? "#97C459" : "#FAC775" }); cur = match.end; });
+    if (cur < before.length) result.push({ text: before.slice(cur), color: null });
     if (comment) result.push({ text: comment, color: "#5F5E5A" });
   });
-
   return result;
 }
 
 function CodeBlock({ content, lang }) {
   const tokens = highlight(content, lang);
+  return (<pre style={{ fontSize: 12, fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{tokens.map((t, i) => t.color ? <span key={i} style={{ color: t.color }}>{t.text}</span> : <span key={i}>{t.text}</span>)}</pre>);
+}
+
+function parseBlocks(content) {
+  if (!content) return [{ type: "text", content: "" }];
+  const blocks = [];
+  const parts = content.split(/(```[\s\S]*?```)/g);
+  parts.forEach(part => {
+    const fenceMatch = part.match(/^```(\w*)\n?([\s\S]*?)```$/);
+    if (fenceMatch) {
+      const lang = fenceMatch[1] || detectLang(fenceMatch[2]);
+      blocks.push({ type: "code", lang, content: fenceMatch[2].replace(/\n$/, "") });
+    } else if (part.trim()) {
+      blocks.push({ type: "text", content: part });
+    }
+  });
+  if (blocks.length === 0) {
+    const lang = detectLang(content);
+    if (lang) return [{ type: "code", lang, content }];
+    return [{ type: "text", content }];
+  }
+  return blocks;
+}
+
+function NoteContent({ content, maxHeight }) {
+  const blocks = parseBlocks(content);
   return (
-    <pre style={{ fontSize: 12, fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-      {tokens.map((t, i) => t.color ? <span key={i} style={{ color: t.color }}>{t.text}</span> : <span key={i}>{t.text}</span>)}
-    </pre>
+    <div style={{ maxHeight: maxHeight || "none", overflow: maxHeight ? "hidden" : "visible" }}>
+      {blocks.map((b, i) => b.type === "code" ? (
+        <div key={i} style={{ background: "#111110", borderRadius: 6, padding: "8px 10px", margin: "6px 0", position: "relative" }}>
+          {b.lang && <span style={{ position: "absolute", top: 4, right: 8, fontSize: 9, color: "#5F5E5A", textTransform: "uppercase" }}>{b.lang}</span>}
+          <CodeBlock content={b.content} lang={b.lang} />
+        </div>
+      ) : (
+        <div key={i} style={{ fontSize: 12, color: "#D3D1C7", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{b.content}</div>
+      ))}
+    </div>
   );
 }
 
 function NotesView({ notes, issues, files, projectId, reload }) {
   const [editing, setEditing] = useState(null);
+  const [viewing, setViewing] = useState(null);
   const [filterCat, setFilterCat] = useState("all");
   const [searchQ, setSearchQ] = useState("");
   const [form, setForm] = useState({ title: "", content: "", category: "scratch", linked_issue_id: "", linked_file_id: "", code_lang: "" });
@@ -537,13 +536,8 @@ function NotesView({ notes, issues, files, projectId, reload }) {
     return true;
   });
 
-  const setContent = (v) => {
-    const detected = detectLang(v);
-    setForm(f => ({ ...f, content: v, code_lang: f.code_lang || detected }));
-  };
-
   const startNew = (cat) => { setForm({ title: "", content: "", category: cat || "scratch", linked_issue_id: "", linked_file_id: "", code_lang: "" }); setEditing("new"); };
-  const startEdit = (n) => { setForm({ title: n.title, content: n.content, category: n.category, linked_issue_id: n.linked_issue_id || "", linked_file_id: n.linked_file_id || "", code_lang: n.code_lang || detectLang(n.content) }); setEditing(n.id); };
+  const startEdit = (n) => { setForm({ title: n.title, content: n.content, category: n.category, linked_issue_id: n.linked_issue_id || "", linked_file_id: n.linked_file_id || "", code_lang: n.code_lang || "" }); setEditing(n.id); setViewing(null); };
   const save = async () => {
     if (!form.content.trim() && !form.title.trim()) return;
     try {
@@ -553,41 +547,73 @@ function NotesView({ notes, issues, files, projectId, reload }) {
       setEditing(null); await reload();
     } catch (e) { console.error(e); }
   };
-  const del = async (id) => { try { await db.deleteNote(id); await reload(); } catch (e) { console.error(e); } };
+  const del = async (id) => { try { await db.deleteNote(id); setViewing(null); await reload(); } catch (e) { console.error(e); } };
   const pin = async (id, pinned) => { try { await db.updateNote(id, { pinned: !pinned }); await reload(); } catch (e) { console.error(e); } };
 
-  if (editing) {
-    const detectedLang = detectLang(form.content);
+  // View modal
+  if (viewing) {
+    const n = notes.find(x => x.id === viewing);
+    if (!n) { setViewing(null); return null; }
+    const cc = NOTE_CAT_COLORS[n.category] || NOTE_CAT_COLORS.scratch;
+    const linkedIssue = issues.find(i => i.id === n.linked_issue_id);
+    const linkedFile = files.find(f => f.id === n.linked_file_id);
     return (
-      <div style={{ maxWidth: 640 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}><span style={{ fontSize: 14, fontWeight: 500 }}>{editing === "new" ? "New note" : "Edit note"}</span><Btn onClick={() => setEditing(null)}>Cancel</Btn></div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {form.category !== "scratch" && <Input value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="Title (optional for scratch)" />}
-          <div style={{ display: "flex", gap: 8 }}>
-            <Select value={form.category} onChange={v => setForm({ ...form, category: v })} options={NOTE_CATS} style={{ flex: 1 }} />
-            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
-              <Select value={form.code_lang} onChange={v => setForm({ ...form, code_lang: v })} options={CODE_LANGS.map(l => ({ value: l, label: LANG_LABELS[l] }))} style={{ flex: 1 }} />
-              {detectedLang && !form.code_lang && <span style={{ fontSize: 10, color: "#5DCAA5" }}>detected: {LANG_LABELS[detectedLang]}</span>}
-            </div>
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setViewing(null)}>
+        <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 640, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexShrink: 0 }}>
+            <Badge label={n.category} colors={cc} />
+            {n.title && <span style={{ fontSize: 15, fontWeight: 500, flex: 1 }}>{n.title}</span>}
+            {!n.title && <span style={{ flex: 1 }} />}
+            <button onClick={() => startEdit(n)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#B4B2A9", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>Edit</button>
+            <button onClick={() => setViewing(null)} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button>
           </div>
-          <textarea value={form.content} onChange={e => setContent(e.target.value)} placeholder={form.category === "scratch" ? "Just start writing..." : "Paste code or write notes..."} rows={12} style={{ padding: "10px 12px", borderRadius: 6, fontSize: 13, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", resize: "vertical", fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, boxSizing: "border-box", tabSize: 2 }} onKeyDown={e => { if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; const end = e.target.selectionEnd; const v = form.content; setForm({ ...form, content: v.substring(0, s) + "  " + v.substring(end) }); setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0); } }} />
-          {/* Live preview */}
-          {(form.code_lang || detectedLang) && form.content.trim() && (
-            <div style={{ background: "#111110", border: "1px solid #2C2C2A", borderRadius: 6, padding: "10px 12px", maxHeight: 200, overflowY: "auto" }}>
-              <div style={{ fontSize: 10, color: "#5F5E5A", marginBottom: 6 }}>Preview ({LANG_LABELS[form.code_lang || detectedLang]})</div>
-              <CodeBlock content={form.content} lang={form.code_lang || detectedLang} />
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to issue</div><Select value={form.linked_issue_id} onChange={v => setForm({ ...form, linked_issue_id: v })} options={[{ value: "", label: "None" }, ...issues.map(i => ({ value: i.id, label: i.title }))]} style={{ width: "100%" }} /></div>
-            <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to file</div><Select value={form.linked_file_id} onChange={v => setForm({ ...form, linked_file_id: v })} options={[{ value: "", label: "None" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /></div>
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <NoteContent content={n.content} />
           </div>
-          <Btn primary onClick={save}>Save note</Btn>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", marginTop: 12, paddingTop: 10, borderTop: "1px solid #2C2C2A", flexShrink: 0 }}>
+            <span>{SHORT_DATE(n.updated_at)}</span>
+            {linkedIssue && <><span>·</span><span style={{ color: "#F09595" }}>◉ {linkedIssue.title}</span></>}
+            {linkedFile && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace" }}>{linkedFile.name}</span></>}
+          </div>
         </div>
       </div>
     );
   }
 
+  // Editor (split screen)
+  if (editing) {
+    const hasCode = form.content.includes("```") || detectLang(form.content);
+    return (
+      <div style={{ maxWidth: 900 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+          <span style={{ fontSize: 14, fontWeight: 500 }}>{editing === "new" ? "New note" : "Edit note"}</span>
+          <div style={{ display: "flex", gap: 6 }}><Btn onClick={() => setEditing(null)}>Cancel</Btn><Btn primary onClick={save}>Save</Btn></div>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+          <Select value={form.category} onChange={v => setForm({ ...form, category: v })} options={NOTE_CATS} />
+          {form.category !== "scratch" && <Input value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="Title" style={{ flex: 1 }} />}
+        </div>
+        <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, color: "#5F5E5A", marginBottom: 4 }}>Editor — use ```sql or ```python for code blocks</div>
+            <textarea value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} placeholder={"Write notes and paste code...\n\nUse ```sql or ```python fences:\n\n```sql\nSELECT * FROM users\n```"} rows={16} style={{ padding: "10px 12px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", resize: "vertical", fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, boxSizing: "border-box", tabSize: 2 }} onKeyDown={e => { if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; const end = e.target.selectionEnd; const v = form.content; setForm({ ...form, content: v.substring(0, s) + "  " + v.substring(end) }); setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0); } }} />
+          </div>
+          {(hasCode || form.content.length > 20) && (
+            <div style={{ flex: 1, minWidth: 0, background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 14px", maxHeight: 420, overflowY: "auto" }}>
+              <div style={{ fontSize: 10, color: "#5F5E5A", marginBottom: 6 }}>Preview</div>
+              <NoteContent content={form.content} />
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to issue</div><Select value={form.linked_issue_id} onChange={v => setForm({ ...form, linked_issue_id: v })} options={[{ value: "", label: "None" }, ...issues.map(i => ({ value: i.id, label: i.title }))]} style={{ width: "100%" }} /></div>
+          <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to file</div><Select value={form.linked_file_id} onChange={v => setForm({ ...form, linked_file_id: v })} options={[{ value: "", label: "None" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /></div>
+        </div>
+      </div>
+    );
+  }
+
+  // List view
   return (<div>
     <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
       <Pill active={filterCat === "all"} onClick={() => setFilterCat("all")}>All</Pill>
@@ -601,33 +627,28 @@ function NotesView({ notes, issues, files, projectId, reload }) {
     {filtered.length === 0 && <EmptyState icon="☰" title="No notes yet" sub="Capture decisions, investigations, and scratch thoughts" action="New note" onAction={() => startNew()} />}
     {filtered.map(n => {
       const cc = NOTE_CAT_COLORS[n.category] || NOTE_CAT_COLORS.scratch;
+      const blocks = parseBlocks(n.content);
+      const hasCode = blocks.some(b => b.type === "code");
       const linkedIssue = issues.find(i => i.id === n.linked_issue_id);
       const linkedFile = files.find(f => f.id === n.linked_file_id);
-      const lang = n.code_lang || detectLang(n.content);
       return (
-        <div key={n.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8, borderLeft: n.pinned ? "3px solid #FAC775" : "3px solid transparent", borderTopLeftRadius: n.pinned ? 0 : 8, borderBottomLeftRadius: n.pinned ? 0 : 8 }}>
+        <div key={n.id} onClick={() => setViewing(n.id)} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8, cursor: "pointer", borderLeft: n.pinned ? "3px solid #FAC775" : "3px solid transparent", borderTopLeftRadius: n.pinned ? 0 : 8, borderBottomLeftRadius: n.pinned ? 0 : 8 }} onMouseEnter={e => e.currentTarget.style.borderColor = "#444441"} onMouseLeave={e => e.currentTarget.style.borderColor = "#2C2C2A"}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                 <Badge label={n.category} colors={cc} small />
-                {lang && <Badge label={LANG_LABELS[lang]} colors={{ bg: "#111110", text: "#888780", border: "#2C2C2A" }} small />}
+                {hasCode && <Badge label={blocks.find(b => b.type === "code")?.lang?.toUpperCase() || "CODE"} colors={{ bg: "#111110", text: "#888780", border: "#2C2C2A" }} small />}
                 {n.title && <span style={{ fontSize: 13, fontWeight: 500 }}>{n.title}</span>}
                 {n.pinned && <span style={{ fontSize: 10, color: "#FAC775" }}>pinned</span>}
               </div>
-              {lang ? (
-                <div style={{ background: "#111110", borderRadius: 6, padding: "8px 10px", maxHeight: 150, overflowY: "auto" }}>
-                  <CodeBlock content={n.content} lang={lang} />
-                </div>
-              ) : (
-                <div style={{ fontSize: 12, color: "#D3D1C7", whiteSpace: "pre-wrap", lineHeight: 1.6, maxHeight: 120, overflow: "hidden" }}>{n.content || <span style={{ color: "#5F5E5A", fontStyle: "italic" }}>Empty note</span>}</div>
-              )}
+              <NoteContent content={n.content} maxHeight={100} />
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", marginTop: 6 }}>
                 <span>{SHORT_DATE(n.updated_at)}</span>
                 {linkedIssue && <><span>·</span><span style={{ color: "#F09595" }}>◉ {linkedIssue.title}</span></>}
                 {linkedFile && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace" }}>{linkedFile.name}</span></>}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+            <div style={{ display: "flex", gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
               <button onClick={() => pin(n.id, n.pinned)} title={n.pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", color: n.pinned ? "#FAC775" : "#444441", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>⊙</button>
               <button onClick={() => startEdit(n)} title="Edit" style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
               <button onClick={() => del(n.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
