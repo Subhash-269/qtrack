@@ -209,7 +209,7 @@ export default function App({ session }) {
         </div>
         <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
           {view === "dashboard" && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} />}
-          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} />}
+          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} markDone={async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } }} />}
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
@@ -244,7 +244,7 @@ export default function App({ session }) {
   );
 }
 
-function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions, todaySessions, logManual }) {
+function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions, todaySessions, logManual, markDone }) {
   const [picking, setPicking] = useState(false);
   const [goalMin] = useState(120);
   const [showLog, setShowLog] = useState(false);
@@ -294,8 +294,21 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           </div>
         </div>
 
-        {/* Task label */}
-        {taskName && <div style={{ marginTop: 16, fontSize: 13, color: "#888780", textAlign: "center" }}><span style={{ color: "#444441" }}>on </span><span style={{ color: "#D3D1C7" }}>{taskName}</span></div>}
+        {/* Task label + finish */}
+        {taskName && (() => {
+          const task = tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId) : tests.find(t => t.id === tmr.tId);
+          const isDone = tmr.tType === "issue" ? ["fixed","verified","wont_fix"].includes(task?.status) : task?.status === "pass";
+          return (
+            <div style={{ marginTop: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <span style={{ fontSize: 13, color: "#888780" }}><span style={{ color: "#444441" }}>on </span><span style={{ color: "#D3D1C7" }}>{taskName}</span></span>
+              {isDone ? (
+                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#081F12", color: "#5DCAA5", border: "1px solid #04342C" }}>✓ done</span>
+              ) : (
+                <button onClick={markDone} style={{ fontSize: 10, padding: "3px 10px", borderRadius: 4, background: "none", color: "#5DCAA5", border: "1px solid #04342C", cursor: "pointer", fontWeight: 500 }}>✓ Finish task</button>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Controls */}
         <div style={{ marginTop: 20, display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
