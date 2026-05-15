@@ -212,8 +212,8 @@ export default function App({ session }) {
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
-          {view === "notes" && <NotesView notes={notes} issues={issues} files={files} testCases={testCases} projectId={activeProjectId} reload={reload} />}
-          {view === "calendar" && <CalendarView meetings={meetings} issues={issues} testCases={testCases} projectId={activeProjectId} reload={reload} onFocusMeeting={mt => setMeetingFocus(mt)} />}
+          {view === "notes" && <NotesView notes={notes} issues={issues} files={files} testCases={testCases} projectId={activeProjectId} reload={reload} meetingTags={[...new Set(meetings.map(m => m.title))]} usedRepos={[...new Set([...issues, ...testCases].map(x => x.repo_name).filter(Boolean))]} />}
+          {view === "calendar" && <CalendarView meetings={meetings} issues={issues} testCases={testCases} projectId={activeProjectId} reload={reload} onFocusMeeting={mt => setMeetingFocus(mt)} allNotes={notes} />}
           {view === "board" && <BoardView columns={columns} cards={cards} projectId={activeProjectId} reload={reload} issues={issues} files={files} addIssue={addIssue} />}
         </div>
       </div>
@@ -238,7 +238,7 @@ export default function App({ session }) {
             </div>
           </div>
         </div>); })()}
-      {meetingFocus && <MeetingFocusView meeting={meetingFocus} projectId={activeProjectId} onClose={async () => { setMeetingFocus(null); await reload(); }} issues={issues} testCases={testCases} meetings={meetings} />}
+      {meetingFocus && <MeetingFocusView meeting={meetingFocus} projectId={activeProjectId} onClose={async () => { setMeetingFocus(null); await reload(); }} issues={issues} testCases={testCases} meetings={meetings} allNotes={notes} />}
     </div>
   );
 }
@@ -890,25 +890,28 @@ function NoteContent({ content, maxHeight }) {
   );
 }
 
-function NotesView({ notes, issues, files, testCases, projectId, reload }) {
+function NotesView({ notes, issues, files, testCases, projectId, reload, meetingTags, usedRepos }) {
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [filterCat, setFilterCat] = useState("all");
+  const [filterRepo, setFilterRepo] = useState("all");
   const [searchQ, setSearchQ] = useState("");
-  const [form, setForm] = useState({ title: "", content: "", category: "scratch", linked_issue_id: "", linked_file_id: "", linked_test_id: "", code_lang: "" });
+  const [form, setForm] = useState({ title: "", content: "", category: "scratch", linked_issue_id: "", linked_file_id: "", linked_test_id: "", code_lang: "", meeting_tag: [], repo_name: "" });
 
+  const allNoteRepos = [...new Set([...(usedRepos || []), ...notes.map(n => n.repo_name).filter(Boolean)])];
   const filtered = notes.filter(n => {
     if (filterCat !== "all" && n.category !== filterCat) return false;
+    if (filterRepo !== "all" && n.repo_name !== filterRepo) return false;
     if (searchQ && !n.title.toLowerCase().includes(searchQ.toLowerCase()) && !n.content.toLowerCase().includes(searchQ.toLowerCase())) return false;
     return true;
   });
 
-  const startNew = (cat) => { setForm({ title: "", content: "", category: cat || "scratch", linked_issue_id: "", linked_file_id: "", linked_test_id: "", code_lang: "" }); setEditing("new"); };
-  const startEdit = (n) => { setForm({ title: n.title, content: n.content, category: n.category, linked_issue_id: n.linked_issue_id || "", linked_file_id: n.linked_file_id || "", linked_test_id: n.linked_test_id || "", code_lang: n.code_lang || "" }); setEditing(n.id); setViewing(null); };
+  const startNew = (cat) => { setForm({ title: "", content: "", category: cat || "scratch", linked_issue_id: "", linked_file_id: "", linked_test_id: "", code_lang: "", meeting_tag: [], repo_name: "" }); setEditing("new"); };
+  const startEdit = (n) => { setForm({ title: n.title, content: n.content, category: n.category, linked_issue_id: n.linked_issue_id || "", linked_file_id: n.linked_file_id || "", linked_test_id: n.linked_test_id || "", code_lang: n.code_lang || "", meeting_tag: parseMtags(n.meeting_tag), repo_name: n.repo_name || "" }); setEditing(n.id); setViewing(null); };
   const save = async () => {
     if (!form.content.trim() && !form.title.trim()) return;
     try {
-      const payload = { ...form, linked_issue_id: form.linked_issue_id || null, linked_file_id: form.linked_file_id || null, linked_test_id: form.linked_test_id || null };
+      const payload = { ...form, linked_issue_id: form.linked_issue_id || null, linked_file_id: form.linked_file_id || null, linked_test_id: form.linked_test_id || null, meeting_tag: form.meeting_tag.length ? JSON.stringify(form.meeting_tag) : null };
       if (editing === "new") await db.createNote(projectId, payload);
       else await db.updateNote(editing, payload);
       setEditing(null); await reload();
@@ -930,6 +933,7 @@ function NotesView({ notes, issues, files, testCases, projectId, reload }) {
         <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 640, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexShrink: 0 }}>
             <Badge label={n.category} colors={cc} />
+            {n.repo_name && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{n.repo_name}</span>}
             {n.title && <span style={{ fontSize: 15, fontWeight: 500, flex: 1 }}>{n.title}</span>}
             {!n.title && <span style={{ flex: 1 }} />}
             <button onClick={() => startEdit(n)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#B4B2A9", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>Edit</button>
@@ -943,6 +947,7 @@ function NotesView({ notes, issues, files, testCases, projectId, reload }) {
             {linkedIssue && <><span>·</span><span style={{ color: "#F09595" }}>◉ {linkedIssue.title}</span></>}
             {linkedTest && <><span>·</span><span style={{ color: "#5DCAA5" }}>▷ {linkedTest.title}</span></>}
             {linkedFile && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace" }}>{linkedFile.name}</span></>}
+            {parseMtags(n.meeting_tag).map(t => <span key={t} style={{ padding: "0 4px", borderRadius: 2, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C", fontSize: 9 }}>{t}</span>)}
           </div>
         </div>
       </div>
@@ -979,6 +984,21 @@ function NotesView({ notes, issues, files, testCases, projectId, reload }) {
           <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to test</div><Select value={form.linked_test_id} onChange={v => setForm({ ...form, linked_test_id: v })} options={[{ value: "", label: "None" }, ...(testCases || []).map(t => ({ value: t.id, label: t.title }))]} style={{ width: "100%" }} /></div>
           <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to file</div><Select value={form.linked_file_id} onChange={v => setForm({ ...form, linked_file_id: v })} options={[{ value: "", label: "None" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /></div>
         </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Repo</div>
+            <input list="note-repo-list" value={form.repo_name} onChange={e => setForm({ ...form, repo_name: e.target.value })} placeholder="Select or type repo" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "'SF Mono', monospace" }} />
+            <datalist id="note-repo-list">{allNoteRepos.map(r => <option key={r} value={r} />)}</datalist>
+          </div>
+          {(meetingTags || []).length > 0 && <div style={{ flex: 2 }}>
+            <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Meeting tags</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {(meetingTags || []).map(t => { const on = form.meeting_tag.includes(t); return (
+                <button key={t} onClick={() => setForm({ ...form, meeting_tag: on ? form.meeting_tag.filter(x => x !== t) : [...form.meeting_tag, t] })} style={{ padding: "4px 10px", borderRadius: 4, fontSize: 10, cursor: "pointer", border: on ? "1px solid #7F77DD" : "1px solid #2C2C2A", background: on ? "#1A0A29" : "#1A1A18", color: on ? "#AFA9EC" : "#5F5E5A" }}>{on ? "✓ " : ""}{t}</button>
+              ); })}
+            </div>
+          </div>}
+        </div>
       </div>
     );
   }
@@ -989,6 +1009,10 @@ function NotesView({ notes, issues, files, testCases, projectId, reload }) {
       <Pill active={filterCat === "all"} onClick={() => setFilterCat("all")}>All</Pill>
       {NOTE_CATS.map(c => <Pill key={c} active={filterCat === c} onClick={() => setFilterCat(c)}>{c}</Pill>)}
       <span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} />
+      {allNoteRepos.length > 0 && <select value={filterRepo} onChange={e => setFilterRepo(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: filterRepo !== "all" ? "#0A1929" : "#1A1A18", color: filterRepo !== "all" ? "#85B7EB" : "#888780", border: filterRepo !== "all" ? "1px solid #042C53" : "1px solid #2C2C2A", outline: "none", cursor: "pointer", fontFamily: "'SF Mono', monospace" }}>
+        <option value="all">All repos</option>
+        {allNoteRepos.map(r => <option key={r} value={r}>{r}</option>)}
+      </select>}
       <Input value={searchQ} onChange={setSearchQ} placeholder="Search notes..." style={{ width: 160, fontSize: 12 }} />
       <span style={{ flex: 1 }} />
       <Btn onClick={() => startNew("scratch")} small>+ Scratch</Btn>
@@ -1006,8 +1030,9 @@ function NotesView({ notes, issues, files, testCases, projectId, reload }) {
         <div key={n.id} onClick={() => setViewing(n.id)} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8, cursor: "pointer", borderLeft: n.pinned ? "3px solid #FAC775" : "3px solid transparent", borderTopLeftRadius: n.pinned ? 0 : 8, borderBottomLeftRadius: n.pinned ? 0 : 8 }} onMouseEnter={e => e.currentTarget.style.borderColor = "#444441"} onMouseLeave={e => e.currentTarget.style.borderColor = "#2C2C2A"}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
                 <Badge label={n.category} colors={cc} small />
+                {n.repo_name && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{n.repo_name}</span>}
                 {hasCode && <Badge label={blocks.find(b => b.type === "code")?.lang?.toUpperCase() || "CODE"} colors={{ bg: "#111110", text: "#888780", border: "#2C2C2A" }} small />}
                 {n.title && <span style={{ fontSize: 13, fontWeight: 500 }}>{n.title}</span>}
                 {n.pinned && <span style={{ fontSize: 10, color: "#FAC775" }}>pinned</span>}
@@ -1018,6 +1043,7 @@ function NotesView({ notes, issues, files, testCases, projectId, reload }) {
                 {linkedIssue && <><span>·</span><span style={{ color: "#F09595" }}>◉ {linkedIssue.title}</span></>}
                 {linkedTest && <><span>·</span><span style={{ color: "#5DCAA5" }}>▷ {linkedTest.title}</span></>}
                 {linkedFile && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace" }}>{linkedFile.name}</span></>}
+                {parseMtags(n.meeting_tag).map(t => <span key={t} style={{ padding: "0 4px", borderRadius: 2, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C", fontSize: 9 }}>{t}</span>)}
               </div>
             </div>
             <div style={{ display: "flex", gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
@@ -1036,7 +1062,7 @@ function NotesView({ notes, issues, files, testCases, projectId, reload }) {
 // Calendar View
 // ============================================
 
-function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusMeeting }) {
+function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusMeeting, allNotes }) {
   const [month, setMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -1196,7 +1222,8 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
                           {(done.length > 0 || tpass.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#5DCAA5", marginBottom: 2 }}>SHIPPED</div>{done.map(i => <div key={i.id} style={{ fontSize: 11, color: "#5DCAA5", padding: "1px 0" }}>✓ {i.title}</div>)}{tpass.map(t => <div key={t.id} style={{ fontSize: 11, color: "#5DCAA5", padding: "1px 0" }}>✓ {t.title}</div>)}</div>}
                           {(prog.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#85B7EB", marginBottom: 2 }}>IN PROGRESS</div>{prog.map(i => <div key={i.id} style={{ fontSize: 11, color: "#85B7EB", padding: "1px 0" }}>→ {i.title}</div>)}</div>}
                           {(opn.length > 0 || tother.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#888780", marginBottom: 2 }}>OPEN</div>{opn.map(i => <div key={i.id} style={{ fontSize: 11, color: "#888780", padding: "1px 0" }}>○ {i.title}</div>)}{tother.map(t => <div key={t.id} style={{ fontSize: 11, color: "#888780", padding: "1px 0" }}>○ {t.title}</div>)}</div>}
-                          {ti.length === 0 && tt.length === 0 && <div style={{ fontSize: 10, color: "#2C2C2A", marginBottom: 6 }}>No items tagged. Use "Meeting tag" in issue/test editor.</div>}
+                          {(() => { const tn = (allNotes || []).filter(n => parseMtags(n.meeting_tag).includes(mt.title)); return tn.length > 0 ? <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#AFA9EC", marginBottom: 2 }}>NOTES</div>{tn.map(n => <div key={n.id} style={{ fontSize: 11, color: "#AFA9EC", padding: "1px 0" }}>☰ {n.title || n.content.substring(0, 40)}</div>)}</div> : null; })()}
+                          {ti.length === 0 && tt.length === 0 && (allNotes || []).filter(n => parseMtags(n.meeting_tag).includes(mt.title)).length === 0 && <div style={{ fontSize: 10, color: "#2C2C2A", marginBottom: 6 }}>No items tagged. Use "Meeting tags" in editors.</div>}
                           <div style={{ borderTop: "1px solid #1A1A18", paddingTop: 6, marginTop: 4 }}>
                             <div style={{ fontSize: 9, color: "#D85A30", marginBottom: 3 }}>TALKING POINTS</div>
                             {qs.map((q, idx) => (
@@ -1292,7 +1319,7 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
 // Meeting Focus View (full-screen meeting mode)
 // ============================================
 
-function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meetings }) {
+function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meetings, allNotes }) {
   const [notes, setNotes] = useState(meeting.meeting_notes || "");
   const [manualItems, setManualItems] = useState(() => { try { const q = Array.isArray(meeting.questions) ? meeting.questions : JSON.parse(meeting.questions || "[]"); return q.filter(x => x.q); } catch { return []; } });
   const [newItem, setNewItem] = useState("");
@@ -1313,6 +1340,7 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
   // Auto-populated items: issues & tests tagged with this meeting title
   const taggedIssues = (issues || []).filter(i => parseMtags(i.meeting_tag).includes(meeting.title));
   const taggedTests = (testCases || []).filter(t => parseMtags(t.meeting_tag).includes(meeting.title));
+  const taggedNotes = (allNotes || []).filter(n => parseMtags(n.meeting_tag).includes(meeting.title));
 
   // Group by status
   const completedIssues = taggedIssues.filter(i => ["fixed","verified","wont_fix"].includes(i.status));
@@ -1354,7 +1382,7 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
   const STS = { fixed: { color: "#5DCAA5", icon: "✓" }, verified: { color: "#5DCAA5", icon: "✓✓" }, wont_fix: { color: "#5F5E5A", icon: "—" }, in_progress: { color: "#85B7EB", icon: "→" }, review: { color: "#AFA9EC", icon: "◎" }, open: { color: "#888780", icon: "○" }, reopened: { color: "#F09595", icon: "↺" }, pass: { color: "#5DCAA5", icon: "✓" }, fail: { color: "#F09595", icon: "✗" }, not_run: { color: "#888780", icon: "○" } };
   const stsOf = (s) => STS[s] || { color: "#888780", icon: "·" };
 
-  const taggedTotal = taggedIssues.length + taggedTests.length;
+  const taggedTotal = taggedIssues.length + taggedTests.length + taggedNotes.length;
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#111110", zIndex: 120, display: "flex", flexDirection: "column" }}>
@@ -1404,7 +1432,15 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
               </div>
             )}
 
-            {taggedTotal === 0 && <div style={{ padding: "12px 8px", fontSize: 11, color: "#2C2C2A" }}>No items tagged with this meeting. Tag issues or tests in the create/edit modal.</div>}
+            {/* Tagged notes */}
+            {taggedNotes.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 10, color: "#AFA9EC", fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Notes</div>
+                {taggedNotes.map(n => (<div key={n.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "#AFA9EC" }}>☰</span><span style={{ color: "#D3D1C7", flex: 1 }}>{n.title || n.content.substring(0, 40)}</span><span style={{ fontSize: 9, color: "#5F5E5A" }}>{n.category}</span></div>))}
+              </div>
+            )}
+
+            {taggedTotal === 0 && <div style={{ padding: "12px 8px", fontSize: 11, color: "#2C2C2A" }}>No items tagged with this meeting. Tag issues, tests, or notes in the editor.</div>}
 
             {/* Manual talking points */}
             <div style={{ borderTop: taggedTotal > 0 ? "1px solid #1A1A18" : "none", paddingTop: taggedTotal > 0 ? 12 : 0 }}>

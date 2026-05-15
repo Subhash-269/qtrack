@@ -456,11 +456,11 @@ export async function getNotes(projectId) {
   return data || []
 }
 
-export async function createNote(projectId, { title, content, category, linked_issue_id, linked_file_id }) {
+export async function createNote(projectId, { title, content, category, linked_issue_id, linked_file_id, linked_test_id, code_lang, meeting_tag, repo_name }) {
   const user_id = await uid()
   const { data, error } = await supabase
     .from('notes')
-    .insert({ user_id, project_id: projectId, title: title || '', content: content || '', category: category || 'scratch', linked_issue_id: linked_issue_id || null, linked_file_id: linked_file_id || null })
+    .insert({ user_id, project_id: projectId, title: title || '', content: content || '', category: category || 'scratch', linked_issue_id: linked_issue_id || null, linked_file_id: linked_file_id || null, linked_test_id: linked_test_id || null, code_lang: code_lang || '', meeting_tag: meeting_tag || null, repo_name: repo_name || '' })
     .select().single()
   if (error) throw error
   return data
