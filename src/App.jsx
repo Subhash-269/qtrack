@@ -217,8 +217,8 @@ export default function App({ session }) {
           {view === "calendar" && <CalendarView meetings={meetings} issues={issues} testCases={testCases} projectId={activeProjectId} reload={reload} onFocusMeeting={mt => setMeetingFocus(mt)} allNotes={notes} />}
           {view === "board" && <BoardView columns={columns} cards={cards} projectId={activeProjectId} reload={reload} issues={issues} files={files} addIssue={addIssue} />}
         </div>
-        {/* Persistent media player — pauses during meetings */}
-        {!meetingFocus && <div style={{ borderTop: "1px solid #1A1A18", padding: "6px 28px", flexShrink: 0 }}>
+        {/* Music dock */}
+        {!meetingFocus && <div style={{ background: "#161615", borderTop: "1px solid #1A1A18", padding: "4px 20px", flexShrink: 0 }}>
           <MediaPlayer />
         </div>}
       </div>
@@ -401,77 +401,173 @@ function MediaPlayer() {
   const [inputVal, setInputVal] = useState("");
   const [type, setType] = useState(() => { try { return localStorage.getItem("qtrack_media_type") || ""; } catch { return ""; } });
   const [subtype, setSubtype] = useState(() => { try { return localStorage.getItem("qtrack_media_sub") || ""; } catch { return ""; } });
-  const [expanded, setExpanded] = useState(false);
+  const [mode, setMode] = useState("mini");
   const [history, setHistory] = useState([]);
   const [naming, setNaming] = useState(null);
   const [nameVal, setNameVal] = useState("");
+  // YouTube player state
+  const [ytPlaying, setYtPlaying] = useState(false);
+  const [ytTime, setYtTime] = useState(0);
+  const [ytDuration, setYtDuration] = useState(0);
+  const [ytTitle, setYtTitle] = useState("");
+  const [ytVol, setYtVol] = useState(80);
+  const [showVid, setShowVid] = useState(false);
+  const ytRef = useRef(null);
+  const ytDivRef = useRef(null);
+  const ytInterval = useRef(null);
 
   useEffect(() => { db.getMediaHistory().then(h => setHistory(h || [])).catch(() => {}); }, []);
 
-  const parseUrl = (raw) => { if (!raw) return null; let m = raw.match(/open\.spotify\.com\/(track|playlist|album|episode)\/([a-zA-Z0-9]+)/); if (m) return { type: "spotify", sub: m[1], embed: `https://open.spotify.com/embed/${m[1]}/${m[2]}?theme=0` }; m = raw.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/); if (m) return { type: "youtube", sub: "video", embed: `https://www.youtube.com/embed/${m[1]}` }; m = raw.match(/music\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/); if (m) return { type: "youtube", sub: "video", embed: `https://www.youtube.com/embed/${m[1]}` }; return null; };
+  // Load YouTube IFrame API
+  useEffect(() => {
+    if (type !== "youtube" || !embedUrl) return;
+    if (!window.YT) {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+    }
+    const initPlayer = () => {
+      const videoId = embedUrl.split("/embed/")[1]?.split("?")[0];
+      if (!videoId || !ytDivRef.current) return;
+      if (ytRef.current) { try { ytRef.current.destroy(); } catch {} }
+      ytRef.current = new window.YT.Player(ytDivRef.current, {
+        videoId,
+        height: "180",
+        width: "100%",
+        playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0 },
+        events: {
+          onReady: (e) => {
+            e.target.setVolume(ytVol);
+            setYtDuration(e.target.getDuration() || 0);
+            try { setYtTitle(e.target.getVideoData()?.title || ""); } catch {}
+            ytInterval.current = setInterval(() => {
+              if (ytRef.current) {
+                setYtTime(ytRef.current.getCurrentTime() || 0);
+                setYtDuration(ytRef.current.getDuration() || 0);
+              }
+            }, 500);
+          },
+          onStateChange: (e) => {
+            setYtPlaying(e.data === 1);
+            if (e.data === 1) try { setYtTitle(ytRef.current.getVideoData()?.title || ""); } catch {}
+          }
+        }
+      });
+    };
+    if (window.YT && window.YT.Player) initPlayer();
+    else window.onYouTubeIframeAPIReady = initPlayer;
+    return () => { if (ytInterval.current) clearInterval(ytInterval.current); };
+  }, [embedUrl, type]);
+
+  const parseUrl = (raw) => { if (!raw) return null; let m = raw.match(/open\.spotify\.com\/(track|playlist|album|episode)\/([a-zA-Z0-9]+)/); if (m) return { type: "spotify", sub: m[1], embed: `https://open.spotify.com/embed/${m[1]}/${m[2]}?utm_source=generator&theme=0` }; m = raw.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/); if (m) return { type: "youtube", sub: "video", embed: `https://www.youtube.com/embed/${m[1]}` }; m = raw.match(/music\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/); if (m) return { type: "youtube", sub: "video", embed: `https://www.youtube.com/embed/${m[1]}` }; return null; };
   const defaultName = (t, s) => t === "spotify" ? `Spotify ${s}` : "YouTube";
-
   const saveHistory = (nh) => { setHistory(nh); db.saveMediaHistory(nh).catch(() => {}); };
-
-  const playUrl = (raw) => {
-    const p = parseUrl(raw);
-    if (!p) return;
-    setEmbedUrl(p.embed); setType(p.type); setSubtype(p.sub); setInputVal("");
-    try { localStorage.setItem("qtrack_media_embed", p.embed); localStorage.setItem("qtrack_media_type", p.type); localStorage.setItem("qtrack_media_sub", p.sub); } catch {}
-    const existing = history.find(h => h.embed === p.embed);
-    if (existing) { saveHistory([existing, ...history.filter(h => h.embed !== p.embed)]); }
-    else { setNaming(p.embed); setNameVal(defaultName(p.type, p.sub)); }
+  const currentName = () => { const h = history.find(x => x.embed === embedUrl); return h?.name || ytTitle || defaultName(type, subtype); };
+  const playUrl = (raw) => { const p = parseUrl(raw); if (!p) return; setEmbedUrl(p.embed); setType(p.type); setSubtype(p.sub); setInputVal(""); setMode("mini"); setShowVid(false); try { localStorage.setItem("qtrack_media_embed", p.embed); localStorage.setItem("qtrack_media_type", p.type); localStorage.setItem("qtrack_media_sub", p.sub); } catch {} const existing = history.find(h => h.embed === p.embed); if (existing) { saveHistory([existing, ...history.filter(h => h.embed !== p.embed)]); } else { setNaming(p.embed); setNameVal(defaultName(p.type, p.sub)); } };
+  const saveName = () => { const name = nameVal.trim() || defaultName(type, subtype); saveHistory([{ embed: embedUrl, type, sub: subtype, name }, ...history.filter(h => h.embed !== embedUrl)].slice(0, 8)); setNaming(null); };
+  const playFromHistory = (h) => { setEmbedUrl(h.embed); setType(h.type); setSubtype(h.sub); setMode("mini"); setShowVid(false); try { localStorage.setItem("qtrack_media_embed", h.embed); localStorage.setItem("qtrack_media_type", h.type); localStorage.setItem("qtrack_media_sub", h.sub); } catch {} };
+  const clearMedia = () => {
+    if (ytRef.current) { try { ytRef.current.destroy(); } catch {} ytRef.current = null; }
+    if (ytInterval.current) clearInterval(ytInterval.current);
+    setEmbedUrl(""); setType(""); setSubtype(""); setMode("mini"); setNaming(null); setYtPlaying(false); setYtTime(0); setYtDuration(0); setYtTitle(""); setShowVid(false);
+    try { localStorage.removeItem("qtrack_media_embed"); localStorage.removeItem("qtrack_media_type"); localStorage.removeItem("qtrack_media_sub"); } catch {}
   };
-  const saveName = () => {
-    const name = nameVal.trim() || defaultName(type, subtype);
-    saveHistory([{ embed: embedUrl, type, sub: subtype, name }, ...history.filter(h => h.embed !== embedUrl)].slice(0, 8));
-    setNaming(null);
-  };
-  const playFromHistory = (h) => { setEmbedUrl(h.embed); setType(h.type); setSubtype(h.sub); try { localStorage.setItem("qtrack_media_embed", h.embed); localStorage.setItem("qtrack_media_type", h.type); localStorage.setItem("qtrack_media_sub", h.sub); } catch {} };
-  const clearMedia = () => { setEmbedUrl(""); setType(""); setSubtype(""); setExpanded(false); setNaming(null); try { localStorage.removeItem("qtrack_media_embed"); localStorage.removeItem("qtrack_media_type"); localStorage.removeItem("qtrack_media_sub"); } catch {} };
   const removeHistory = (embed) => { saveHistory(history.filter(h => h.embed !== embed)); };
-  const renameHistory = (embed, newName) => { saveHistory(history.map(h => h.embed === embed ? { ...h, name: newName } : h)); };
-
   const isPlaylist = subtype === "playlist" || subtype === "album";
-  const h = expanded ? (type === "spotify" ? 380 : 280) : (type === "spotify" ? 152 : 160);
+  const fmtTime = (s) => { const m = Math.floor(s / 60); return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`; };
 
-  return embedUrl ? (
-    <div style={{ opacity: 0.85 }}>
-      {/* Name prompt for new URLs */}
-      {naming && (
-        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
-          <span style={{ fontSize: 10, color: "#5F5E5A" }}>Name this:</span>
-          <input autoFocus value={nameVal} onChange={e => setNameVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); }} placeholder="e.g. Lo-fi beats, Focus mix..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#161615", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-          <Btn small onClick={saveName}>Save</Btn>
+  // --- YOUTUBE PLAYING ---
+  if (embedUrl && type === "youtube") {
+    return (
+      <div>
+        {naming && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "6px 0" }}>
+            <span style={{ fontSize: 11, color: "#5F5E5A" }}>Name:</span>
+            <input autoFocus value={nameVal} onChange={e => setNameVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); }} placeholder="e.g. Lo-fi beats..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+            <Btn small onClick={saveName}>Save</Btn>
+          </div>
+        )}
+        {/* Hidden/shown video */}
+        <div style={{ height: showVid ? 180 : 0, overflow: "hidden", borderRadius: 6, transition: "height 0.2s ease", marginBottom: showVid ? 6 : 0 }}>
+          <div ref={ytDivRef} />
         </div>
-      )}
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <iframe src={embedUrl} width="100%" height={h} frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" allowFullScreen style={{ borderRadius: 8, transition: "height 0.2s ease" }} />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingTop: 4, flexShrink: 0 }}>
-          {isPlaylist && <button onClick={() => setExpanded(!expanded)} title={expanded ? "Collapse" : "Show tracks"} style={{ background: "none", border: "1px solid #1A1A18", color: "#444441", cursor: "pointer", fontSize: 10, padding: "2px 6px", borderRadius: 3 }}>{expanded ? "▾" : "▴"}</button>}
-          <button onClick={clearMedia} title="Stop" style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10 }}>✕</button>
+        {/* Custom dock bar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
+          {/* Title */}
+          <div style={{ flex: "0 0 180px", minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: "#F1EFE8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ytTitle || currentName()}</div>
+            <div style={{ fontSize: 9, color: "#5F5E5A" }}>YouTube</div>
+          </div>
+          {/* Controls */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => { if (ytRef.current) ytRef.current.seekTo(Math.max(0, ytRef.current.getCurrentTime() - 10)); }} title="Back 10s" style={{ background: "none", border: "none", color: "#B4B2A9", cursor: "pointer", fontSize: 14 }}>⏮</button>
+            <button onClick={() => { if (ytRef.current) { ytPlaying ? ytRef.current.pauseVideo() : ytRef.current.playVideo(); } }} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "#F1EFE8", color: "#111110", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{ytPlaying ? "⏸" : "▶"}</button>
+            <button onClick={() => { if (ytRef.current) ytRef.current.seekTo(Math.min(ytDuration, ytRef.current.getCurrentTime() + 10)); }} title="Forward 10s" style={{ background: "none", border: "none", color: "#B4B2A9", cursor: "pointer", fontSize: 14 }}>⏭</button>
+          </div>
+          {/* Progress */}
+          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 9, color: "#5F5E5A", fontFamily: "'SF Mono', monospace", minWidth: 32 }}>{fmtTime(ytTime)}</span>
+            <div style={{ flex: 1, height: 4, background: "#2C2C2A", borderRadius: 2, cursor: "pointer", position: "relative" }} onClick={e => { if (ytRef.current && ytDuration) { const rect = e.currentTarget.getBoundingClientRect(); const pct = (e.clientX - rect.left) / rect.width; ytRef.current.seekTo(pct * ytDuration); } }}>
+              <div style={{ height: "100%", width: `${ytDuration ? (ytTime / ytDuration) * 100 : 0}%`, background: "#E24B4A", borderRadius: 2, transition: "width 0.3s linear" }} />
+            </div>
+            <span style={{ fontSize: 9, color: "#5F5E5A", fontFamily: "'SF Mono', monospace", minWidth: 32 }}>{fmtTime(ytDuration)}</span>
+          </div>
+          {/* Volume */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flex: "0 0 100px" }}>
+            <span style={{ fontSize: 11, color: "#5F5E5A" }}>{ytVol === 0 ? "🔇" : "🔊"}</span>
+            <input type="range" min="0" max="100" value={ytVol} onChange={e => { const v = Number(e.target.value); setYtVol(v); if (ytRef.current) ytRef.current.setVolume(v); }} style={{ flex: 1, height: 3, accentColor: "#E24B4A" }} />
+          </div>
+          {/* Mode buttons */}
+          <button onClick={() => setShowVid(!showVid)} title={showVid ? "Hide video" : "Show video"} style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: showVid ? "#2C2C2A" : "transparent", color: showVid ? "#F1EFE8" : "#5F5E5A", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>◻</button>
+          <button onClick={clearMedia} title="Stop" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: "transparent", color: "#444441", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
         </div>
       </div>
-    </div>
-  ) : (
-    <div>
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <span style={{ fontSize: 10, color: "#2C2C2A", flexShrink: 0 }}>♪</span>
+    );
+  }
+
+  // --- SPOTIFY PLAYING ---
+  if (embedUrl && type === "spotify") {
+    const iframeH = mode === "tracks" ? 380 : mode === "full" ? 152 : 80;
+    return (
+      <div>
+        {naming && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "6px 0" }}>
+            <span style={{ fontSize: 11, color: "#5F5E5A" }}>Name:</span>
+            <input autoFocus value={nameVal} onChange={e => setNameVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); }} placeholder="e.g. Lo-fi beats..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+            <Btn small onClick={saveName}>Save</Btn>
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 8, opacity: 0.85 }}>
+          <div style={{ flex: 1, minWidth: 0, overflow: "hidden", borderRadius: 6, transition: "height 0.2s ease", height: iframeH }}>
+            <iframe src={embedUrl} width="100%" height={Math.max(iframeH, 80)} frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" allowFullScreen style={{ borderRadius: 6, display: "block" }} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0, paddingBottom: 28 }}>
+            <button onClick={() => setMode("mini")} title="Mini" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: mode === "mini" ? "#2C2C2A" : "transparent", color: mode === "mini" ? "#F1EFE8" : "#5F5E5A", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>▬</button>
+            <button onClick={() => setMode("full")} title="Expand" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: mode === "full" ? "#2C2C2A" : "transparent", color: mode === "full" ? "#F1EFE8" : "#5F5E5A", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>◻</button>
+            {isPlaylist && <button onClick={() => setMode("tracks")} title="Tracks" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: mode === "tracks" ? "#2C2C2A" : "transparent", color: mode === "tracks" ? "#F1EFE8" : "#5F5E5A", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>≡</button>}
+            <button onClick={clearMedia} title="Stop" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: "transparent", color: "#444441", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- EMPTY STATE ---
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flex: 1 }}>
+        <span style={{ fontSize: 12, color: "#2C2C2A" }}>♪</span>
         <input value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") playUrl(inputVal); }} placeholder="Paste Spotify or YouTube URL..." style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 11, background: "transparent", color: "#5F5E5A", border: "1px solid #1A1A18", outline: "none", fontFamily: "'SF Mono', monospace" }} />
       </div>
       {history.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 9, color: "#444441", marginBottom: 4 }}>Recent playlists</div>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {history.map((hi, idx) => (
-              <div key={idx} style={{ display: "inline-flex", alignItems: "center", gap: 0, background: "#161615", border: "1px solid #1A1A18", borderRadius: 4, overflow: "hidden" }}>
-                <button onClick={() => playFromHistory(hi)} style={{ padding: "4px 10px", fontSize: 10, cursor: "pointer", border: "none", background: "transparent", color: "#D3D1C7" }}>{hi.type === "spotify" ? "♫" : "▶"} {hi.name || defaultName(hi.type, hi.sub)}</button>
-                <button onClick={() => removeHistory(hi.embed)} title="Remove" style={{ padding: "4px 6px", border: "none", borderLeft: "1px solid #1A1A18", background: "transparent", color: "#444441", cursor: "pointer", fontSize: 9 }} onMouseEnter={e => e.currentTarget.style.color = "#F09595"} onMouseLeave={e => e.currentTarget.style.color = "#444441"}>✕</button>
-              </div>
-            ))}
-          </div>
+        <div style={{ display: "flex", gap: 3, flexWrap: "wrap", alignItems: "center" }}>
+          {history.slice(0, 4).map((hi, idx) => (
+            <div key={idx} style={{ display: "inline-flex", alignItems: "center", background: "#161615", border: "1px solid #1A1A18", borderRadius: 4, overflow: "hidden" }}>
+              <button onClick={() => playFromHistory(hi)} style={{ padding: "3px 8px", fontSize: 9, cursor: "pointer", border: "none", background: "transparent", color: "#B4B2A9" }}>{hi.type === "spotify" ? "♫" : "▶"} {hi.name || defaultName(hi.type, hi.sub)}</button>
+              <button onClick={() => removeHistory(hi.embed)} title="Remove" style={{ padding: "3px 4px", border: "none", borderLeft: "1px solid #1A1A18", background: "transparent", color: "#2C2C2A", cursor: "pointer", fontSize: 8 }} onMouseEnter={e => e.currentTarget.style.color = "#F09595"} onMouseLeave={e => e.currentTarget.style.color = "#2C2C2A"}>✕</button>
+            </div>
+          ))}
+          {history.length > 4 && <span style={{ fontSize: 9, color: "#2C2C2A" }}>+{history.length - 4}</span>}
         </div>
       )}
     </div>
