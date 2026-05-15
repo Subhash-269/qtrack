@@ -217,6 +217,10 @@ export default function App({ session }) {
           {view === "calendar" && <CalendarView meetings={meetings} issues={issues} testCases={testCases} projectId={activeProjectId} reload={reload} onFocusMeeting={mt => setMeetingFocus(mt)} allNotes={notes} />}
           {view === "board" && <BoardView columns={columns} cards={cards} projectId={activeProjectId} reload={reload} issues={issues} files={files} addIssue={addIssue} />}
         </div>
+        {/* Persistent media player — pauses during meetings */}
+        {!meetingFocus && <div style={{ borderTop: "1px solid #1A1A18", padding: "6px 28px", flexShrink: 0 }}>
+          <MediaPlayer />
+        </div>}
       </div>
 
       {modal && <Modal modal={modal} files={files} onClose={() => setModal(null)} addProject={addProject} addFile={addFile} addIssue={addIssue} addTest={addTest} editIssue={editIssue} editTest={editTest} usedRepos={[...new Set([...issues, ...testCases].map(x => x.repo_name).filter(Boolean))]} usedBranches={[...new Set([...issues, ...testCases].map(x => x.branch_name).filter(Boolean))]} meetingTags={[...new Set(meetings.map(m => m.title))]} />}
@@ -344,7 +348,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
       {picking && (<div style={{ maxWidth: 400, margin: "0 auto 24px", background: "#161615", border: "1px solid #2C2C2A", borderRadius: 10, padding: 14, maxHeight: 220, overflowY: "auto" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Pick a task</span><button onClick={() => setPicking(false)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 10 }}>✕</button></div>{openTasks.map(tk => (<div key={tk.id} role="button" onMouseDown={() => { focusOn(tk.t, tk.id); setPicking(false); }} style={{ padding: "7px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, color: "#D3D1C7", marginBottom: 2 }} onMouseEnter={e => e.currentTarget.style.background = "#1A1A18"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{tk.t === "issue" ? "◉" : "▷"} {tk.l}</div>))}</div>)}
 
       {/* Bottom panels */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {/* Stats */}
         <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
           <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Today</div>
@@ -387,12 +391,6 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
             </select>
           )}
         </div>
-
-        {/* Media */}
-        <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
-          <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Listen</div>
-          <MediaPlayer />
-        </div>
       </div>
     </div>
   );
@@ -403,18 +401,28 @@ function MediaPlayer() {
   const [inputVal, setInputVal] = useState("");
   const [type, setType] = useState(() => { try { return localStorage.getItem("qtrack_media_type") || ""; } catch { return ""; } });
   const [subtype, setSubtype] = useState(() => { try { return localStorage.getItem("qtrack_media_sub") || ""; } catch { return ""; } });
+  const [expanded, setExpanded] = useState(false);
   const parseUrl = (raw) => { if (!raw) return null; let m = raw.match(/open\.spotify\.com\/(track|playlist|album|episode)\/([a-zA-Z0-9]+)/); if (m) return { type: "spotify", sub: m[1], embed: `https://open.spotify.com/embed/${m[1]}/${m[2]}?theme=0` }; m = raw.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/); if (m) return { type: "youtube", sub: "video", embed: `https://www.youtube.com/embed/${m[1]}` }; m = raw.match(/music\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/); if (m) return { type: "youtube", sub: "video", embed: `https://www.youtube.com/embed/${m[1]}` }; return null; };
   const setMedia = () => { const p = parseUrl(inputVal); if (p) { setEmbedUrl(p.embed); setType(p.type); setSubtype(p.sub); setInputVal(""); try { localStorage.setItem("qtrack_media_embed", p.embed); localStorage.setItem("qtrack_media_type", p.type); localStorage.setItem("qtrack_media_sub", p.sub); } catch {} } };
-  const clearMedia = () => { setEmbedUrl(""); setType(""); setSubtype(""); try { localStorage.removeItem("qtrack_media_embed"); localStorage.removeItem("qtrack_media_type"); localStorage.removeItem("qtrack_media_sub"); } catch {} };
-  const spotifyH = (subtype === "playlist" || subtype === "album") ? 380 : 152;
+  const clearMedia = () => { setEmbedUrl(""); setType(""); setSubtype(""); setExpanded(false); try { localStorage.removeItem("qtrack_media_embed"); localStorage.removeItem("qtrack_media_type"); localStorage.removeItem("qtrack_media_sub"); } catch {} };
+  const isPlaylist = subtype === "playlist" || subtype === "album";
+  const compactH = type === "spotify" ? (isPlaylist ? 152 : 152) : 160;
+  const expandedH = type === "spotify" ? 380 : 280;
+  const h = expanded ? expandedH : compactH;
   return embedUrl ? (
-    <div style={{ opacity: 0.8 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 9, color: "#444441" }}>{type === "spotify" ? `Spotify ${subtype}` : "YouTube"}</span><button onClick={clearMedia} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9 }}>✕</button></div>
-      <iframe src={embedUrl} width="100%" height={type === "spotify" ? spotifyH : 160} frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" allowFullScreen style={{ borderRadius: 8 }} />
+    <div style={{ opacity: 0.85, display: "flex", gap: 8, alignItems: "flex-start" }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <iframe src={embedUrl} width="100%" height={h} frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" allowFullScreen style={{ borderRadius: 8, transition: "height 0.2s ease" }} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingTop: 4, flexShrink: 0 }}>
+        {isPlaylist && <button onClick={() => setExpanded(!expanded)} title={expanded ? "Collapse" : "Show tracks"} style={{ background: "none", border: "1px solid #1A1A18", color: "#444441", cursor: "pointer", fontSize: 10, padding: "2px 6px", borderRadius: 3 }}>{expanded ? "▾" : "▴"}</button>}
+        <button onClick={clearMedia} title="Remove" style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 10 }}>✕</button>
+      </div>
     </div>
   ) : (
-    <div>
-      <input value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") setMedia(); }} placeholder="Spotify or YouTube URL" style={{ width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #1A1A18", outline: "none", fontFamily: "'SF Mono', monospace", boxSizing: "border-box" }} />
+    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <span style={{ fontSize: 10, color: "#2C2C2A", flexShrink: 0 }}>♪</span>
+      <input value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") setMedia(); }} placeholder="Paste Spotify or YouTube URL to play while you work..." style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 11, background: "transparent", color: "#5F5E5A", border: "1px solid #1A1A18", outline: "none", fontFamily: "'SF Mono', monospace" }} />
     </div>
   );
 }
