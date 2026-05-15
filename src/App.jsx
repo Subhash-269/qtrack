@@ -92,6 +92,7 @@ export default function App({ session }) {
   const [files, setFiles] = useState([]);
   const [issues, setIssues] = useState([]);
   const [testCases, setTestCases] = useState([]);
+  const [links, setLinks] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
 
   const [view, setView] = useState("dashboard");
@@ -139,14 +140,16 @@ export default function App({ session }) {
 
   async function loadProjectData(projectId) {
     try {
-      const [f, i, t] = await Promise.all([
+      const [f, i, t, l] = await Promise.all([
         db.getFiles(projectId),
         db.getIssues(projectId),
         db.getTestCases(projectId),
+        db.getLinks(projectId),
       ]);
       setFiles(f);
       setIssues(i);
       setTestCases(t);
+      setLinks(l);
     } catch (err) {
       console.error("Failed to load project data:", err);
     }
@@ -260,6 +263,16 @@ export default function App({ session }) {
     await reload();
   };
 
+  const linkIssueTest = async (issueId, testCaseId) => {
+    await db.linkIssueToTest(issueId, testCaseId);
+    await reload();
+  };
+
+  const unlinkIssueTest = async (issueId, testCaseId) => {
+    await db.unlinkIssueFromTest(issueId, testCaseId);
+    await reload();
+  };
+
   const sidebarW = 220;
   const S = {
     root: { display: "flex", minHeight: "100vh", background: "#111110", color: "#F1EFE8", fontFamily: "'DM Sans', -apple-system, sans-serif", fontSize: 13 },
@@ -360,10 +373,10 @@ export default function App({ session }) {
             <DashboardView stats={stats} projIssues={issues} projTests={testCases} projFiles={files} fileMap={fileMap} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} />
           )}
           {view === "issues" && (
-            <IssuesView issues={filteredIssues} files={files} fileMap={fileMap} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} onStatusChange={updateIssueStatus} onDelete={deleteIssue} onAdd={() => setModal({ type: "issue" })} />
+            <IssuesView issues={filteredIssues} files={files} fileMap={fileMap} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} onStatusChange={updateIssueStatus} onDelete={deleteIssue} onAdd={() => setModal({ type: "issue" })} links={links} testCases={testCases} onLink={linkIssueTest} onUnlink={unlinkIssueTest} />
           )}
           {view === "tests" && (
-            <TestsView tests={filteredTests} files={files} fileMap={fileMap} filterFile={filterFile} setFilterFile={setFilterFile} expandedTC={expandedTC} setExpandedTC={setExpandedTC} onStatusChange={updateTestStatus} onDelete={deleteTest} onAdd={() => setModal({ type: "test" })} />
+            <TestsView tests={filteredTests} files={files} fileMap={fileMap} filterFile={filterFile} setFilterFile={setFilterFile} expandedTC={expandedTC} setExpandedTC={setExpandedTC} onStatusChange={updateTestStatus} onDelete={deleteTest} onAdd={() => setModal({ type: "test" })} links={links} allIssues={issues} onLink={linkIssueTest} onUnlink={unlinkIssueTest} />
           )}
           {view === "files" && (
             <FilesView files={files} issues={issues} tests={testCases} onDelete={deleteFile} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />
@@ -436,7 +449,12 @@ function DashboardView({ stats, projIssues, projTests, projFiles, fileMap, onNav
   );
 }
 
-function IssuesView({ issues, files, fileMap, filterType, setFilterType, filterFile, setFilterFile, filterPriority, setFilterPriority, onStatusChange, onDelete, onAdd }) {
+function IssuesView({ issues, files, fileMap, filterType, setFilterType, filterFile, setFilterFile, filterPriority, setFilterPriority, onStatusChange, onDelete, onAdd, links, testCases, onLink, onUnlink }) {
+  const [linkingIssueId, setLinkingIssueId] = useState(null);
+
+  const linkedTestIds = (issueId) => links.filter((l) => l.issue_id === issueId).map((l) => l.test_case_id);
+  const testMap = Object.fromEntries(testCases.map((t) => [t.id, t]));
+
   return (
     <div>
       <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
@@ -448,34 +466,68 @@ function IssuesView({ issues, files, fileMap, filterType, setFilterType, filterF
         <Select value={filterPriority} onChange={setFilterPriority} options={[{ value: "all", label: "All priorities" }, ...PRIORITIES.map((p) => ({ value: p, label: p }))]} />
       </div>
       {issues.length === 0 && <EmptyState icon="◉" title="No issues found" sub="Create issues to track bugs and to-dos across your files" action="New issue" onAction={onAdd} />}
-      {issues.map((i) => (
-        <div key={i.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8, transition: "border-color 0.1s" }} onMouseEnter={(e) => e.currentTarget.style.borderColor = "#444441"} onMouseLeave={(e) => e.currentTarget.style.borderColor = "#2C2C2A"}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} />
-                <span style={{ fontSize: 13, fontWeight: 500 }}>{i.title}</span>
+      {issues.map((i) => {
+        const ltIds = linkedTestIds(i.id);
+        const unlinkedTests = testCases.filter((t) => !ltIds.includes(t.id));
+        return (
+          <div key={i.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8, transition: "border-color 0.1s" }} onMouseEnter={(e) => e.currentTarget.style.borderColor = "#444441"} onMouseLeave={(e) => e.currentTarget.style.borderColor = "#2C2C2A"}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} />
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{i.title}</span>
+                </div>
+                {i.description && <div style={{ fontSize: 12, color: "#888780", marginBottom: 6, lineHeight: 1.5 }}>{i.description}</div>}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A" }}>
+                  <span style={{ fontFamily: "'SF Mono', monospace" }}>{fileMap[i.file_id]?.name || "—"}</span>
+                  <span>·</span>
+                  <span>{SHORT_DATE(i.created_at)}</span>
+                </div>
               </div>
-              {i.description && <div style={{ fontSize: 12, color: "#888780", marginBottom: 6, lineHeight: 1.5 }}>{i.description}</div>}
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A" }}>
-                <span style={{ fontFamily: "'SF Mono', monospace" }}>{fileMap[i.file_id]?.name || "—"}</span>
-                <span>·</span>
-                <span>{SHORT_DATE(i.created_at)}</span>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                <Badge label={i.priority} colors={PRIORITY_COLORS[i.priority]} />
+                <Select value={i.status} onChange={(s) => onStatusChange(i.id, s)} options={ISSUE_STATUSES} style={{ fontSize: 11, padding: "3px 6px" }} />
+                <button onClick={() => onDelete(i.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }} title="Delete">✕</button>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-              <Badge label={i.priority} colors={PRIORITY_COLORS[i.priority]} />
-              <Select value={i.status} onChange={(s) => onStatusChange(i.id, s)} options={ISSUE_STATUSES} style={{ fontSize: 11, padding: "3px 6px" }} />
-              <button onClick={() => onDelete(i.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }} title="Delete">✕</button>
+            {/* Linked test cases */}
+            <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+              {ltIds.map((tid) => {
+                const tc = testMap[tid];
+                if (!tc) return null;
+                return (
+                  <span key={tid} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: TEST_STATUS_COLORS[tc.status].bg, color: TEST_STATUS_COLORS[tc.status].text, border: `1px solid ${TEST_STATUS_COLORS[tc.status].border}` }}>
+                    {tc.status === "pass" ? "✓" : tc.status === "fail" ? "✗" : "▷"} {tc.title}
+                    <button onClick={() => onUnlink(i.id, tid)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 10, padding: 0, marginLeft: 2, opacity: 0.6 }}>✕</button>
+                  </span>
+                );
+              })}
+              {linkingIssueId === i.id ? (
+                <Select
+                  value=""
+                  onChange={(tid) => { if (tid) { onLink(i.id, tid); setLinkingIssueId(null); } }}
+                  options={[{ value: "", label: "Select test case..." }, ...unlinkedTests.map((t) => ({ value: t.id, label: t.title }))]}
+                  style={{ fontSize: 11, padding: "2px 6px" }}
+                />
+              ) : (
+                <button onClick={() => setLinkingIssueId(i.id)} style={{ background: "none", border: "1px dashed #444441", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>
+                  + Link test
+                </button>
+              )}
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-function TestsView({ tests, files, fileMap, filterFile, setFilterFile, expandedTC, setExpandedTC, onStatusChange, onDelete, onAdd }) {
+function TestsView({ tests, files, fileMap, filterFile, setFilterFile, expandedTC, setExpandedTC, onStatusChange, onDelete, onAdd, links, allIssues, onLink, onUnlink }) {
+  const [linkingTestId, setLinkingTestId] = useState(null);
+
+  const linkedIssueIds = (testId) => links.filter((l) => l.test_case_id === testId).map((l) => l.issue_id);
+  const issueMap = Object.fromEntries(allIssues.map((i) => [i.id, i]));
+
   return (
     <div>
       <div style={{ display: "flex", gap: 6, marginBottom: 16, alignItems: "center" }}>
@@ -484,6 +536,8 @@ function TestsView({ tests, files, fileMap, filterFile, setFilterFile, expandedT
       {tests.length === 0 && <EmptyState icon="▷" title="No test cases yet" sub="Write test cases to verify your code works correctly. Each test has steps and expected results." action="New test case" onAction={onAdd} />}
       {tests.map((t) => {
         const expanded = expandedTC === t.id;
+        const liIds = linkedIssueIds(t.id);
+        const unlinkedIssues = allIssues.filter((i) => !liIds.includes(i.id));
         return (
           <div key={t.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, marginBottom: 8, transition: "border-color 0.1s" }} onMouseEnter={(e) => e.currentTarget.style.borderColor = "#444441"} onMouseLeave={(e) => e.currentTarget.style.borderColor = "#2C2C2A"}>
             <div style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 8 }} onClick={() => setExpandedTC(expanded ? null : t.id)}>
@@ -517,6 +571,35 @@ function TestsView({ tests, files, fileMap, filterFile, setFilterFile, expandedT
                     </div>
                   </div>
                 ))}
+                {/* Linked issues */}
+                <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #1A1A18" }}>
+                  <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 6 }}>Linked issues</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                    {liIds.map((iid) => {
+                      const issue = issueMap[iid];
+                      if (!issue) return null;
+                      const ic = issue.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" };
+                      return (
+                        <span key={iid} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: ic.bg, color: ic.text, border: `1px solid ${ic.border}` }}>
+                          {issue.type === "bug" ? "◉" : "○"} {issue.title}
+                          <button onClick={() => onUnlink(iid, t.id)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 10, padding: 0, marginLeft: 2, opacity: 0.6 }}>✕</button>
+                        </span>
+                      );
+                    })}
+                    {linkingTestId === t.id ? (
+                      <Select
+                        value=""
+                        onChange={(iid) => { if (iid) { onLink(iid, t.id); setLinkingTestId(null); } }}
+                        options={[{ value: "", label: "Select issue..." }, ...unlinkedIssues.map((i) => ({ value: i.id, label: `[${i.type}] ${i.title}` }))]}
+                        style={{ fontSize: 11, padding: "2px 6px" }}
+                      />
+                    ) : (
+                      <button onClick={() => setLinkingTestId(t.id)} style={{ background: "none", border: "1px dashed #444441", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>
+                        + Link issue
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
