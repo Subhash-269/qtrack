@@ -36,6 +36,17 @@ export async function deleteProject(id) {
   if (error) throw error
 }
 
+export async function renameProject(id, name) {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ name })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
 // ============================================
 // Files
 // ============================================

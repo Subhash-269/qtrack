@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { supabase } from "./supabaseClient";
 import * as db from "./storage";
 
@@ -102,9 +102,12 @@ export default function App({ session }) {
   const [searchQ, setSearchQ] = useState("");
   const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true);
+  const initRef = useRef(false);
 
-  // Load projects on mount
+  // Load projects on mount (ref prevents StrictMode double-creation)
   useEffect(() => {
+    if (initRef.current) return;
+    initRef.current = true;
     loadProjects();
   }, []);
 
@@ -189,11 +192,21 @@ export default function App({ session }) {
 
   // ---- Supabase-backed actions ----
 
+  const [editingProjectId, setEditingProjectId] = useState(null);
+  const [editingProjectName, setEditingProjectName] = useState("");
+
   const addProject = async (name) => {
     const p = await db.createProject(name);
     setProjects([...projects, p]);
     setActiveProjectId(p.id);
     setModal(null);
+  };
+
+  const renameProject = async (id, name) => {
+    if (!name.trim()) return;
+    await db.renameProject(id, name.trim());
+    setProjects(projects.map((p) => p.id === id ? { ...p, name: name.trim() } : p));
+    setEditingProjectId(null);
   };
 
   const addFile = async (name, category) => {
@@ -272,9 +285,28 @@ export default function App({ session }) {
         <div style={{ padding: "12px 10px", borderTop: "1px solid #2C2C2A" }}>
           <div style={{ fontSize: 10, color: "#5F5E5A", padding: "0 10px 6px", textTransform: "uppercase", letterSpacing: 0.5 }}>Projects</div>
           {projects.map((p) => (
-            <button key={p.id} onClick={() => setActiveProjectId(p.id)} style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: activeProjectId === p.id ? "#2C2C2A" : "transparent", color: activeProjectId === p.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 12, textAlign: "left", marginBottom: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {p.name}
-            </button>
+            editingProjectId === p.id ? (
+              <div key={p.id} style={{ padding: "3px 6px", marginBottom: 1 }}>
+                <input
+                  autoFocus
+                  value={editingProjectName}
+                  onChange={(e) => setEditingProjectName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") renameProject(p.id, editingProjectName);
+                    if (e.key === "Escape") setEditingProjectId(null);
+                  }}
+                  onBlur={() => renameProject(p.id, editingProjectName)}
+                  style={{ width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #444441", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+            ) : (
+              <button key={p.id}
+                onClick={() => setActiveProjectId(p.id)}
+                onDoubleClick={() => { setEditingProjectId(p.id); setEditingProjectName(p.name); }}
+                style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: activeProjectId === p.id ? "#2C2C2A" : "transparent", color: activeProjectId === p.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 12, textAlign: "left", marginBottom: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {p.name}
+              </button>
+            )
           ))}
           <button onClick={() => setModal({ type: "project" })} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>
             + New project
