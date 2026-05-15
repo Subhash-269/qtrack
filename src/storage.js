@@ -425,6 +425,12 @@ export async function clearQueue(projectId) {
   if (error) throw error
 }
 
+export async function reorderQueue(orderedIds) {
+  for (let i = 0; i < orderedIds.length; i++) {
+    await supabase.from('task_queue').update({ position: i }).eq('id', orderedIds[i])
+  }
+}
+
 // ============================================
 // Meetings
 // ============================================

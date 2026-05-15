@@ -35,6 +35,7 @@ export default function App({ session }) {
   const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
   const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null });
   const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]); const [viewingNoteId, setViewingNoteId] = useState(null); const [queue, setQueue] = useState([]); const [meetings, setMeetings] = useState([]); const [meetingFocus, setMeetingFocus] = useState(null);
+  const [showTutorial, setShowTutorial] = useState(false);
   const tRef = useRef(null); const initRef = useRef(false); const syncRef = useRef(false); const loadedTimerRef = useRef(false);
 
   // Load timer from Supabase on mount
@@ -130,7 +131,7 @@ export default function App({ session }) {
   useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); } }, []);
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
 
-  async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId(p[0].id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); } } catch (e) { console.error(e); } setLoading(false); }
+  async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId(p[0].id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); if (!localStorage.getItem("qtrack_tutorial_done")) setShowTutorial(true); } } catch (e) { console.error(e); } setLoading(false); }
   async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } try { setMeetings(await db.getMeetings(pid)); } catch { setMeetings([]); } } catch (e) { console.error(e); } }
   async function loadToday() { if (!activeProjectId) return; try { setTodaySessions(await db.getTodaySessions(activeProjectId)); } catch { setTodaySessions([]); } try { setAllSessions(await db.getAllSessions(activeProjectId)); } catch { setAllSessions([]); } }
   async function reload() { if (activeProjectId) await loadData(activeProjectId); }
@@ -244,6 +245,7 @@ export default function App({ session }) {
           </div>
         </div>); })()}
       {meetingFocus && <MeetingFocusView meeting={meetingFocus} projectId={activeProjectId} onClose={async () => { setMeetingFocus(null); await reload(); }} issues={issues} testCases={testCases} meetings={meetings} allNotes={notes} />}
+      {showTutorial && <Tutorial onClose={() => { setShowTutorial(false); localStorage.setItem("qtrack_tutorial_done", "1"); }} />}
     </div>
   );
 }
@@ -273,6 +275,15 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
 
   const addQ = async (t) => { try { await db.addToQueue(projectId, t.t, t.id, queue.length); await reload(); } catch (e) { console.error(e); } };
   const removeQ = async (qid) => { try { await db.removeFromQueue(qid); await reload(); } catch (e) { console.error(e); } };
+  const dragIdx = useRef(null);
+  const reorderQ = async (fromIdx, toIdx) => {
+    if (fromIdx === toIdx) return;
+    const items = [...queuedItems];
+    const [moved] = items.splice(fromIdx, 1);
+    items.splice(toIdx, 0, moved);
+    const orderedIds = items.map(t => t.qid);
+    try { await db.reorderQueue(orderedIds); await reload(); } catch (e) { console.error(e); }
+  };
   const submitLog = async () => { setLogError(null); try { const s = new Date(`${logForm.date}T${logForm.startTime}`); const e = new Date(`${logForm.date}T${logForm.endTime}`); if (e <= s) { setLogError("End must be after start"); return; } await logManual(logForm.taskType, logForm.taskId, s.toISOString(), e.toISOString()); setShowLog(false); } catch (e) { setLogError(e.message); } };
 
   return (
@@ -377,7 +388,8 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Up next</div>
           {queuedItems.length === 0 && <div style={{ fontSize: 11, color: "#2C2C2A", padding: "8px 0" }}>Queue empty</div>}
           {queuedItems.map((tk, idx) => (
-            <div key={tk.qid} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: idx < queuedItems.length - 1 ? "1px solid #1A1A18" : "none" }}>
+            <div key={tk.qid} draggable onDragStart={() => { dragIdx.current = idx; }} onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderTop = "2px solid #7F77DD"; }} onDragLeave={e => { e.currentTarget.style.borderTop = "none"; }} onDrop={e => { e.preventDefault(); e.currentTarget.style.borderTop = "none"; if (dragIdx.current !== null) { reorderQ(dragIdx.current, idx); dragIdx.current = null; } }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: idx < queuedItems.length - 1 ? "1px solid #1A1A18" : "none", cursor: "grab" }}>
+              <span style={{ fontSize: 10, color: "#2C2C2A", cursor: "grab" }}>⠿</span>
               <span style={{ fontSize: 9, color: "#444441", fontFamily: "'SF Mono', monospace" }}>{idx + 1}</span>
               <span style={{ color: tk.t === "issue" ? "#F09595" : "#85B7EB", fontSize: 11 }}>{tk.t === "issue" ? "◉" : "▷"}</span>
               <span style={{ flex: 1, fontSize: 11, color: idx === 0 ? "#D3D1C7" : "#5F5E5A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.l}</span>
@@ -1644,6 +1656,52 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
             <span style={{ fontSize: 10, color: "#2C2C2A" }}>{notes.length} chars</span>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Welcome Tutorial
+// ============================================
+
+const TUTORIAL_STEPS = [
+  { icon: "⊞", title: "Welcome to QTrack", sub: "Your personal productivity command center", desc: "Track issues, manage tests, stay focused with Pomodoro timers, take meeting notes, and organize your work — all in one place. Let's take a quick tour." },
+  { icon: "◎", title: "Focus timer", sub: "Pomodoro sessions with smart tracking", desc: "Start a 25-minute focus session on any task. Pause with reasons — 'Waiting' for code to run, 'Interrupted' for calls. Each type is tracked separately so you see where your time really goes. Partial sessions count too." },
+  { icon: "⚑", title: "Issues & tests", sub: "Track bugs, to-dos, and test cases", desc: "Create issues with priority, link them to files and repos. Build test cases with steps. Link issues to tests bidirectionally. Tag items with meetings so they auto-populate your meeting prep." },
+  { icon: "▦", title: "Calendar & meetings", sub: "Schedule, prepare, and take notes", desc: "Add meetings (one-time or recurring). Click 'Prep' to see your auto-populated agenda from tagged items. Click 'Join' for a full-screen meeting mode with notes. Everything syncs to the Notes tab." },
+  { icon: "≡", title: "Notes", sub: "Code snippets, decisions, investigations", desc: "Write notes with mixed text and code blocks. Use ```sql or ```python fences for syntax highlighting. Link notes to issues, tests, files, repos, and meetings. Filter by category or repo." },
+  { icon: "⊟", title: "Board", sub: "Kanban for visual planning", desc: "Create columns, add color-coded sticky cards, move them between columns. Convert any card into a real issue with one click." },
+  { icon: "♪", title: "Music dock", sub: "Spotify and YouTube while you work", desc: "Paste a Spotify or YouTube URL in the bottom bar. Music persists across tab switches. YouTube gets a full custom player with play/pause, seek, and volume. Your playlist history syncs across devices." },
+];
+
+function Tutorial({ onClose }) {
+  const [step, setStep] = useState(0);
+  const s = TUTORIAL_STEPS[step];
+  const isLast = step === TUTORIAL_STEPS.length - 1;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 16, padding: "32px 36px", width: 480, maxWidth: "90vw" }}>
+        <div style={{ display: "flex", gap: 4, justifyContent: "center", marginBottom: 24 }}>
+          {TUTORIAL_STEPS.map((_, i) => (<div key={i} style={{ width: i === step ? 20 : 6, height: 6, borderRadius: 3, background: i === step ? "#7F77DD" : i < step ? "#5DCAA5" : "#2C2C2A", transition: "all 0.2s", cursor: "pointer" }} onClick={() => setStep(i)} />))}
+        </div>
+        <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <div style={{ width: 56, height: 56, borderRadius: 14, background: "#111110", border: "1px solid #2C2C2A", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{s.icon}</div>
+        </div>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 20, fontWeight: 500, color: "#F1EFE8", marginBottom: 4 }}>{s.title}</div>
+          <div style={{ fontSize: 13, color: "#7F77DD", marginBottom: 12 }}>{s.sub}</div>
+          <div style={{ fontSize: 13, color: "#888780", lineHeight: 1.7, maxWidth: 380, margin: "0 auto" }}>{s.desc}</div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12 }}>Skip tour</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {step > 0 && <Btn onClick={() => setStep(step - 1)} small>Back</Btn>}
+            {!isLast && <Btn primary onClick={() => setStep(step + 1)}>Next</Btn>}
+            {isLast && <Btn primary onClick={onClose} style={{ background: "#7F77DD", color: "#F1EFE8" }}>Get started</Btn>}
+          </div>
+        </div>
+        <div style={{ textAlign: "center", marginTop: 12, fontSize: 10, color: "#444441" }}>{step + 1} of {TUTORIAL_STEPS.length}</div>
       </div>
     </div>
   );
