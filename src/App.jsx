@@ -595,18 +595,18 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, allSession
 
         {/* End of day summary */}
         <div>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Today you shipped</div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Recently shipped</div>
           <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
             {(() => {
               const today = new Date(); today.setHours(0,0,0,0);
-              const resolvedToday = issues.filter(i => ["fixed","verified"].includes(i.status) && new Date(i.created_at) >= today);
+              const resolvedRecent = issues.filter(i => ["fixed","verified"].includes(i.status)).slice(-5);
               const passedToday = tests.filter(t => t.status === "pass" && t.last_run && new Date(t.last_run) >= today);
               const notesToday = (notes || []).filter(n => new Date(n.created_at) >= today);
-              const hasAnything = resolvedToday.length || passedToday.length || notesToday.length || tw.length;
+              const hasAnything = resolvedRecent.length || passedToday.length || notesToday.length || tw.length;
               if (!hasAnything) return <div style={{ fontSize: 12, color: "#5F5E5A", textAlign: "center", padding: "16px 0" }}>Day's just getting started.</div>;
               return (<div style={{ fontSize: 12, lineHeight: 1.8 }}>
                 {tw.length > 0 && <div style={{ color: "#E24B4A" }}>{tw.length} focus session{tw.length !== 1 ? "s" : ""} ({tfm} min)</div>}
-                {resolvedToday.map(i => <div key={i.id} style={{ color: "#5DCAA5" }}>Resolved: {i.title}</div>)}
+                {resolvedRecent.map(i => <div key={i.id} style={{ color: "#5DCAA5" }}>Resolved: {i.title}</div>)}
                 {passedToday.map(t => <div key={t.id} style={{ color: "#97C459" }}>Passed: {t.title}</div>)}
                 {notesToday.length > 0 && <div style={{ color: "#AFA9EC" }}>{notesToday.length} note{notesToday.length !== 1 ? "s" : ""} written</div>}
               </div>);
@@ -1064,7 +1064,7 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
 
 function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusMeeting, allNotes }) {
   const [month, setMonth] = useState(new Date());
-  const [selectedDay, setSelectedDay] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(new Date());
   const [showAdd, setShowAdd] = useState(false);
   const [mForm, setMForm] = useState({ title: "", meeting_date: "", start_time: "09:00", end_time: "10:00", recurrence: "none" });
   const [editingNotes, setEditingNotes] = useState(null);
@@ -1076,9 +1076,8 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
   const firstDay = new Date(y, m, 1).getDay();
   const daysInMonth = new Date(y, m + 1, 0).getDate();
   const today = new Date(); today.setHours(0,0,0,0);
-  const dayLabels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const dayLabels = ["S","M","T","W","T","F","S"];
 
-  // Items by date
   const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const meetingsByDate = {}; meetings.forEach(mt => { const k = mt.meeting_date; if (!meetingsByDate[k]) meetingsByDate[k] = []; meetingsByDate[k].push(mt); });
   const issueDues = {}; issues.forEach(i => { if (i.due_date) { if (!issueDues[i.due_date]) issueDues[i.due_date] = []; issueDues[i.due_date].push(i); } });
@@ -1086,6 +1085,7 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
 
   const prevMonth = () => setMonth(new Date(y, m - 1, 1));
   const nextMonth = () => setMonth(new Date(y, m + 1, 1));
+  const goToday = () => { setMonth(new Date()); setSelectedDay(new Date()); };
 
   const addMeeting = async () => {
     if (!mForm.title.trim() || !mForm.meeting_date) return;
@@ -1101,9 +1101,7 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
           dates.push(d.toISOString().split("T")[0]);
         }
       }
-      for (const dt of dates) {
-        await db.createMeeting(projectId, { title: mForm.title, meeting_date: dt, start_time: mForm.start_time, end_time: mForm.end_time });
-      }
+      for (const dt of dates) await db.createMeeting(projectId, { title: mForm.title, meeting_date: dt, start_time: mForm.start_time, end_time: mForm.end_time });
       setShowAdd(false); setMForm({ title: "", meeting_date: "", start_time: "09:00", end_time: "10:00", recurrence: "none" }); await reload();
     } catch (e) { console.error(e); }
   };
@@ -1111,104 +1109,116 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
     try {
       await db.updateMeeting(mt.id, { attended: !mt.attended });
       if (!mt.attended) {
-        const startDt = new Date(`${mt.meeting_date}T${mt.start_time}`);
-        const endDt = new Date(`${mt.meeting_date}T${mt.end_time}`);
-        const dur = Math.max(0, Math.round((endDt - startDt) / 1000));
+        const dur = Math.max(0, Math.round((new Date(`${mt.meeting_date}T${mt.end_time}`) - new Date(`${mt.meeting_date}T${mt.start_time}`)) / 1000));
         if (dur > 0) await db.saveFocusSession(projectId, null, null, "work", dur, "meeting");
       }
       await reload();
     } catch (e) { console.error(e); }
   };
-  const delMeeting = async (id) => { try { await db.deleteMeeting(id); await reload(); } catch (e) { console.error(e); } };
-  const cancelMeeting = async (id) => { try { await db.updateMeeting(id, { cancelled: true, attended: false }); await reload(); } catch (e) { console.error(e); } };
-  const uncancelMeeting = async (id) => { try { await db.updateMeeting(id, { cancelled: false }); await reload(); } catch (e) { console.error(e); } };
+  const delMeeting = async (id) => { try { await db.deleteMeeting(id); await reload(); } catch {} };
+  const cancelMeeting = async (id) => { try { await db.updateMeeting(id, { cancelled: true, attended: false }); await reload(); } catch {} };
+  const uncancelMeeting = async (id) => { try { await db.updateMeeting(id, { cancelled: false }); await reload(); } catch {} };
   const cancelFuture = async (mt) => {
     if (!confirm(`Cancel all future "${mt.title}" meetings?`)) return;
     const future = meetings.filter(m => m.title === mt.title && m.start_time === mt.start_time && m.meeting_date >= mt.meeting_date && !m.attended);
-    try { for (const f of future) await db.updateMeeting(f.id, { cancelled: true, attended: false }); await reload(); } catch (e) { console.error(e); }
+    try { for (const f of future) await db.updateMeeting(f.id, { cancelled: true, attended: false }); await reload(); } catch {}
   };
-  const saveNotes = async (id) => { try { await db.updateMeeting(id, { meeting_notes: noteText }); setEditingNotes(null); await reload(); } catch (e) { console.error(e); } };
+  const saveNotes = async (id) => { try { await db.updateMeeting(id, { meeting_notes: noteText }); setEditingNotes(null); await reload(); } catch {} };
 
   const selKey = selectedDay ? dateKey(selectedDay) : null;
   const selMeetings = selKey ? (meetingsByDate[selKey] || []) : [];
   const selIssues = selKey ? (issueDues[selKey] || []) : [];
   const selTests = selKey ? (testDues[selKey] || []) : [];
+  const selTotal = selMeetings.length + selIssues.length + selTests.length;
 
   return (
     <div>
       {/* Month nav */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <button onClick={prevMonth} style={{ background: "none", border: "1px solid #2C2C2A", color: "#B4B2A9", cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 12 }}>◂</button>
-        <span style={{ fontSize: 15, fontWeight: 500, minWidth: 160, textAlign: "center" }}>{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span>
-        <button onClick={nextMonth} style={{ background: "none", border: "1px solid #2C2C2A", color: "#B4B2A9", cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 12 }}>▸</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+        <button onClick={prevMonth} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", padding: "6px 10px", borderRadius: 6, fontSize: 13 }}>◂</button>
+        <button onClick={nextMonth} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", padding: "6px 10px", borderRadius: 6, fontSize: 13 }}>▸</button>
+        <span style={{ fontSize: 16, fontWeight: 500, marginLeft: 4 }}>{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span>
+        <button onClick={goToday} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5DCAA5", cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 11 }}>Today</button>
         <span style={{ flex: 1 }} />
-        <Btn primary onClick={() => { setShowAdd(true); setMForm({ title: "", meeting_date: selectedDay ? dateKey(selectedDay) : dateKey(new Date()), start_time: "09:00", end_time: "10:00", recurrence: "none" }); }} small>+ Meeting</Btn>
+        <Btn primary onClick={() => { setShowAdd(true); setMForm({ title: "", meeting_date: selKey || dateKey(new Date()), start_time: "09:00", end_time: "10:00", recurrence: "none" }); }} small>+ Meeting</Btn>
       </div>
 
       <div style={{ display: "flex", gap: 16 }}>
         {/* Calendar grid */}
-        <div style={{ flex: "0 0 420px" }}>
+        <div style={{ flex: "0 0 340px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
-            {dayLabels.map(d => (<div key={d} style={{ textAlign: "center", fontSize: 10, color: "#5F5E5A", padding: "4px 0" }}>{d}</div>))}
-            {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} />)}
+            {dayLabels.map((d, i) => (<div key={i} style={{ textAlign: "center", fontSize: 10, color: "#5F5E5A", padding: "6px 0", fontWeight: 500 }}>{d}</div>))}
+            {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} style={{ minHeight: 44 }} />)}
             {Array.from({ length: daysInMonth }).map((_, i) => {
               const day = new Date(y, m, i + 1);
               const key = dateKey(day);
               const isToday = day.getTime() === today.getTime();
               const isSel = selectedDay && day.getTime() === selectedDay.getTime();
-              const hasMeeting = meetingsByDate[key]?.length > 0;
+              const dayMeetings = meetingsByDate[key] || [];
               const hasIssueDue = issueDues[key]?.length > 0;
               const hasTestDue = testDues[key]?.length > 0;
+              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+              const activeMeetings = dayMeetings.filter(m => !m.cancelled);
               return (
-                <div key={i} onClick={() => setSelectedDay(day)} style={{ padding: "6px 4px", borderRadius: 6, cursor: "pointer", textAlign: "center", background: isSel ? "#2C2C2A" : "transparent", border: isToday ? "1px solid #5DCAA5" : "1px solid transparent" }} onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = "#1A1A18"; }} onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = "transparent"; }}>
-                  <div style={{ fontSize: 12, fontWeight: isToday ? 500 : 400, color: isToday ? "#5DCAA5" : isSel ? "#F1EFE8" : "#B4B2A9" }}>{i + 1}</div>
-                  <div style={{ display: "flex", gap: 2, justifyContent: "center", marginTop: 2, minHeight: 6 }}>
-                    {hasMeeting && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#7F77DD" }} />}
-                    {hasIssueDue && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#F09595" }} />}
-                    {hasTestDue && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#85B7EB" }} />}
+                <div key={i} onClick={() => setSelectedDay(day)} style={{ minHeight: 44, padding: "3px 4px", borderRadius: 4, cursor: "pointer", background: isSel ? "#1A1A18" : "transparent", border: isToday ? "1px solid #5DCAA544" : isSel ? "1px solid #2C2C2A" : "1px solid transparent" }} onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = "#161615"; }} onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = "transparent"; }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 11, fontWeight: isToday ? 500 : 400, color: isToday ? "#5DCAA5" : isWeekend ? "#444441" : "#B4B2A9" }}>{i + 1}</span>
+                    <div style={{ display: "flex", gap: 2 }}>
+                      {hasIssueDue && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#F09595" }} />}
+                      {hasTestDue && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#85B7EB" }} />}
+                    </div>
                   </div>
+                  {activeMeetings.length > 0 && <div style={{ fontSize: 8, padding: "1px 3px", borderRadius: 2, marginTop: 2, background: "#1A0A29", color: "#AFA9EC", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeMeetings.length > 1 ? `${activeMeetings.length} meetings` : activeMeetings[0].title.length > 10 ? activeMeetings[0].title.substring(0, 10) + "…" : activeMeetings[0].title}</div>}
                 </div>
               );
             })}
           </div>
-          <div style={{ display: "flex", gap: 12, marginTop: 10, fontSize: 10, color: "#5F5E5A" }}>
-            <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#7F77DD", marginRight: 4 }} />Meeting</span>
-            <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#F09595", marginRight: 4 }} />Issue due</span>
-            <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#85B7EB", marginRight: 4 }} />Test due</span>
+          {/* Legend */}
+          <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 10, color: "#444441" }}>
+            <span><span style={{ display: "inline-block", width: 8, height: 4, borderRadius: 1, background: "#1A0A29", marginRight: 3, verticalAlign: "middle" }} />Meeting</span>
+            <span><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: "#F09595", marginRight: 3, verticalAlign: "middle" }} />Issue due</span>
+            <span><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: "#85B7EB", marginRight: 3, verticalAlign: "middle" }} />Test due</span>
           </div>
         </div>
 
         {/* Day detail panel */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {!selectedDay && <div style={{ textAlign: "center", padding: "40px 0", color: "#5F5E5A", fontSize: 12 }}>Click a day to see details</div>}
+        <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
           {selectedDay && (
             <div>
-              <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>{selectedDay.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 16 }}>
+                <span style={{ fontSize: 15, fontWeight: 500 }}>{selectedDay.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</span>
+                {selTotal === 0 && <span style={{ fontSize: 11, color: "#444441" }}>Nothing scheduled</span>}
+              </div>
 
-              {/* Meetings */}
-              {selMeetings.length > 0 && <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, color: "#7F77DD", fontWeight: 500, marginBottom: 6 }}>MEETINGS</div>
+              {/* Meetings section */}
+              {selMeetings.length > 0 && <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 10, color: "#7F77DD", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Meetings ({selMeetings.length})</div>
                 {selMeetings.map(mt => {
                   const isCancelled = mt.cancelled;
-                  const borderColor = isCancelled ? "#5F5E5A" : mt.attended ? "#5DCAA5" : "#7F77DD";
+                  const borderColor = isCancelled ? "#2C2C2A" : mt.attended ? "#5DCAA5" : "#7F77DD";
+                  const qs = (() => { try { return Array.isArray(mt.questions) ? mt.questions : JSON.parse(mt.questions || "[]"); } catch { return []; } })();
                   return (
-                  <div key={mt.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", marginBottom: 6, borderLeft: `3px solid ${borderColor}`, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, opacity: isCancelled ? 0.5 : 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      {!isCancelled && <input type="checkbox" checked={mt.attended} onChange={() => toggleAttended(mt)} style={{ cursor: "pointer" }} />}
-                      {isCancelled && <span style={{ fontSize: 10, color: "#F09595", fontWeight: 500 }}>CANCELLED</span>}
-                      <span style={{ flex: 1, fontSize: 12, fontWeight: 500, textDecoration: (mt.attended || isCancelled) ? "line-through" : "none", color: (mt.attended || isCancelled) ? "#5F5E5A" : "#F1EFE8" }}>{mt.title}</span>
-                      {(() => { const qs = (() => { try { return Array.isArray(mt.questions) ? mt.questions : JSON.parse(mt.questions || "[]"); } catch { return []; } })(); return qs.length > 0 ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C" }}>{qs.filter(q => q.status === "answered").length}/{qs.length} Q</span> : null; })()}
-                      <span style={{ fontSize: 10, fontFamily: "'SF Mono', monospace", color: "#5F5E5A" }}>{mt.start_time}–{mt.end_time}</span>
-                      {!isCancelled && !mt.attended && <button onClick={() => onFocusMeeting(mt)} title="Join meeting" style={{ background: "#7F77DD", border: "none", color: "#F1EFE8", cursor: "pointer", fontSize: 9, padding: "3px 8px", borderRadius: 3, fontWeight: 500 }}>Join</button>}
-                      {!isCancelled && !mt.attended && <button onClick={() => setPreppingId(preppingId === mt.id ? null : mt.id)} title="Prepare questions" style={{ background: "none", border: "1px solid #26215C", color: "#AFA9EC", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>Prep</button>}
-                      {!isCancelled && !mt.attended && <button onClick={() => cancelMeeting(mt.id)} title="Cancel" style={{ background: "none", border: "1px solid #2C2C2A", color: "#F09595", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>Cancel</button>}
-                      {!isCancelled && !mt.attended && <button onClick={() => cancelFuture(mt)} title="Cancel all future" style={{ background: "none", border: "1px solid #2C2C2A", color: "#D85A30", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>All future</button>}
-                      {isCancelled && <button onClick={() => uncancelMeeting(mt.id)} title="Restore" style={{ background: "none", border: "1px solid #2C2C2A", color: "#5DCAA5", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>Restore</button>}
-                      <button onClick={() => delMeeting(mt.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11 }}>✕</button>
+                  <div key={mt.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, marginBottom: 6, borderLeft: `3px solid ${borderColor}`, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, opacity: isCancelled ? 0.45 : 1 }}>
+                    {/* Row 1: checkbox + title + time */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 4px" }}>
+                      {!isCancelled && <input type="checkbox" checked={mt.attended} onChange={() => toggleAttended(mt)} style={{ cursor: "pointer", flexShrink: 0 }} />}
+                      {isCancelled && <span style={{ fontSize: 9, color: "#F09595", fontWeight: 500, flexShrink: 0 }}>CANCELLED</span>}
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 500, textDecoration: (mt.attended || isCancelled) ? "line-through" : "none", color: (mt.attended || isCancelled) ? "#5F5E5A" : "#F1EFE8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{mt.title}</span>
+                      {qs.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C", flexShrink: 0 }}>{qs.filter(q => q.status === "answered").length}/{qs.length} Q</span>}
+                      <span style={{ fontSize: 10, fontFamily: "'SF Mono', monospace", color: "#5F5E5A", flexShrink: 0, whiteSpace: "nowrap" }}>{mt.start_time}–{mt.end_time}</span>
+                    </div>
+                    {/* Row 2: actions */}
+                    <div style={{ display: "flex", gap: 4, padding: "4px 12px 10px", paddingLeft: isCancelled ? 12 : 32, flexWrap: "wrap" }}>
+                      {!isCancelled && !mt.attended && <button onClick={() => onFocusMeeting(mt)} style={{ background: "#7F77DD", border: "none", color: "#F1EFE8", cursor: "pointer", fontSize: 10, padding: "3px 10px", borderRadius: 4, fontWeight: 500 }}>Join</button>}
+                      {!isCancelled && !mt.attended && <button onClick={() => setPreppingId(preppingId === mt.id ? null : mt.id)} style={{ background: "none", border: "1px solid #26215C", color: "#AFA9EC", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Prep</button>}
+                      {!isCancelled && !mt.attended && <button onClick={() => cancelMeeting(mt.id)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Cancel</button>}
+                      {!isCancelled && !mt.attended && <button onClick={() => cancelFuture(mt)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>All future</button>}
+                      {isCancelled && <button onClick={() => uncancelMeeting(mt.id)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5DCAA5", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Restore</button>}
+                      <span style={{ flex: 1 }} />
+                      <button onClick={() => delMeeting(mt.id)} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 12 }}>✕</button>
                     </div>
                     {/* Prep section */}
                     {preppingId === mt.id && !isCancelled && !mt.attended && (() => {
-                      const qs = (() => { try { return Array.isArray(mt.questions) ? mt.questions : JSON.parse(mt.questions || "[]"); } catch { return []; } })();
                       const ti = (issues || []).filter(i => parseMtags(i.meeting_tag).includes(mt.title));
                       const tt = (testCases || []).filter(t => parseMtags(t.meeting_tag).includes(mt.title));
                       const done = ti.filter(i => ["fixed","verified","wont_fix"].includes(i.status));
@@ -1216,41 +1226,39 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
                       const opn = ti.filter(i => ["open","reopened"].includes(i.status));
                       const tpass = tt.filter(t => t.status === "pass");
                       const tother = tt.filter(t => t.status !== "pass");
+                      const tn = (allNotes || []).filter(n => parseMtags(n.meeting_tag).includes(mt.title));
+                      const hasAuto = ti.length + tt.length + tn.length > 0;
                       return (
-                        <div style={{ marginTop: 8, padding: "8px 10px", background: "#111110", borderRadius: 6 }}>
-                          <div style={{ fontSize: 10, color: "#7F77DD", marginBottom: 6, fontWeight: 500 }}>Agenda preview</div>
-                          {(done.length > 0 || tpass.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#5DCAA5", marginBottom: 2 }}>SHIPPED</div>{done.map(i => <div key={i.id} style={{ fontSize: 11, color: "#5DCAA5", padding: "1px 0" }}>✓ {i.title}</div>)}{tpass.map(t => <div key={t.id} style={{ fontSize: 11, color: "#5DCAA5", padding: "1px 0" }}>✓ {t.title}</div>)}</div>}
-                          {(prog.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#85B7EB", marginBottom: 2 }}>IN PROGRESS</div>{prog.map(i => <div key={i.id} style={{ fontSize: 11, color: "#85B7EB", padding: "1px 0" }}>→ {i.title}</div>)}</div>}
-                          {(opn.length > 0 || tother.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#888780", marginBottom: 2 }}>OPEN</div>{opn.map(i => <div key={i.id} style={{ fontSize: 11, color: "#888780", padding: "1px 0" }}>○ {i.title}</div>)}{tother.map(t => <div key={t.id} style={{ fontSize: 11, color: "#888780", padding: "1px 0" }}>○ {t.title}</div>)}</div>}
-                          {(() => { const tn = (allNotes || []).filter(n => parseMtags(n.meeting_tag).includes(mt.title)); return tn.length > 0 ? <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#AFA9EC", marginBottom: 2 }}>NOTES</div>{tn.map(n => <div key={n.id} style={{ fontSize: 11, color: "#AFA9EC", padding: "1px 0" }}>☰ {n.title || n.content.substring(0, 40)}</div>)}</div> : null; })()}
-                          {ti.length === 0 && tt.length === 0 && (allNotes || []).filter(n => parseMtags(n.meeting_tag).includes(mt.title)).length === 0 && <div style={{ fontSize: 10, color: "#2C2C2A", marginBottom: 6 }}>No items tagged. Use "Meeting tags" in editors.</div>}
-                          <div style={{ borderTop: "1px solid #1A1A18", paddingTop: 6, marginTop: 4 }}>
-                            <div style={{ fontSize: 9, color: "#D85A30", marginBottom: 3 }}>TALKING POINTS</div>
+                        <div style={{ padding: "0 12px 12px", borderTop: "1px solid #1A1A18", marginTop: 2, paddingTop: 10 }}>
+                          <div style={{ fontSize: 10, color: "#7F77DD", fontWeight: 500, marginBottom: 8 }}>Agenda preview</div>
+                          {(done.length > 0 || tpass.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#5DCAA5", marginBottom: 3, fontWeight: 500 }}>SHIPPED</div>{done.map(i => <div key={i.id} style={{ fontSize: 11, color: "#5DCAA5", padding: "2px 0" }}>✓ {i.title}</div>)}{tpass.map(t => <div key={t.id} style={{ fontSize: 11, color: "#5DCAA5", padding: "2px 0" }}>✓ {t.title}</div>)}</div>}
+                          {prog.length > 0 && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#85B7EB", marginBottom: 3, fontWeight: 500 }}>IN PROGRESS</div>{prog.map(i => <div key={i.id} style={{ fontSize: 11, color: "#85B7EB", padding: "2px 0" }}>→ {i.title}</div>)}</div>}
+                          {(opn.length > 0 || tother.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#888780", marginBottom: 3, fontWeight: 500 }}>OPEN</div>{opn.map(i => <div key={i.id} style={{ fontSize: 11, color: "#888780", padding: "2px 0" }}>○ {i.title}</div>)}{tother.map(t => <div key={t.id} style={{ fontSize: 11, color: "#888780", padding: "2px 0" }}>○ {t.title}</div>)}</div>}
+                          {tn.length > 0 && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#AFA9EC", marginBottom: 3, fontWeight: 500 }}>NOTES</div>{tn.map(n => <div key={n.id} style={{ fontSize: 11, color: "#AFA9EC", padding: "2px 0" }}>☰ {n.title || n.content.substring(0, 40)}</div>)}</div>}
+                          {!hasAuto && <div style={{ fontSize: 10, color: "#2C2C2A", marginBottom: 6 }}>No items tagged. Use "Meeting tags" in editors.</div>}
+                          <div style={{ borderTop: hasAuto ? "1px solid #1A1A18" : "none", paddingTop: hasAuto ? 8 : 0 }}>
+                            <div style={{ fontSize: 9, color: "#D85A30", marginBottom: 3, fontWeight: 500 }}>TALKING POINTS</div>
                             {qs.map((q, idx) => (
                               <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", fontSize: 11 }}>
                                 <span style={{ color: "#D85A30" }}>•</span>
                                 <span style={{ flex: 1, color: "#D3D1C7" }}>{q.q}</span>
-                                <button onClick={async () => { const nq = qs.filter((_, i) => i !== idx); try { await db.updateMeeting(mt.id, { questions: JSON.stringify(nq) }); await reload(); } catch {} }} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 9 }}>✕</button>
+                                <button onClick={async () => { const nq = qs.filter((_, j) => j !== idx); try { await db.updateMeeting(mt.id, { questions: JSON.stringify(nq) }); await reload(); } catch {} }} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9 }}>✕</button>
                               </div>
                             ))}
-                            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                              <input value={prepQ} onChange={e => setPrepQ(e.target.value)} onKeyDown={async e => { if (e.key === "Enter" && prepQ.trim()) { const nq = [...qs, { q: prepQ.trim(), a: "", status: "pending" }]; try { await db.updateMeeting(mt.id, { questions: JSON.stringify(nq) }); setPrepQ(""); await reload(); } catch {} } }} placeholder="Add a talking point..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#161615", color: "#F1EFE8", border: "1px solid #1A1A18", outline: "none" }} />
-                            </div>
+                            <input value={prepQ} onChange={e => setPrepQ(e.target.value)} onKeyDown={async e => { if (e.key === "Enter" && prepQ.trim()) { const nq = [...qs, { q: prepQ.trim(), a: "", status: "pending" }]; try { await db.updateMeeting(mt.id, { questions: JSON.stringify(nq) }); setPrepQ(""); await reload(); } catch {} } }} placeholder="Add a talking point..." style={{ marginTop: 4, width: "100%", padding: "5px 8px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#F1EFE8", border: "1px solid #1A1A18", outline: "none", boxSizing: "border-box" }} />
                           </div>
                         </div>
                       );
                     })()}
+                    {/* Notes on attended */}
                     {mt.attended && !isCancelled && (
-                      <div style={{ marginTop: 6 }}>
+                      <div style={{ padding: "0 12px 10px", borderTop: "1px solid #1A1A18", marginTop: 2, paddingTop: 8 }}>
                         {editingNotes === mt.id ? (
-                          <div>
-                            <TextArea value={noteText} onChange={setNoteText} placeholder="Meeting notes..." rows={3} />
-                            <div style={{ display: "flex", gap: 4, marginTop: 4 }}><Btn small primary onClick={() => saveNotes(mt.id)}>Save</Btn><Btn small onClick={() => setEditingNotes(null)}>Cancel</Btn></div>
-                          </div>
+                          <div><TextArea value={noteText} onChange={setNoteText} placeholder="Meeting notes..." rows={3} /><div style={{ display: "flex", gap: 4, marginTop: 4 }}><Btn small primary onClick={() => saveNotes(mt.id)}>Save</Btn><Btn small onClick={() => setEditingNotes(null)}>Cancel</Btn></div></div>
                         ) : (
                           <div>
-                            {mt.meeting_notes ? <div style={{ fontSize: 11, color: "#888780", whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "4px 0" }}>{mt.meeting_notes}</div> : null}
-                            <button onClick={() => { setEditingNotes(mt.id); setNoteText(mt.meeting_notes || ""); }} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4, marginTop: 2 }}>{mt.meeting_notes ? "Edit notes" : "+ Add notes"}</button>
+                            {mt.meeting_notes && <div style={{ fontSize: 11, color: "#888780", whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "2px 0 4px" }}>{mt.meeting_notes}</div>}
+                            <button onClick={() => { setEditingNotes(mt.id); setNoteText(mt.meeting_notes || ""); }} style={{ background: "none", border: "1px dashed #1A1A18", color: "#444441", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>{mt.meeting_notes ? "Edit notes" : "+ Notes"}</button>
                           </div>
                         )}
                       </div>
@@ -1260,53 +1268,49 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
               </div>}
 
               {/* Issue dues */}
-              {selIssues.length > 0 && <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, color: "#F09595", fontWeight: 500, marginBottom: 6 }}>ISSUES DUE</div>
+              {selIssues.length > 0 && <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 10, color: "#F09595", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Issues due ({selIssues.length})</div>
                 {selIssues.map(i => (
-                  <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#161615", borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
+                  <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#161615", borderRadius: 6, marginBottom: 4, border: "1px solid #2C2C2A" }}>
                     <Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small />
-                    <span style={{ flex: 1, color: "#D3D1C7" }}>{i.title}</span>
+                    <span style={{ flex: 1, fontSize: 12, color: "#D3D1C7" }}>{i.title}</span>
                     <Badge label={i.status} colors={["fixed","verified"].includes(i.status) ? { bg: "#081F12", text: "#5DCAA5", border: "#04342C" } : PC[i.priority]} small />
                   </div>
                 ))}
               </div>}
 
               {/* Test dues */}
-              {selTests.length > 0 && <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, color: "#85B7EB", fontWeight: 500, marginBottom: 6 }}>TESTS DUE</div>
+              {selTests.length > 0 && <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 10, color: "#85B7EB", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Tests due ({selTests.length})</div>
                 {selTests.map(t => (
-                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: "#161615", borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
-                    <span style={{ color: "#85B7EB" }}>▷</span>
-                    <span style={{ flex: 1, color: "#D3D1C7" }}>{t.title}</span>
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#161615", borderRadius: 6, marginBottom: 4, border: "1px solid #2C2C2A" }}>
+                    <span style={{ color: "#85B7EB", fontSize: 12 }}>▷</span>
+                    <span style={{ flex: 1, fontSize: 12, color: "#D3D1C7" }}>{t.title}</span>
                     <Badge label={t.status} colors={TC[t.status]} small />
                   </div>
                 ))}
               </div>}
 
-              {selMeetings.length === 0 && selIssues.length === 0 && selTests.length === 0 && (
-                <div style={{ textAlign: "center", padding: "24px 0", color: "#5F5E5A", fontSize: 12 }}>Nothing scheduled for this day</div>
+              {/* Add meeting form */}
+              {showAdd && (
+                <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", marginBottom: 10 }}>New meeting</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <Input value={mForm.title} onChange={v => setMForm({ ...mForm, title: v })} placeholder="Meeting title" />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input type="date" value={mForm.meeting_date} onChange={e => setMForm({ ...mForm, meeting_date: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+                      <input type="time" value={mForm.start_time} onChange={e => setMForm({ ...mForm, start_time: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+                      <input type="time" value={mForm.end_time} onChange={e => setMForm({ ...mForm, end_time: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: "#5F5E5A" }}>Repeat:</span>
+                      <Select value={mForm.recurrence} onChange={v => setMForm({ ...mForm, recurrence: v })} options={[{ value: "none", label: "One-time" }, { value: "daily", label: "Daily (8 weeks)" }, { value: "weekly", label: "Weekly (8 weeks)" }, { value: "biweekly", label: "Biweekly (8 weeks)" }, { value: "monthly", label: "Monthly (8 months)" }]} style={{ flex: 1 }} />
+                    </div>
+                    {mForm.recurrence !== "none" && <div style={{ fontSize: 10, color: "#5DCAA5" }}>Creates {mForm.recurrence === "daily" ? "57" : "9"} meetings starting {mForm.meeting_date || "..."}</div>}
+                    <div style={{ display: "flex", gap: 6 }}><Btn small primary onClick={addMeeting}>Add</Btn><Btn small onClick={() => setShowAdd(false)}>Cancel</Btn></div>
+                  </div>
+                </div>
               )}
-            </div>
-          )}
-
-          {/* Add meeting form */}
-          {showAdd && (
-            <div style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px", marginTop: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", marginBottom: 10 }}>New meeting</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <Input value={mForm.title} onChange={v => setMForm({ ...mForm, title: v })} placeholder="Meeting title" />
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input type="date" value={mForm.meeting_date} onChange={e => setMForm({ ...mForm, meeting_date: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-                  <input type="time" value={mForm.start_time} onChange={e => setMForm({ ...mForm, start_time: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-                  <input type="time" value={mForm.end_time} onChange={e => setMForm({ ...mForm, end_time: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ fontSize: 11, color: "#5F5E5A" }}>Repeat:</span>
-                  <Select value={mForm.recurrence} onChange={v => setMForm({ ...mForm, recurrence: v })} options={[{ value: "none", label: "One-time" }, { value: "daily", label: "Daily (8 weeks)" }, { value: "weekly", label: "Weekly (8 weeks)" }, { value: "biweekly", label: "Biweekly (8 weeks)" }, { value: "monthly", label: "Monthly (8 months)" }]} style={{ flex: 1 }} />
-                </div>
-                {mForm.recurrence !== "none" && <div style={{ fontSize: 10, color: "#5DCAA5", padding: "0 2px" }}>Will create {mForm.recurrence === "daily" ? "57" : mForm.recurrence === "monthly" ? "9" : "9"} meetings starting {mForm.meeting_date || "..."}</div>}
-                <div style={{ display: "flex", gap: 6 }}><Btn small primary onClick={addMeeting}>Add</Btn><Btn small onClick={() => setShowAdd(false)}>Cancel</Btn></div>
-              </div>
             </div>
           )}
         </div>
@@ -1314,10 +1318,6 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
     </div>
   );
 }
-
-// ============================================
-// Meeting Focus View (full-screen meeting mode)
-// ============================================
 
 function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meetings, allNotes }) {
   const [notes, setNotes] = useState(meeting.meeting_notes || "");
