@@ -32,10 +32,55 @@ export default function App({ session }) {
   const [view, setView] = useState("dashboard"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null);
   const [filterType, setFilterType] = useState("all"); const [filterFile, setFilterFile] = useState("all"); const [filterPriority, setFilterPriority] = useState("all"); const [searchQ, setSearchQ] = useState(""); const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
-  const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null });
+  const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null });
   const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]); const [viewingNoteId, setViewingNoteId] = useState(null);
-  const tRef = useRef(null); const initRef = useRef(false);
+  const tRef = useRef(null); const initRef = useRef(false); const syncRef = useRef(false); const loadedTimerRef = useRef(false);
 
+  // Load timer from Supabase on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await db.getTimerState();
+        if (saved) {
+          let st = saved.state, left = saved.remaining_seconds, startedAt = saved.started_at;
+          if (st === "running" && startedAt) {
+            const elapsed = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
+            left = Math.max(0, saved.total_seconds - elapsed);
+            if (left <= 0) { st = "idle"; left = DUR.work; startedAt = null; }
+          }
+          syncRef.current = true;
+          setTmr({ st, left, total: saved.total_seconds, type: saved.session_type, done: saved.sessions_completed, tType: saved.task_type, tId: saved.task_id, startedAt });
+          setTimeout(() => { syncRef.current = false; }, 200);
+        }
+        loadedTimerRef.current = true;
+      } catch (e) { console.error("Timer load:", e); loadedTimerRef.current = true; }
+    })();
+  }, []);
+
+  // Save timer to Supabase on changes (skip if change came from sync)
+  useEffect(() => {
+    if (!loadedTimerRef.current || syncRef.current) return;
+    db.saveTimerState(tmr).catch(e => console.error("Timer save:", e));
+  }, [tmr.st, tmr.type, tmr.done, tmr.tType, tmr.tId, tmr.startedAt]);
+
+  // Subscribe to realtime for cross-device sync
+  useEffect(() => {
+    const channel = db.subscribeTimerState((row) => {
+      if (syncRef.current) return;
+      syncRef.current = true;
+      let st = row.state, left = row.remaining_seconds, startedAt = row.started_at;
+      if (st === "running" && startedAt) {
+        const elapsed = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
+        left = Math.max(0, row.total_seconds - elapsed);
+        if (left <= 0) { st = "idle"; left = DUR.work; startedAt = null; }
+      }
+      setTmr({ st, left, total: row.total_seconds, type: row.session_type, done: row.sessions_completed, tType: row.task_type, tId: row.task_id, startedAt });
+      setTimeout(() => { syncRef.current = false; }, 200);
+    });
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  // Countdown interval
   useEffect(() => {
     if (tmr.st === "running") { tRef.current = setInterval(() => { setTmr(p => { if (p.left <= 1) { clearInterval(tRef.current); finishSession(p); return p; } return { ...p, left: p.left - 1 }; }); }, 1000); } else { if (tRef.current) clearInterval(tRef.current); }
     return () => { if (tRef.current) clearInterval(tRef.current); };
@@ -50,14 +95,14 @@ export default function App({ session }) {
     const nd = p.type === "work" ? p.done + 1 : p.done;
     let nt, nc;
     if (p.type === "work") { nt = nd >= 4 ? "long_break" : "short_break"; nc = nd >= 4 ? 0 : nd; } else { nt = "work"; nc = p.type === "long_break" ? 0 : nd; }
-    setTmr({ st: "idle", left: DUR[nt], total: DUR[nt], type: nt, done: nc, tType: p.tType, tId: p.tId });
+    setTmr({ st: "idle", left: DUR[nt], total: DUR[nt], type: nt, done: nc, tType: p.tType, tId: p.tId, startedAt: null });
   };
 
-  const startTmr = (tt, ti) => { if (Notification.permission === "default") Notification.requestPermission(); setTmr(p => ({ ...p, st: "running", tType: tt || p.tType, tId: ti || p.tId })); };
-  const pauseTmr = () => setTmr(p => ({ ...p, st: "paused" }));
-  const resumeTmr = () => setTmr(p => ({ ...p, st: "running" }));
-  const resetTmr = () => { if (tmr.st !== "idle" && !confirm("Stop the current timer? Progress on this session will be lost.")) return; setTmr({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null }); };
-  const focusOn = (type, id) => { if (tmr.st !== "idle" && !confirm("Switch task? The current timer will reset.")) return; setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id }); setView("focus"); if (Notification.permission === "default") Notification.requestPermission(); };
+  const startTmr = (tt, ti) => { if (Notification.permission === "default") Notification.requestPermission(); setTmr(p => ({ ...p, st: "running", tType: tt || p.tType, tId: ti || p.tId, startedAt: new Date().toISOString() })); };
+  const pauseTmr = () => setTmr(p => ({ ...p, st: "paused", startedAt: null }));
+  const resumeTmr = () => setTmr(p => ({ ...p, st: "running", startedAt: new Date(Date.now() - (p.total - p.left) * 1000).toISOString() }));
+  const resetTmr = () => { if (tmr.st !== "idle" && !confirm("Stop the current timer? Progress on this session will be lost.")) return; setTmr({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null }); };
+  const focusOn = (type, id) => { if (tmr.st !== "idle" && !confirm("Switch task? The current timer will reset.")) return; setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id, startedAt: new Date().toISOString() }); setView("focus"); if (Notification.permission === "default") Notification.requestPermission(); };
 
   useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); } }, []);
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);

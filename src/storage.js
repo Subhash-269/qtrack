@@ -300,6 +300,53 @@ export async function getAllSessions(projectId) {
 }
 
 // ============================================
+// Timer State (persistent + cross-device)
+// ============================================
+
+export async function getTimerState() {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('timer_state')
+    .select('*')
+    .eq('user_id', user_id)
+    .single()
+  if (error && error.code === 'PGRST116') return null // no row
+  if (error) throw error
+  return data
+}
+
+export async function saveTimerState(state) {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('timer_state')
+    .upsert({
+      user_id,
+      state: state.st,
+      session_type: state.type,
+      sessions_completed: state.done,
+      total_seconds: state.total,
+      remaining_seconds: state.left,
+      started_at: state.startedAt || null,
+      task_type: state.tType || null,
+      task_id: state.tId || null,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id' })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export function subscribeTimerState(callback) {
+  return supabase
+    .channel('timer_sync')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'timer_state' }, payload => {
+      callback(payload.new)
+    })
+    .subscribe()
+}
+
+// ============================================
 // Notes
 // ============================================
 
