@@ -143,12 +143,12 @@ export default function App({ session }) {
 
   const stats = { ob: issues.filter(i => i.type === "bug" && !["fixed","verified","wont_fix"].includes(i.status)).length, ot: issues.filter(i => i.type === "todo" && !["fixed","verified","wont_fix"].includes(i.status)).length, tp: testCases.filter(t => t.status === "pass").length, tt: testCases.length, fc: files.length, cr: issues.filter(i => i.priority === "critical" && !["fixed","verified","wont_fix"].includes(i.status)).length };
   const tw = todaySessions.filter(s => s.session_type === "work");
-  const focusWork = tw.filter(s => !s.subtype || s.subtype === "focus" || s.subtype === "manual");
+  const focusWork = tw.filter(s => s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting");
   const savedSeconds = focusWork.reduce((a, s) => a + s.duration_seconds, 0);
   const liveElapsed = (tmr.st === "running" && tmr.type === "work") ? (tmr.total - tmr.left) : 0;
   const tfm = Math.round((savedSeconds + liveElapsed) / 60);
 
-  const nav = [{ id: "dashboard", l: "Dashboard", ic: "◫" }, { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 }, { id: "issues", l: "Issues", ic: "◉", cnt: stats.ob + stats.ot }, { id: "tests", l: "Test cases", ic: "▷", cnt: stats.tt }, { id: "files", l: "Files", ic: "⊞", cnt: stats.fc }, { id: "calendar", l: "Calendar", ic: "▣", cnt: meetings.filter(m => !m.attended).length || 0 }, { id: "notes", l: "Notes", ic: "☰", cnt: notes.length || 0 }, { id: "board", l: "Board", ic: "▦", cnt: cards.length || 0 }];
+  const nav = [{ id: "dashboard", l: "Dashboard", ic: "⊞" }, { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 }, { id: "issues", l: "Issues", ic: "⚑", cnt: stats.ob + stats.ot }, { id: "tests", l: "Test cases", ic: "✓", cnt: stats.tt }, { id: "files", l: "Files", ic: "◇", cnt: stats.fc }, { id: "calendar", l: "Calendar", ic: "▦", cnt: meetings.filter(m => !m.attended && !m.cancelled).length || 0 }, { id: "notes", l: "Notes", ic: "≡", cnt: notes.length || 0 }, { id: "board", l: "Board", ic: "⊟", cnt: cards.length || 0 }];
 
   const addProject = async (n) => { const p = await db.createProject(n); setProjects([...projects, p]); setActiveProjectId(p.id); setModal(null); };
   const renameProject = async (id, n) => { if (!n.trim()) return; await db.renameProject(id, n.trim()); setProjects(projects.map(p => p.id === id ? { ...p, name: n.trim() } : p)); setEditingProjectId(null); };
@@ -173,9 +173,9 @@ export default function App({ session }) {
   const taskName = tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId)?.title : tmr.tType === "test" ? testCases.find(t => t.id === tmr.tId)?.title : null;
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#111110", color: "#F1EFE8", fontFamily: "'DM Sans', -apple-system, sans-serif", fontSize: 13 }}>
-      {/* Sidebar */}
-      <div style={{ width: sb ? 220 : 54, borderRight: "1px solid #2C2C2A", display: "flex", flexDirection: "column", flexShrink: 0, background: "#161615", transition: "width 0.2s ease" }}>
+    <div style={{ minHeight: "100vh", background: "#111110", color: "#F1EFE8", fontFamily: "'DM Sans', -apple-system, sans-serif", fontSize: 13 }}>
+      {/* Sidebar — fixed */}
+      <div style={{ width: sb ? 220 : 54, borderRight: "1px solid #2C2C2A", display: "flex", flexDirection: "column", flexShrink: 0, background: "#161615", transition: "width 0.2s ease", position: "fixed", top: 0, left: 0, height: "100vh", overflowY: "auto", zIndex: 50 }}>
         <div style={{ padding: sb ? "14px 18px" : "14px 0", borderBottom: "1px solid #2C2C2A", display: "flex", alignItems: "center", justifyContent: sb ? "space-between" : "center" }}>
           {sb ? (<div style={{ fontSize: 15, fontWeight: 500, letterSpacing: -0.5, display: "flex", alignItems: "center", gap: 8 }}><span style={{ background: "#D3D1C7", color: "#111110", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>QTrack</div>) : (<span style={{ background: "#D3D1C7", color: "#111110", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>)}
           <button onClick={() => { const v = !sb; setSb(v); try { localStorage.setItem("qtrack_sb", v ? "1" : "0"); } catch {} }} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px", display: sb ? "block" : "none" }}>{sb ? "◂" : "▸"}</button>
@@ -194,7 +194,7 @@ export default function App({ session }) {
       </div>
 
       {/* Main */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ marginLeft: sb ? 220 : 54, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh", transition: "margin-left 0.2s ease" }}>
         <div style={{ padding: "12px 28px", borderBottom: "1px solid #2C2C2A", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {!sb && <button onClick={() => setSb(true)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 16 }}>☰</button>}
@@ -260,10 +260,10 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   useEffect(() => { let iv; if (tmr.st === "paused" && tmr.pausedAt) { iv = setInterval(() => setPauseElapsed(Math.floor((Date.now() - new Date(tmr.pausedAt).getTime()) / 1000)), 1000); } else { setPauseElapsed(0); } return () => { if (iv) clearInterval(iv); }; }, [tmr.st, tmr.pausedAt]);
 
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0);
-  const daysWithToday = new Set([...(allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString()), ...(tw.length > 0 || (tmr.st === "running" && tmr.type === "work") ? [new Date().toDateString()] : [])]).size;
+  const daysWithToday = new Set([...(allSessions || []).filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString()), ...(tw.length > 0 || (tmr.st === "running" && tmr.type === "work") ? [new Date().toDateString()] : [])]).size;
   const goalPct = Math.min(100, Math.round((tfm / goalMin) * 100));
   const ts = todaySessions || [];
-  const focusSec = ts.filter(s => s.session_type === "work" && (!s.subtype || s.subtype === "focus" || s.subtype === "manual")).reduce((a, s) => a + s.duration_seconds, 0);
+  const focusSec = ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").reduce((a, s) => a + s.duration_seconds, 0);
   const waitSec = ts.filter(s => s.subtype === "waiting").reduce((a, s) => a + s.duration_seconds, 0);
   const intSec = ts.filter(s => s.subtype === "interrupted").reduce((a, s) => a + s.duration_seconds, 0);
 
@@ -338,7 +338,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Focus</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{Math.round(focusSec / 60)}m</span></div>
           {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Waiting</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{Math.round(waitSec / 60)}m</span></div>}
           {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Interrupted</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{Math.round(intSec / 60)}m</span></div>}
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Sessions</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{ts.filter(s => s.session_type === "work" && (!s.subtype || s.subtype === "focus" || s.subtype === "manual")).length}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Sessions</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").length}</span></div>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>This week</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#85B7EB" }}>{daysWithToday}/7</span></div>
           <div style={{ borderTop: "1px solid #1A1A18", marginTop: 8, paddingTop: 8 }}>
             <button onClick={() => setShowLog(!showLog)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10, padding: 0 }}>{showLog ? "Cancel" : "+ Log past work"}</button>
@@ -574,7 +574,7 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
               for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0,0,0,0); days.push(d); }
               const dayMins = days.map(d => {
                 const next = new Date(d); next.setDate(next.getDate() + 1);
-                return Math.round((allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= d && new Date(s.completed_at) < next).reduce((a, s) => a + s.duration_seconds, 0) / 60);
+                return Math.round((allSessions || []).filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting" && new Date(s.completed_at) >= d && new Date(s.completed_at) < next).reduce((a, s) => a + s.duration_seconds, 0) / 60);
               });
               const isToday = (d) => d.toDateString() === new Date().toDateString();
               const maxMin = Math.max(...dayMins, 30);
