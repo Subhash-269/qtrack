@@ -128,10 +128,21 @@ export async function updateIssuePlanning(id, estimatedPomodoros, dueDate) {
   if (error) throw error
 }
 
-export async function updateIssue(id, { title, type, priority, description, file_id, estimated_pomodoros, due_date, repo_name, branch_name, meeting_tag, scratch_notes, scratch_checklist }) {
-  const fields = { title, type, priority, description, file_id, estimated_pomodoros, due_date: due_date || null, repo_name: repo_name || '', branch_name: branch_name || '', meeting_tag: meeting_tag || null };
-  if (scratch_notes !== undefined) fields.scratch_notes = scratch_notes;
-  if (scratch_checklist !== undefined) fields.scratch_checklist = scratch_checklist;
+export async function updateIssue(id, updates) {
+  const fields = {};
+  if (updates.title !== undefined) fields.title = updates.title;
+  if (updates.type !== undefined) fields.type = updates.type;
+  if (updates.priority !== undefined) fields.priority = updates.priority;
+  if (updates.description !== undefined) fields.description = updates.description;
+  if (updates.file_id !== undefined) fields.file_id = updates.file_id;
+  if (updates.estimated_pomodoros !== undefined) fields.estimated_pomodoros = updates.estimated_pomodoros;
+  if (updates.due_date !== undefined) fields.due_date = updates.due_date || null;
+  if (updates.repo_name !== undefined) fields.repo_name = updates.repo_name || '';
+  if (updates.branch_name !== undefined) fields.branch_name = updates.branch_name || '';
+  if (updates.meeting_tag !== undefined) fields.meeting_tag = updates.meeting_tag || null;
+  if (updates.scratch_notes !== undefined) fields.scratch_notes = updates.scratch_notes;
+  if (updates.scratch_checklist !== undefined) fields.scratch_checklist = updates.scratch_checklist;
+  if (Object.keys(fields).length === 0) return;
   const { error } = await supabase.from('issues').update(fields).eq('id', id)
   if (error) throw error
 }
@@ -192,10 +203,20 @@ export async function updateTestPlanning(id, estimatedPomodoros, dueDate) {
   if (error) throw error
 }
 
-export async function updateTestCase(id, { title, precondition, steps, file_id, estimated_pomodoros, due_date, repo_name, branch_name, meeting_tag, scratch_notes, scratch_checklist }) {
-  const fields = { title, precondition, steps, file_id, estimated_pomodoros, due_date: due_date || null, repo_name: repo_name || '', branch_name: branch_name || '', meeting_tag: meeting_tag || null };
-  if (scratch_notes !== undefined) fields.scratch_notes = scratch_notes;
-  if (scratch_checklist !== undefined) fields.scratch_checklist = scratch_checklist;
+export async function updateTestCase(id, updates) {
+  const fields = {};
+  if (updates.title !== undefined) fields.title = updates.title;
+  if (updates.precondition !== undefined) fields.precondition = updates.precondition;
+  if (updates.steps !== undefined) fields.steps = updates.steps;
+  if (updates.file_id !== undefined) fields.file_id = updates.file_id;
+  if (updates.estimated_pomodoros !== undefined) fields.estimated_pomodoros = updates.estimated_pomodoros;
+  if (updates.due_date !== undefined) fields.due_date = updates.due_date || null;
+  if (updates.repo_name !== undefined) fields.repo_name = updates.repo_name || '';
+  if (updates.branch_name !== undefined) fields.branch_name = updates.branch_name || '';
+  if (updates.meeting_tag !== undefined) fields.meeting_tag = updates.meeting_tag || null;
+  if (updates.scratch_notes !== undefined) fields.scratch_notes = updates.scratch_notes;
+  if (updates.scratch_checklist !== undefined) fields.scratch_checklist = updates.scratch_checklist;
+  if (Object.keys(fields).length === 0) return;
   const { error } = await supabase.from('test_cases').update(fields).eq('id', id)
   if (error) throw error
 }
@@ -498,6 +519,16 @@ export async function updateNote(id, fields) {
   if (error) throw error
 }
 
+export async function getNote(id) {
+  const { data, error } = await supabase
+    .from('notes')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (error) throw error
+  return data
+}
+
 export async function deleteNote(id) {
   const { error } = await supabase.from('notes').delete().eq('id', id)
   if (error) throw error
@@ -623,6 +654,17 @@ export async function getUserProfile() {
     .single()
   if (error) return { tier: 'free' }
   return data || { tier: 'free' }
+}
+
+export async function getTaskScratch(type, id) {
+  const table = type === 'issue' ? 'issues' : 'test_cases'
+  const { data, error } = await supabase
+    .from(table)
+    .select('scratch_notes, scratch_checklist')
+    .eq('id', id)
+    .single()
+  if (error) return { scratch_notes: '', scratch_checklist: [] }
+  return data || { scratch_notes: '', scratch_checklist: [] }
 }
 
 export async function getNewsCache(projectId) {

@@ -309,6 +309,9 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   const [newCheck, setNewCheck] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [taskInfoOpen, setTaskInfoOpen] = useState(false);
+  const [activeNoteId, setActiveNoteId] = useState(null);
+  const activeNoteRef = useRef(null);
+  const setNote = (id) => { activeNoteRef.current = id; setActiveNoteId(id); };
   const color = SC[tmr.type];
   const isActive = tmr.st !== "idle";
   const openTasks = [...issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status)).map(i => ({ id: i.id, t: "issue", l: i.title, p: i.priority })), ...tests.filter(t => t.status !== "pass").map(t => ({ id: t.id, t: "test", l: t.title, p: "medium" }))];
@@ -317,26 +320,83 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
 
   useEffect(() => { let iv; if (tmr.st === "paused" && tmr.pausedAt) { iv = setInterval(() => setPauseElapsed(Math.floor((Date.now() - new Date(tmr.pausedAt).getTime()) / 1000)), 1000); } else { setPauseElapsed(0); } return () => { if (iv) clearInterval(iv); }; }, [tmr.st, tmr.pausedAt]);
 
-  // Load scratch + checklist from task
+  // Load: scratch text (from linked note or scratch_notes) + checklist (always from task)
   useEffect(() => {
-    const t = tmr.tId ? (tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId) : tests.find(t => t.id === tmr.tId)) : null;
-    setScratch(t?.scratch_notes || "");
-    try { setChecklist(Array.isArray(t?.scratch_checklist) ? t.scratch_checklist : JSON.parse(t?.scratch_checklist || "[]")); } catch { setChecklist([]); }
-    if (t) setDrawerOpen(true);
+    if (!tmr.tId) { setScratch(""); setChecklist([]); setNote(null); setSavedTick(0); return; }
+    setDrawerOpen(true);
+
+    // Always load checklist + scratch_notes from the task
+    db.getTaskScratch(tmr.tType, tmr.tId).then(data => {
+      try { setChecklist(Array.isArray(data?.scratch_checklist) ? data.scratch_checklist : JSON.parse(data?.scratch_checklist || "[]")); } catch { setChecklist([]); }
+
+      // Check if a linked note exists
+      const linked = (allNotes || []).filter(n => (tmr.tType === "issue" && n.linked_issue_id === tmr.tId) || (tmr.tType === "test" && n.linked_test_id === tmr.tId)).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      if (linked.length > 0) {
+        const noteId = linked[0].id;
+        setNote(noteId);
+        setScratch(linked[0].content || "");
+        try { db.getNote(noteId).then(n => { if (n?.content !== undefined) setScratch(n.content); }).catch(() => {}); } catch {}
+      } else {
+        setNote(null);
+        setScratch(data?.scratch_notes || "");
+      }
+    }).catch(() => { setScratch(""); setChecklist([]); setNote(null); });
   }, [tmr.tId]);
 
-  // Debounced save
+  const [savedTick, setSavedTick] = useState(0); // 0=idle, 1=saving, 2=saved, 3=error
+  const [saveError, setSaveError] = useState(null);
   const saveTimer = useRef(null);
-  const saveScratch = (newScratch, newChecklist) => {
+
+  const saveAll = (newScratch, newChecklist) => {
     if (!tmr.tId) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      const fn = tmr.tType === "issue" ? db.updateIssue : db.updateTestCase;
-      fn(tmr.tId, { scratch_notes: newScratch, scratch_checklist: JSON.stringify(newChecklist) }).catch(() => {});
-    }, 1500);
+    setSavedTick(1); setSaveError(null);
+    saveTimer.current = setTimeout(async () => {
+      try {
+        const fn = tmr.tType === "issue" ? db.updateIssue : db.updateTestCase;
+        if (activeNoteRef.current) {
+          await db.updateNote(activeNoteRef.current, { content: newScratch });
+          await fn(tmr.tId, { scratch_checklist: newChecklist });
+        } else {
+          await fn(tmr.tId, { scratch_notes: newScratch, scratch_checklist: newChecklist });
+        }
+        setSavedTick(2);
+        setTimeout(() => setSavedTick(0), 1500);
+      } catch (e) {
+        console.error("save error", e);
+        setSaveError(e.message || "Save failed");
+        setSavedTick(3);
+      }
+    }, 800);
   };
-  const updateScratch = (v) => { setScratch(v); saveScratch(v, checklist); };
-  const updateChecklist = (cl) => { setChecklist(cl); saveScratch(scratch, cl); };
+
+  const updateScratch = (v) => { setScratch(v); saveAll(v, checklist); };
+  const updateChecklist = (cl) => { setChecklist(cl); saveAll(scratch, cl); };
+
+  // Flush pending save on unmount or before page unload — use refs to avoid re-firing on every keystroke
+  const scratchRef = useRef("");
+  const checklistRef = useRef([]);
+  const tmrRef = useRef(tmr);
+  useEffect(() => { scratchRef.current = scratch; }, [scratch]);
+  useEffect(() => { checklistRef.current = checklist; }, [checklist]);
+  useEffect(() => { tmrRef.current = tmr; }, [tmr]);
+  useEffect(() => {
+    const flush = () => {
+      if (saveTimer.current && tmrRef.current.tId) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        const fn = tmrRef.current.tType === "issue" ? db.updateIssue : db.updateTestCase;
+        if (activeNoteRef.current) {
+          db.updateNote(activeNoteRef.current, { content: scratchRef.current }).catch(() => {});
+          fn(tmrRef.current.tId, { scratch_checklist: checklistRef.current }).catch(() => {});
+        } else {
+          fn(tmrRef.current.tId, { scratch_notes: scratchRef.current, scratch_checklist: checklistRef.current }).catch(() => {});
+        }
+      }
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => { window.removeEventListener("beforeunload", flush); flush(); };
+  }, []);
 
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0);
   const daysWithToday = new Set([...(allSessions || []).filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString()), ...(tw.length > 0 || (tmr.st === "running" && tmr.type === "work") ? [new Date().toDateString()] : [])]).size;
@@ -360,11 +420,9 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
 
   // Save scratchpad as a real note
   const promoteToNote = async () => {
-    if (!scratch.trim() && checklist.length === 0) return;
-    let content = scratch;
-    if (checklist.length > 0) content += (content ? "\n\n" : "") + "Checklist:\n" + checklist.map(c => `${c.done ? "[x]" : "[ ]"} ${c.text}`).join("\n");
+    if (!scratch.trim()) return;
     try {
-      await db.createNote(projectId, { title: taskName || "Focus notes", content, category: "investigation", linked_issue_id: tmr.tType === "issue" ? tmr.tId : null, linked_test_id: tmr.tType === "test" ? tmr.tId : null, linked_file_id: null, code_lang: "", meeting_tag: null });
+      await db.createNote(projectId, { title: taskName || "Focus notes", content: scratch, category: "investigation", linked_issue_id: tmr.tType === "issue" ? tmr.tId : null, linked_test_id: tmr.tType === "test" ? tmr.tId : null, linked_file_id: null, code_lang: "", meeting_tag: null });
       await reload();
     } catch (e) { console.error(e); }
   };
@@ -411,8 +469,8 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           {/* Scratchpad */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div style={{ padding: "8px 14px 0", display: "flex", justifyContent: "space-between", flexShrink: 0 }}>
-              <span style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>Scratch</span>
-              <span style={{ fontSize: 9, color: "#2C2C2A" }}>syncs</span>
+              <span style={{ fontSize: 10, color: activeNoteId ? "#AFA9EC" : "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>{activeNoteId ? "Linked note" : "Scratch"}</span>
+              <span style={{ fontSize: 9, color: savedTick === 3 ? "#F09595" : savedTick === 2 ? "#5DCAA5" : savedTick === 1 ? "#FAC775" : "#2C2C2A" }}>{savedTick === 3 ? `✕ ${saveError?.substring(0, 40)}` : savedTick === 2 ? "✓ saved" : savedTick === 1 ? "saving..." : "auto-save"}</span>
             </div>
             <textarea
               value={scratch}
@@ -423,10 +481,17 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
             />
           </div>
 
-          {/* Links + promote */}
+          {/* Source + promote */}
           <div style={{ padding: "8px 14px 10px", borderTop: "1px solid #1A1A18", flexShrink: 0 }}>
-            {linkedNotes.length > 0 && linkedNotes.map(n => <div key={n.id} style={{ fontSize: 10, color: "#AFA9EC", padding: "2px 0" }}>☰ {n.title || n.content.substring(0, 30)}</div>)}
-            <button onClick={promoteToNote} style={{ background: "none", border: "1px dashed #1A1A18", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "4px 8px", borderRadius: 4, width: "100%", marginTop: 4 }}>↗ Save as note</button>
+            { activeNoteId ? (
+              <div style={{ fontSize: 9, color: "#AFA9EC", display: "flex", alignItems: "center", gap: 4 }}>
+                <span>☰</span>
+                <span>Editing linked note</span>
+                <span style={{ color: "#444441" }}>· auto-saves</span>
+              </div>
+            ) : (
+              <button onClick={promoteToNote} style={{ background: "none", border: "1px dashed #1A1A18", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "4px 8px", borderRadius: 4, width: "100%" }}>↗ Save as note</button>
+            )}
           </div>
         </div>
       </div>
