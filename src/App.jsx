@@ -457,7 +457,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
             {checklist.map((c, idx) => (
               <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "3px 0" }}>
                 <input type="checkbox" checked={c.done} onChange={() => { const cl = [...checklist]; cl[idx].done = !cl[idx].done; updateChecklist(cl); }} style={{ cursor: "pointer", marginTop: 2, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: c.done ? "#5F5E5A" : "#D3D1C7", textDecoration: c.done ? "line-through" : "none", flex: 1, lineHeight: 1.4 }}>{c.text}</span>
+                <input value={c.text} onChange={e => { const cl = [...checklist]; cl[idx].text = e.target.value; updateChecklist(cl); }} style={{ flex: 1, padding: "1px 4px", borderRadius: 3, fontSize: 12, color: c.done ? "#5F5E5A" : "#D3D1C7", textDecoration: c.done ? "line-through" : "none", background: "transparent", border: "1px solid transparent", outline: "none", lineHeight: 1.4 }} onFocus={e => e.target.style.border = "1px solid #2C2C2A"} onBlur={e => e.target.style.border = "1px solid transparent"} />
                 <button onClick={() => updateChecklist(checklist.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9, flexShrink: 0 }}>✕</button>
               </div>
             ))}
