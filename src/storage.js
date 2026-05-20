@@ -600,3 +600,60 @@ export async function deletePerson(id) {
   const { error } = await supabase.from('workshop_people').delete().eq('id', id)
   if (error) throw error
 }
+
+// ============================================
+// News Feed
+// ============================================
+
+export async function updateProjectTopics(projectId, topics) {
+  const { error } = await supabase.from('projects').update({ news_topics: topics }).eq('id', projectId)
+  if (error) throw error
+}
+
+export async function getSession() {
+  return await supabase.auth.getSession()
+}
+
+export async function getUserProfile() {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('*')
+    .eq('id', user_id)
+    .single()
+  if (error) return { tier: 'free' }
+  return data || { tier: 'free' }
+}
+
+export async function getNewsCache(projectId) {
+  const { data, error } = await supabase
+    .from('news_cache')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('fetched_at', { ascending: false })
+    .limit(20)
+  if (error) throw error
+  return data || []
+}
+
+export async function saveNewsCache(projectId, articles) {
+  const user_id = await uid()
+  // Clear old cache EXCEPT bookmarked articles
+  await supabase.from('news_cache').delete().eq('project_id', projectId).eq('user_id', user_id).eq('bookmarked', false)
+  // Insert new articles
+  if (articles.length > 0) {
+    const rows = articles.map(a => ({ user_id, project_id: projectId, title: a.title, url: a.url, source: a.source || '', summary: a.summary || '', topic_match: a.topic_match || '', topic_type: a.topic_type || 'custom', published_at: a.published_at || '' }))
+    const { error } = await supabase.from('news_cache').insert(rows)
+    if (error) throw error
+  }
+}
+
+export async function toggleBookmark(id, bookmarked) {
+  const { error } = await supabase.from('news_cache').update({ bookmarked }).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteNewsItem(id) {
+  const { error } = await supabase.from('news_cache').delete().eq('id', id)
+  if (error) throw error
+}

@@ -31,12 +31,17 @@ function Ring({ size, stroke, timeLeft, totalTime, color }) {
 export default function App({ session }) {
   const [projects, setProjects] = useState([]); const [files, setFiles] = useState([]); const [issues, setIssues] = useState([]); const [testCases, setTestCases] = useState([]); const [links, setLinks] = useState([]); const [activeProjectId, setActiveProjectId] = useState(null);
   const [view, setView] = useState("dashboard"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null); const [sb, setSb] = useState(() => { try { return localStorage.getItem("qtrack_sb") !== "0"; } catch { return true; } });
+  const [hiddenTabs, setHiddenTabs] = useState(() => { try { return JSON.parse(localStorage.getItem("qtrack_hidden_tabs") || "[]"); } catch { return []; } });
+  const [showNavSettings, setShowNavSettings] = useState(false);
+  const toggleTab = (id) => { const nt = hiddenTabs.includes(id) ? hiddenTabs.filter(t => t !== id) : [...hiddenTabs, id]; setHiddenTabs(nt); try { localStorage.setItem("qtrack_hidden_tabs", JSON.stringify(nt)); } catch {} };
   const [filterType, setFilterType] = useState("all"); const [filterFile, setFilterFile] = useState("all"); const [filterPriority, setFilterPriority] = useState("all"); const [searchQ, setSearchQ] = useState(""); const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
   const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null });
   const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]); const [viewingNoteId, setViewingNoteId] = useState(null); const [queue, setQueue] = useState([]); const [meetings, setMeetings] = useState([]); const [meetingFocus, setMeetingFocus] = useState(null);
   const [showTutorial, setShowTutorial] = useState(false);
   const [people, setPeople] = useState([]);
+  const [newsCache, setNewsCache] = useState([]);
+  const [userTier, setUserTier] = useState("free");
   const tRef = useRef(null); const initRef = useRef(false); const syncRef = useRef(false); const loadedTimerRef = useRef(false);
 
   // Load timer from Supabase on mount
@@ -129,11 +134,11 @@ export default function App({ session }) {
   const resetTmr = async () => { if (tmr.st !== "idle" && !confirm("Stop the current timer?")) return; await savePartial(tmr); setTmr({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null }); };
   const focusOn = async (type, id) => { if (tmr.st !== "idle" && !confirm("Switch task? Current progress will be saved.")) return; await savePartial(tmr); setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null }); setView("focus"); if (Notification.permission === "default") Notification.requestPermission(); };
 
-  useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); } }, []);
+  useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); db.getUserProfile().then(p => setUserTier(p.tier || "free")).catch(() => {}); } }, []);
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
 
   async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId(p[0].id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); if (!localStorage.getItem("qtrack_tutorial_done")) setShowTutorial(true); } } catch (e) { console.error(e); } setLoading(false); }
-  async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } try { setMeetings(await db.getMeetings(pid)); } catch { setMeetings([]); } try { setPeople(await db.getPeople(pid)); } catch { setPeople([]); } } catch (e) { console.error(e); } }
+  async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } try { setMeetings(await db.getMeetings(pid)); } catch { setMeetings([]); } try { setPeople(await db.getPeople(pid)); } catch { setPeople([]); } try { setNewsCache(await db.getNewsCache(pid)); } catch { setNewsCache([]); } } catch (e) { console.error(e); } }
   async function loadToday() { if (!activeProjectId) return; try { setTodaySessions(await db.getTodaySessions(activeProjectId)); } catch { setTodaySessions([]); } try { setAllSessions(await db.getAllSessions(activeProjectId)); } catch { setAllSessions([]); } }
   async function reload() { if (activeProjectId) await loadData(activeProjectId); }
 
@@ -152,12 +157,14 @@ export default function App({ session }) {
 
   const activeProject = projects.find(p => p.id === activeProjectId);
   const isWorkshop = activeProject?.type === "workshop";
+  const isPremium = userTier === "premium" || userTier === "founder";
 
-  const nav = isWorkshop ? [
+  const nav = (isWorkshop ? [
     { id: "dashboard", l: "Dashboard", ic: "⊞" },
     { id: "calendar", l: "Sessions", ic: "▦", cnt: meetings.filter(m => !m.attended && !m.cancelled).length || 0 },
     { id: "notes", l: "Notes", ic: "≡", cnt: notes.length || 0 },
     { id: "people", l: "People", ic: "◎", cnt: people.length || 0 },
+    { id: "news", l: "News", ic: "☰", cnt: 0 },
     { id: "board", l: "Board", ic: "⊟", cnt: cards.length || 0 },
   ] : [
     { id: "dashboard", l: "Dashboard", ic: "⊞" },
@@ -167,8 +174,9 @@ export default function App({ session }) {
     { id: "files", l: "Files", ic: "◇", cnt: stats.fc },
     { id: "calendar", l: "Calendar", ic: "▦", cnt: meetings.filter(m => !m.attended && !m.cancelled).length || 0 },
     { id: "notes", l: "Notes", ic: "≡", cnt: notes.length || 0 },
+    { id: "news", l: "News", ic: "☰", cnt: 0 },
     { id: "board", l: "Board", ic: "⊟", cnt: cards.length || 0 },
-  ];
+  ]).filter(n => n.id !== "news" || isPremium);
 
   const addProject = async (n, type = "project") => { const p = await db.createProject(n, type); setProjects([...projects, p]); setActiveProjectId(p.id); setModal(null); };
   const renameProject = async (id, n) => { if (!n.trim()) return; await db.renameProject(id, n.trim()); setProjects(projects.map(p => p.id === id ? { ...p, name: n.trim() } : p)); setEditingProjectId(null); };
@@ -201,7 +209,23 @@ export default function App({ session }) {
           <button onClick={() => { const v = !sb; setSb(v); try { localStorage.setItem("qtrack_sb", v ? "1" : "0"); } catch {} }} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px", display: sb ? "block" : "none" }}>{sb ? "◂" : "▸"}</button>
         </div>
         <div style={{ padding: sb ? "12px 10px" : "12px 4px", flex: 1 }}>
-          {nav.map(n => (<button key={n.id} onClick={() => { setView(n.id); setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all"); if (!sb) setSb(false); }} title={sb ? undefined : n.l} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: sb ? "8px 10px" : "8px 0", borderRadius: 6, border: "none", background: view === n.id ? "#2C2C2A" : "transparent", color: view === n.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 13, textAlign: "left", marginBottom: 2, justifyContent: sb ? "flex-start" : "center" }}><span style={{ fontSize: 14, width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span>{sb && <span style={{ flex: 1 }}>{n.l}</span>}{sb && n.cnt ? <span style={{ fontSize: 10, background: n.id === "focus" ? "#2D0A0A" : "#2C2C2A", padding: "1px 6px", borderRadius: 4, color: n.id === "focus" ? "#F09595" : "#888780" }}>{n.cnt}</span> : null}</button>))}
+          {nav.filter(n => n.id === "dashboard" || !hiddenTabs.includes(n.id)).map(n => (<button key={n.id} onClick={() => { setView(n.id); setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all"); if (!sb) setSb(false); }} title={sb ? undefined : n.l} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: sb ? "8px 10px" : "8px 0", borderRadius: 6, border: "none", background: view === n.id ? "#2C2C2A" : "transparent", color: view === n.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 13, textAlign: "left", marginBottom: 2, justifyContent: sb ? "flex-start" : "center" }}><span style={{ fontSize: 14, width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span>{sb && <span style={{ flex: 1 }}>{n.l}</span>}{sb && n.cnt ? <span style={{ fontSize: 10, background: n.id === "focus" ? "#2D0A0A" : "#2C2C2A", padding: "1px 6px", borderRadius: 4, color: n.id === "focus" ? "#F09595" : "#888780" }}>{n.cnt}</span> : null}</button>))}
+          {/* Settings gear */}
+          <div style={{ marginTop: "auto", borderTop: "1px solid #1A1A18", paddingTop: 6, position: "relative" }}>
+            <button onClick={() => setShowNavSettings(!showNavSettings)} title="Show/hide tabs" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: sb ? "8px 10px" : "8px 0", borderRadius: 6, border: "none", background: showNavSettings ? "#2C2C2A" : "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 13, justifyContent: sb ? "flex-start" : "center" }}><span style={{ fontSize: 14, width: 20, textAlign: "center" }}>⚙</span>{sb && <span>Settings</span>}</button>
+            {showNavSettings && (
+              <div style={{ position: "absolute", bottom: 40, left: sb ? 10 : 54, background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", width: 180, zIndex: 60, boxShadow: "0 4px 12px rgba(0,0,0,0.4)" }}>
+                <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Show in sidebar</div>
+                {nav.filter(n => n.id !== "dashboard").map(n => (
+                  <label key={n.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12, color: hiddenTabs.includes(n.id) ? "#444441" : "#D3D1C7", cursor: "pointer" }}>
+                    <input type="checkbox" checked={!hiddenTabs.includes(n.id)} onChange={() => toggleTab(n.id)} style={{ cursor: "pointer" }} />
+                    <span style={{ opacity: 0.7 }}>{n.ic}</span>
+                    <span>{n.l}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
           {!sb && <button onClick={() => setSb(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", padding: "8px 0", borderRadius: 6, border: "none", background: "transparent", color: "#444441", cursor: "pointer", fontSize: 14, marginTop: 4 }}>▸</button>}
         </div>
         {tmr.st !== "idle" && view !== "focus" && (<div onClick={() => setView("focus")} style={{ margin: sb ? "0 10px 10px" : "0 4px 10px", padding: sb ? "10px 12px" : "8px 4px", background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, cursor: "pointer", textAlign: sb ? "left" : "center" }}>{sb ? (<><div style={{ display: "flex", alignItems: "center", gap: 8 }}><Ring size={32} stroke={3} timeLeft={tmr.left} totalTime={tmr.total} color={SC[tmr.type]} /><div><div style={{ fontSize: 14, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: SC[tmr.type] }}>{FMT(tmr.left)}</div><div style={{ fontSize: 10, color: "#5F5E5A" }}>{tmr.type === "work" ? "Focusing" : "Break"}{tmr.st === "paused" ? " (paused)" : ""}</div></div></div>{taskName && <div style={{ fontSize: 10, color: "#888780", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{taskName}</div>}</>) : (<><Ring size={28} stroke={3} timeLeft={tmr.left} totalTime={tmr.total} color={SC[tmr.type]} /><div style={{ fontSize: 10, fontFamily: "'SF Mono', monospace", color: SC[tmr.type], marginTop: 4 }}>{FMT(tmr.left)}</div></>)}</div>)}
@@ -238,6 +262,7 @@ export default function App({ session }) {
           {view === "calendar" && <CalendarView meetings={meetings} issues={issues} testCases={testCases} projectId={activeProjectId} reload={reload} onFocusMeeting={mt => setMeetingFocus(mt)} allNotes={notes} />}
           {view === "board" && <BoardView columns={columns} cards={cards} projectId={activeProjectId} reload={reload} issues={issues} files={files} addIssue={addIssue} />}
           {view === "people" && <PeopleView people={people} meetings={meetings} projectId={activeProjectId} reload={reload} />}
+          {view === "news" && <NewsView project={activeProject} newsCache={newsCache} projectId={activeProjectId} reload={reload} />}
         </div>
         {/* Music dock */}
         {!meetingFocus && <div style={{ background: "#161615", borderTop: "1px solid #1A1A18", padding: "4px 20px", flexShrink: 0 }}>
@@ -2067,6 +2092,188 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
 }
 
 // ============================================
+// News Feed View
+// ============================================
+
+function NewsView({ project, newsCache, projectId, reload }) {
+  const [topics, setTopics] = useState(project?.news_topics || []);
+  const [newTopic, setNewTopic] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [apiKey, setApiKey] = useState(() => { try { return localStorage.getItem("qtrack_anthropic_key") || ""; } catch { return ""; } });
+  const [keyInput, setKeyInput] = useState("");
+  const [mode, setMode] = useState("auto"); // auto tries edge function first
+
+  useEffect(() => { try { setTopics(Array.isArray(project?.news_topics) ? project.news_topics : JSON.parse(project?.news_topics || "[]")); } catch { setTopics([]); } }, [project?.id]);
+
+  const saveKey = () => { const k = keyInput.trim(); if (k) { setApiKey(k); localStorage.setItem("qtrack_anthropic_key", k); setKeyInput(""); } };
+
+  const addTopic = async () => {
+    if (!newTopic.trim() || topics.includes(newTopic.trim())) return;
+    const nt = [...topics, newTopic.trim()];
+    setTopics(nt); setNewTopic("");
+    await db.updateProjectTopics(projectId, nt);
+  };
+  const removeTopic = async (t) => {
+    const nt = topics.filter(x => x !== t);
+    setTopics(nt);
+    await db.updateProjectTopics(projectId, nt);
+  };
+
+  const buildPrompt = () => `You are a tech news curator. Find the latest news, tools, and articles related to: ${topics.join(", ")}.
+Return 8-10 results as a JSON array. Each object: title, url, source, summary (1 sentence), topic_match, published_at.
+Return ONLY valid JSON array, no markdown, no backticks, no preamble.`;
+
+  const parseArticles = (data) => {
+    const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+    const cleaned = text.replace(/```json|```/g, "").trim();
+    try { return JSON.parse(cleaned); } catch {
+      const match = cleaned.match(/\[[\s\S]*\]/);
+      return match ? JSON.parse(match[0]) : [];
+    }
+  };
+
+  const fetchNews = async () => {
+    if (topics.length === 0) return;
+    setLoading(true); setError(null);
+    try {
+      let articles = [];
+
+      // Try Edge Function first
+      try {
+        const sbUrl = import.meta.env.VITE_SUPABASE_URL;
+        const { data: { session } } = await db.getSession();
+        const token = session?.access_token;
+        if (!token) throw new Error("Not authenticated");
+        const res = await fetch(`${sbUrl}/functions/v1/news-feed`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ topics })
+        });
+        if (!res.ok) throw new Error("Edge Function not available");
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        articles = data.articles || [];
+      } catch (edgeErr) {
+        // Fallback: direct API call with localStorage key
+        if (!apiKey) throw new Error(edgeErr.message || "Edge Function failed. Add your API key below as a fallback.");
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+          body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4000, tools: [{ type: "web_search_20250305", name: "web_search" }], messages: [{ role: "user", content: buildPrompt() }] })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+        articles = parseArticles(data);
+      }
+
+      if (articles.length > 0) {
+        await db.saveNewsCache(projectId, articles.map(a => ({ ...a, topic_type: "custom" })));
+        await reload();
+      } else {
+        setError("No articles found. Try broader topics like 'data engineering' or 'AI tools'.");
+      }
+    } catch (e) {
+      setError(e.message);
+    }
+    setLoading(false);
+  };
+
+  const cacheAge = newsCache.length > 0 ? (() => {
+    const mins = Math.round((Date.now() - new Date(newsCache[0].fetched_at).getTime()) / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
+    return `${Math.round(mins / 1440)}d ago`;
+  })() : null;
+
+  // Auto-refresh if cache is older than 24h
+  const autoRefreshed = useRef(false);
+  useEffect(() => {
+    if (autoRefreshed.current || loading || topics.length === 0) return;
+    const stale = newsCache.length === 0 || (Date.now() - new Date(newsCache[0].fetched_at).getTime()) > 24 * 60 * 60 * 1000;
+    if (stale) { autoRefreshed.current = true; fetchNews(); }
+  }, [newsCache, topics]);
+
+  return (
+    <div>
+      {/* Topics */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Your topics</div>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+          {topics.map(t => (
+            <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 16, fontSize: 11, background: "#2A1209", color: "#F0997B", border: "1px solid #4A1B0C" }}>
+              {t}
+              <button onClick={() => removeTopic(t)} style={{ background: "none", border: "none", color: "#F0997B", cursor: "pointer", fontSize: 10, padding: 0, opacity: 0.6 }}>✕</button>
+            </span>
+          ))}
+          <input value={newTopic} onChange={e => setNewTopic(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addTopic(); }} placeholder="+ add topic..." style={{ padding: "4px 10px", borderRadius: 16, fontSize: 11, background: "transparent", color: "#888780", border: "1px dashed #2C2C2A", outline: "none", width: 140 }} />
+        </div>
+      </div>
+
+      {/* Refresh */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <Btn primary small onClick={fetchNews} disabled={loading || topics.length === 0}>
+          {loading ? "Searching..." : "Refresh feed"}
+        </Btn>
+        {cacheAge && <span style={{ fontSize: 10, color: "#5F5E5A" }}>Updated {cacheAge}</span>}
+        {topics.length === 0 && <span style={{ fontSize: 10, color: "#5F5E5A" }}>Add topics to get started</span>}
+      </div>
+
+      {/* Error + API key fallback */}
+      {error && (
+        <div style={{ background: "#161615", border: "1px solid #501313", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: "#F09595", marginBottom: 6 }}>{error}</div>
+          {!apiKey && error.includes("API key") && (
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <input value={keyInput} onChange={e => setKeyInput(e.target.value)} placeholder="sk-ant-..." type="password" style={{ flex: 1, padding: "6px 8px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", fontFamily: "'SF Mono', monospace" }} />
+              <Btn small onClick={saveKey}>Use key</Btn>
+            </div>
+          )}
+          {apiKey && <div style={{ fontSize: 9, color: "#5F5E5A" }}>Using local API key as fallback</div>}
+        </div>
+      )}
+
+      {/* Feed */}
+      {newsCache.length > 0 && (() => {
+        const saved = newsCache.filter(a => a.bookmarked);
+        const recent = newsCache.filter(a => !a.bookmarked);
+        const ArticleCard = ({ article, isSaved }) => (
+          <div style={{ background: "#161615", border: `1px solid ${isSaved ? "#412402" : "#1A1A18"}`, borderRadius: 8, padding: "12px 16px", marginBottom: 6 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <button onClick={async () => { await db.toggleBookmark(article.id, !isSaved); await reload(); }} title={isSaved ? "Remove bookmark" : "Bookmark"} style={{ background: "none", border: "none", color: isSaved ? "#FAC775" : "#2C2C2A", cursor: "pointer", fontSize: 14, padding: 0, flexShrink: 0, marginTop: 1 }} onMouseEnter={e => { if (!isSaved) e.currentTarget.style.color = "#FAC775"; }} onMouseLeave={e => { if (!isSaved) e.currentTarget.style.color = "#2C2C2A"; }}>{isSaved ? "★" : "☆"}</button>
+              <div style={{ flex: 1 }}>
+                <a href={article.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 500, color: "#F1EFE8", textDecoration: "none", lineHeight: 1.4, display: "block" }}>{article.title}</a>
+                {article.summary && <div style={{ fontSize: 11, color: "#888780", marginTop: 4, lineHeight: 1.5 }}>{article.summary}</div>}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 10, color: "#5F5E5A" }}>{article.source}</span>
+                  {article.published_at && <><span style={{ color: "#2C2C2A" }}>·</span><span style={{ fontSize: 10, color: "#5F5E5A" }}>{article.published_at}</span></>}
+                  {article.topic_match && <span style={{ fontSize: 9, padding: "1px 8px", borderRadius: 12, background: "#2A1209", color: "#F0997B", border: "1px solid #4A1B0C" }}>{article.topic_match}</span>}
+                </div>
+              </div>
+              <a href={article.url} target="_blank" rel="noopener noreferrer" style={{ color: "#5F5E5A", fontSize: 11, textDecoration: "none", flexShrink: 0, padding: "2px" }}>↗</a>
+              <a href={`https://www.google.com/search?q=${encodeURIComponent(article.title)}`} target="_blank" rel="noopener noreferrer" title="Search Google" style={{ color: "#2C2C2A", fontSize: 10, textDecoration: "none", flexShrink: 0 }}>🔍</a>
+              {!isSaved && <button onClick={async () => { await db.deleteNewsItem(article.id); await reload(); }} title="Remove" style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 10, flexShrink: 0 }}>✕</button>}
+            </div>
+          </div>
+        );
+        return (<div>
+          {saved.length > 0 && <div style={{ fontSize: 10, color: "#FAC775", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Saved ({saved.length})</div>}
+          {saved.map(a => <ArticleCard key={a.id} article={a} isSaved />)}
+          {saved.length > 0 && recent.length > 0 && <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 6px" }}>Recent</div>}
+          {recent.map(a => <ArticleCard key={a.id} article={a} />)}
+        </div>);
+      })()}
+
+      {newsCache.length === 0 && topics.length > 0 && !loading && (
+        <EmptyState icon="☰" title="No news yet" sub="Click 'Refresh feed' to get AI-curated articles" />
+      )}
+      {newsCache.length === 0 && topics.length === 0 && (
+        <EmptyState icon="☰" title="Set up your feed" sub="Add topics you're interested in, then refresh" />
+      )}
+    </div>
+  );
+}
+
 // People View (Workshop contacts)
 // ============================================
 
