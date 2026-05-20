@@ -4,6 +4,7 @@ import * as db from "./storage";
 
 const SHORT_DATE = (d) => { if (!d) return "—"; const dt = new Date(d); const diff = Date.now() - dt.getTime(); if (diff < 60000) return "just now"; if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`; if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`; return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
 const FMT = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+const FMTHR = (m) => { if (m < 60) return `${m}m`; if (m < 2880) return `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ""}`; const d = Math.floor(m / 1440); const h = Math.floor((m % 1440) / 60); const rm = m % 60; return `${d}d${h > 0 ? ` ${h}h` : ""}${rm > 0 ? ` ${rm}m` : ""}`; };
 const CATEGORIES = ["extract", "transform", "load", "validate", "utils", "config", "api", "model", "other"];
 const PRIORITIES = ["critical", "high", "medium", "low"];
 const ISSUE_STATUSES = ["open", "in_progress", "fixed", "verified", "wont_fix"];
@@ -252,7 +253,7 @@ export default function App({ session }) {
           </div>
         </div>
         <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
-          {view === "dashboard" && !isWorkshop && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} />}
+          {view === "dashboard" && !isWorkshop && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} todaySessions={todaySessions} />}
           {view === "dashboard" && isWorkshop && <WorkshopDashboard meetings={meetings} notes={notes} people={people} onNav={setView} />}
           {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} markDone={async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } }} />}
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
@@ -477,8 +478,8 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           {/* Goal bar */}
           <div style={{ width: "100%", maxWidth: 500, marginBottom: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-              <span style={{ fontSize: 10, color: "#5F5E5A" }}>{tfm}m focused</span>
-              <span style={{ fontSize: 10, color: goalPct >= 100 ? "#5DCAA5" : "#444441" }}>{goalPct >= 100 ? "Goal reached" : `${goalMin}m goal`}</span>
+              <span style={{ fontSize: 10, color: "#5F5E5A" }}>{FMTHR(tfm)} focused</span>
+              <span style={{ fontSize: 10, color: goalPct >= 100 ? "#5DCAA5" : "#444441" }}>{goalPct >= 100 ? "Goal reached" : `${FMTHR(goalMin)} goal`}</span>
             </div>
             <div style={{ height: 2, background: "#1A1A18", borderRadius: 1 }}><div style={{ height: "100%", width: `${goalPct}%`, background: goalPct >= 100 ? "#5DCAA5" : color, borderRadius: 1, transition: "width 0.5s" }} /></div>
           </div>
@@ -524,9 +525,9 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           {/* Compact stats + queue row */}
           <div style={{ display: "flex", gap: 12, marginTop: 24, width: "100%", maxWidth: 500 }}>
             <div style={{ flex: 1, background: "#161615", borderRadius: 8, padding: "10px 12px", border: "1px solid #1A1A18", fontSize: 11 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Focus</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{Math.round(focusSec / 60)}m</span></div>
-              {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Waiting</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{Math.round(waitSec / 60)}m</span></div>}
-              {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Interrupted</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{Math.round(intSec / 60)}m</span></div>}
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Focus</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{FMTHR(Math.round(focusSec / 60))}</span></div>
+              {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Waiting</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{FMTHR(Math.round(waitSec / 60))}</span></div>}
+              {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Interrupted</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{FMTHR(Math.round(intSec / 60))}</span></div>}
               <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Sessions</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").length}</span></div>
             </div>
             <div style={{ flex: 1, background: "#161615", borderRadius: 8, padding: "10px 12px", border: "1px solid #1A1A18", fontSize: 10 }}>
@@ -556,8 +557,8 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
     <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <div style={{ marginBottom: 32 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-          <span style={{ fontSize: 10, color: "#5F5E5A" }}>{tfm}m focused</span>
-          <span style={{ fontSize: 10, color: goalPct >= 100 ? "#5DCAA5" : "#444441" }}>{goalPct >= 100 ? "Goal reached" : `${goalMin}m goal`}</span>
+          <span style={{ fontSize: 10, color: "#5F5E5A" }}>{FMTHR(tfm)} focused</span>
+          <span style={{ fontSize: 10, color: goalPct >= 100 ? "#5DCAA5" : "#444441" }}>{goalPct >= 100 ? "Goal reached" : `${FMTHR(goalMin)} goal`}</span>
         </div>
         <div style={{ height: 2, background: "#1A1A18", borderRadius: 1 }}><div style={{ height: "100%", width: `${goalPct}%`, background: goalPct >= 100 ? "#5DCAA5" : color, borderRadius: 1, transition: "width 0.5s" }} /></div>
       </div>
@@ -572,9 +573,9 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
           <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Today</div>
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Focus</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{Math.round(focusSec / 60)}m</span></div>
-          {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Waiting</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{Math.round(waitSec / 60)}m</span></div>}
-          {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Interrupted</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{Math.round(intSec / 60)}m</span></div>}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Focus</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{FMTHR(Math.round(focusSec / 60))}</span></div>
+          {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Waiting</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{FMTHR(Math.round(waitSec / 60))}</span></div>}
+          {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Interrupted</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{FMTHR(Math.round(intSec / 60))}</span></div>}
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Sessions</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").length}</span></div>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>This week</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#85B7EB" }}>{daysWithToday}/7</span></div>
           <div style={{ borderTop: "1px solid #1A1A18", marginTop: 6, paddingTop: 6 }}>
@@ -793,9 +794,31 @@ function MediaPlayer() {
   );
 }
 
-function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork, allSessions, notes }) {
+function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork, allSessions, notes, todaySessions }) {
   const pr = stats.tt > 0 ? Math.round((stats.tp / stats.tt) * 100) : 0;
   const branchColors = ["#E24B4A", "#378ADD", "#5DCAA5", "#D85A30", "#7F77DD", "#D4537E", "#BA7517", "#639922"];
+
+  // Meeting + total time
+  const meetMin = Math.round((todaySessions || []).filter(s => s.subtype === "meeting").reduce((a, s) => a + s.duration_seconds, 0) / 60);
+  const totalMin = tfm + meetMin;
+
+  // Dashboard customization
+  const [dashConfig, setDashConfig] = useState(() => { try { return JSON.parse(localStorage.getItem("qtrack_dash_config") || "{}"); } catch { return {}; } });
+  const [showDashSettings, setShowDashSettings] = useState(false);
+  const [chartWeekOff, setChartWeekOff] = useState(0);
+  const [chartStart, setChartStart] = useState("");
+  const [chartEnd, setChartEnd] = useState("");
+  const useCustomRange = chartStart && chartEnd;
+  const isVisible = (key) => dashConfig[key] !== false;
+  const toggleSection = (key) => { const nc = { ...dashConfig, [key]: !isVisible(key) }; setDashConfig(nc); try { localStorage.setItem("qtrack_dash_config", JSON.stringify(nc)); } catch {} };
+
+  const SECTIONS = [
+    { key: "metrics", label: "Metrics" },
+    { key: "repos", label: "Issues by repo" },
+    { key: "hotfiles", label: "Hot files" },
+    { key: "resolved", label: "Recently shipped" },
+    { key: "chart", label: "Weekly chart" },
+  ];
 
   // Group issues by repo:branch
   const groups = {};
@@ -818,17 +841,38 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
 
   return (
     <div>
-      {/* Top metrics */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
-        <MetricCard label="Open bugs" value={stats.ob} color={stats.ob > 0 ? "#F09595" : "#97C459"} sub={stats.cr > 0 ? `${stats.cr} critical` : "none critical"} />
-        <MetricCard label="Open to-dos" value={stats.ot} color="#85B7EB" />
-        <MetricCard label="Test pass rate" value={stats.tt > 0 ? `${pr}%` : "—"} color={pr >= 80 ? "#97C459" : pr >= 50 ? "#FAC775" : "#F09595"} sub={`${stats.tp}/${stats.tt} passing`} />
-        <MetricCard label="Files" value={stats.fc} color="#B4B2A9" />
-        <MetricCard label="Today's focus" value={`${tfm}m`} color="#E24B4A" sub={`${focusWork.length} sessions`} />
+      {/* Settings toggle */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        <div style={{ position: "relative" }}>
+          <button onClick={() => setShowDashSettings(!showDashSettings)} style={{ background: showDashSettings ? "#2C2C2A" : "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "4px 8px", borderRadius: 4 }}>⚙ Customize</button>
+          {showDashSettings && (
+            <div style={{ position: "absolute", top: 30, right: 0, background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", width: 180, zIndex: 60, boxShadow: "0 4px 12px rgba(0,0,0,0.4)" }}>
+              <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Show sections</div>
+              {SECTIONS.map(s => (
+                <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12, color: isVisible(s.key) ? "#D3D1C7" : "#444441", cursor: "pointer" }}>
+                  <input type="checkbox" checked={isVisible(s.key)} onChange={() => toggleSection(s.key)} style={{ cursor: "pointer" }} />
+                  {s.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
+      {/* Top metrics */}
+      {isVisible("metrics") && (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginBottom: 24 }}>
+        <MetricCard label="Today's focus" value={FMTHR(tfm)} color="#E24B4A" sub={`${focusWork.length} sessions`} />
+        <MetricCard label="Meetings" value={FMTHR(meetMin)} color="#7F77DD" sub="today" />
+        <MetricCard label="Total time" value={FMTHR(totalMin)} color="#5DCAA5" sub="focus + meetings" />
+        <MetricCard label="Open bugs" value={stats.ob} color={stats.ob > 0 ? "#F09595" : "#97C459"} sub={stats.cr > 0 ? `${stats.cr} critical` : ""} />
+        <MetricCard label="Open to-dos" value={stats.ot} color="#85B7EB" />
+        <MetricCard label="Test pass" value={stats.tt > 0 ? `${pr}%` : "—"} color={pr >= 80 ? "#97C459" : pr >= 50 ? "#FAC775" : "#F09595"} sub={`${stats.tp}/${stats.tt}`} />
+      </div>
+      )}
+
       {/* Repo+branch sections */}
-      {sortedKeys.length > 1 || (sortedKeys.length === 1 && sortedKeys[0] !== "") ? (
+      {isVisible("repos") && (sortedKeys.length > 1 || (sortedKeys.length === 1 && sortedKeys[0] !== "")) ? (
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12, color: "#B4B2A9" }}>Issues by repo & branch</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -951,38 +995,109 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
       </div>
 
       {/* Weekly focus chart + End of day summary */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isVisible("chart") && isVisible("resolved") ? "1fr 1fr" : "1fr", gap: 16 }}>
         {/* Weekly chart */}
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>This week</div>
-          <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
-            {(() => {
-              const days = [];
-              for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0,0,0,0); days.push(d); }
-              const dayMins = days.map(d => {
-                const next = new Date(d); next.setDate(next.getDate() + 1);
-                return Math.round((allSessions || []).filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting" && new Date(s.completed_at) >= d && new Date(s.completed_at) < next).reduce((a, s) => a + s.duration_seconds, 0) / 60);
-              });
-              const isToday = (d) => d.toDateString() === new Date().toDateString();
-              const maxMin = Math.max(...dayMins, 30);
-              const labels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-              return (
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 100 }}>
-                  {days.map((d, idx) => (
-                    <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                      <span style={{ fontSize: 10, fontFamily: "'SF Mono', monospace", color: dayMins[idx] > 0 ? "#D3D1C7" : "#5F5E5A" }}>{dayMins[idx] || ""}</span>
-                      <div style={{ width: "100%", height: Math.max(4, (dayMins[idx] / maxMin) * 70), background: isToday(d) ? "#5DCAA5" : dayMins[idx] > 0 ? "#378ADD" : "#2C2C2A", borderRadius: 3, transition: "height 0.3s" }} />
-                      <span style={{ fontSize: 9, color: isToday(d) ? "#5DCAA5" : "#5F5E5A" }}>{labels[d.getDay()]}</span>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
+        {isVisible("chart") && <div>
+          {/* Controls */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <button onClick={() => { setChartWeekOff((chartWeekOff || 0) - 1); setChartStart(""); setChartEnd(""); }} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>◂</button>
+              <span style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", minWidth: 80, textAlign: "center" }}>{useCustomRange ? "Custom range" : (() => { const now = new Date(); const dow = now.getDay(); const mon = new Date(now); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) + (chartWeekOff || 0) * 7); const sun = new Date(mon); sun.setDate(mon.getDate() + 6); return (chartWeekOff || 0) === 0 ? "This week" : `${mon.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${sun.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`; })()}</span>
+              <button onClick={() => { setChartWeekOff((chartWeekOff || 0) + 1); setChartStart(""); setChartEnd(""); }} disabled={!useCustomRange && (chartWeekOff || 0) >= 0} style={{ background: "none", border: "1px solid #2C2C2A", color: (!useCustomRange && (chartWeekOff || 0) >= 0) ? "#1A1A18" : "#5F5E5A", cursor: (!useCustomRange && (chartWeekOff || 0) >= 0) ? "default" : "pointer", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>▸</button>
+              {((chartWeekOff || 0) !== 0 || useCustomRange) && <button onClick={() => { setChartWeekOff(0); setChartStart(""); setChartEnd(""); }} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>Today</button>}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <input type="date" value={chartStart} onChange={e => setChartStart(e.target.value)} style={{ padding: "2px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none" }} />
+              <span style={{ fontSize: 10, color: "#444441" }}>→</span>
+              <input type="date" value={chartEnd} onChange={e => setChartEnd(e.target.value)} style={{ padding: "2px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none" }} />
+            </div>
           </div>
-        </div>
+
+          {/* Chart + Summary */}
+          {(() => {
+            const days = [];
+            if (useCustomRange) {
+              const s = new Date(chartStart + "T00:00:00"); const e = new Date(chartEnd + "T00:00:00");
+              for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) { const c = new Date(d); c.setHours(0,0,0,0); days.push(c); }
+            } else {
+              // Monday-based week
+              const now = new Date(); now.setHours(0,0,0,0);
+              const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
+              const monday = new Date(now); monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1) + (chartWeekOff || 0) * 7);
+              for (let i = 0; i < 7; i++) { const d = new Date(monday); d.setDate(monday.getDate() + i); d.setHours(0,0,0,0); days.push(d); }
+            }
+            if (days.length === 0) return null;
+            const rangeStart = days[0];
+            const rangeEnd = new Date(days[days.length - 1].getTime() + 86400000);
+            const rangeSessions = (allSessions || []).filter(s => { const dt = new Date(s.completed_at); return s.session_type === "work" && dt >= rangeStart && dt < rangeEnd; });
+            const dayData = days.map(d => {
+              const next = new Date(d); next.setDate(next.getDate() + 1);
+              const ds = rangeSessions.filter(s => new Date(s.completed_at) >= d && new Date(s.completed_at) < next);
+              const focus = Math.round(ds.filter(s => s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").reduce((a, s) => a + s.duration_seconds, 0) / 60);
+              const meet = Math.round(ds.filter(s => s.subtype === "meeting").reduce((a, s) => a + s.duration_seconds, 0) / 60);
+              return { focus, meet, total: focus + meet };
+            });
+            const td = new Date(); td.setHours(0,0,0,0);
+            const isToday = (d) => d.getTime() === td.getTime();
+            const maxMin = Math.max(...dayData.map(d => d.total), 30);
+            const labels = ["S","M","T","W","T","F","S"];
+            const compact = days.length > 14;
+            const dayLabel = (d) => compact ? `${d.getDate()}` : labels[d.getDay()];
+            const totalFocus = dayData.reduce((a, d) => a + d.focus, 0);
+            const totalMeet = dayData.reduce((a, d) => a + d.meet, 0);
+            const totalAll = totalFocus + totalMeet;
+            const sessionCount = rangeSessions.filter(s => s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").length;
+            const activeDays = new Set(rangeSessions.filter(s => s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").map(s => new Date(s.completed_at).toDateString())).size;
+
+            return (
+              <div style={{ display: "flex", gap: 12 }}>
+                <div style={{ flex: 1, background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: compact ? 2 : 4, height: 100, overflowX: days.length > 31 ? "auto" : "visible" }}>
+                    {days.map((d, idx) => {
+                      const dd = dayData[idx];
+                      const focusH = Math.max(0, (dd.focus / maxMin) * 70);
+                      const meetH = Math.max(0, (dd.meet / maxMin) * 70);
+                      return (
+                        <div key={idx} style={{ flex: days.length > 31 ? "0 0 12px" : 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }} title={`${d.toLocaleDateString()}: Focus ${FMTHR(dd.focus)}, Meetings ${FMTHR(dd.meet)}`}>
+                          {!compact && <span style={{ fontSize: 9, fontFamily: "'SF Mono', monospace", color: dd.total > 0 ? "#D3D1C7" : "#5F5E5A" }}>{dd.total > 0 ? (dd.total < 60 ? `${dd.total}` : `${Math.floor(dd.total/60)}h`) : ""}</span>}
+                          <div style={{ width: "100%", display: "flex", flexDirection: "column-reverse", borderRadius: 2, overflow: "hidden" }}>
+                            <div style={{ width: "100%", height: focusH || (dd.total === 0 ? 0 : 2), background: dd.focus > 0 ? "#378ADD" : "#2C2C2A", transition: "height 0.3s" }} />
+                            {dd.meet > 0 && <div style={{ width: "100%", height: meetH, background: "#7F77DD", transition: "height 0.3s" }} />}
+                          </div>
+                          <span style={{ fontSize: compact ? 7 : 9, color: isToday(d) ? "#5DCAA5" : "#5F5E5A", fontWeight: isToday(d) ? 600 : 400 }}>{dayLabel(d)}{isToday(d) ? " •" : ""}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 8, fontSize: 9, color: "#5F5E5A" }}>
+                    <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "#378ADD", marginRight: 4, verticalAlign: "middle" }} />Focus</span>
+                    <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "#7F77DD", marginRight: 4, verticalAlign: "middle" }} />Meetings</span>
+                  </div>
+                </div>
+                {/* Summary */}
+                <div style={{ width: 130, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 9, color: "#378ADD", textTransform: "uppercase", letterSpacing: 0.3 }}>Focus</div>
+                    <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{FMTHR(totalFocus)}</div>
+                    <div style={{ fontSize: 9, color: "#5F5E5A" }}>{sessionCount} sessions</div>
+                  </div>
+                  <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 9, color: "#7F77DD", textTransform: "uppercase", letterSpacing: 0.3 }}>Meetings</div>
+                    <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#7F77DD" }}>{FMTHR(totalMeet)}</div>
+                  </div>
+                  <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 9, color: "#5DCAA5", textTransform: "uppercase", letterSpacing: 0.3 }}>Total</div>
+                    <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{FMTHR(totalAll)}</div>
+                    <div style={{ fontSize: 9, color: "#5F5E5A" }}>{activeDays} active day{activeDays !== 1 ? "s" : ""}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>}
 
         {/* End of day summary */}
-        <div>
+        {isVisible("resolved") && <div>
           <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Recently shipped</div>
           <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
             {(() => {
@@ -993,14 +1108,14 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
               const hasAnything = resolvedRecent.length || passedToday.length || notesToday.length || focusWork.length;
               if (!hasAnything) return <div style={{ fontSize: 12, color: "#5F5E5A", textAlign: "center", padding: "16px 0" }}>Day's just getting started.</div>;
               return (<div style={{ fontSize: 12, lineHeight: 1.8 }}>
-                {focusWork.length > 0 && <div style={{ color: "#E24B4A" }}>{focusWork.length} focus session{focusWork.length !== 1 ? "s" : ""} ({tfm} min)</div>}
+                {focusWork.length > 0 && <div style={{ color: "#E24B4A" }}>{focusWork.length} focus session{focusWork.length !== 1 ? "s" : ""} ({FMTHR(tfm)})</div>}
                 {resolvedRecent.map(i => <div key={i.id} style={{ color: "#5DCAA5" }}>Resolved: {i.title}</div>)}
                 {passedToday.map(t => <div key={t.id} style={{ color: "#97C459" }}>Passed: {t.title}</div>)}
                 {notesToday.length > 0 && <div style={{ color: "#AFA9EC" }}>{notesToday.length} note{notesToday.length !== 1 ? "s" : ""} written</div>}
               </div>);
             })()}
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );
