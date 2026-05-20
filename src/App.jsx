@@ -36,6 +36,7 @@ export default function App({ session }) {
   const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null });
   const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]); const [viewingNoteId, setViewingNoteId] = useState(null); const [queue, setQueue] = useState([]); const [meetings, setMeetings] = useState([]); const [meetingFocus, setMeetingFocus] = useState(null);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [people, setPeople] = useState([]);
   const tRef = useRef(null); const initRef = useRef(false); const syncRef = useRef(false); const loadedTimerRef = useRef(false);
 
   // Load timer from Supabase on mount
@@ -132,7 +133,7 @@ export default function App({ session }) {
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
 
   async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId(p[0].id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); if (!localStorage.getItem("qtrack_tutorial_done")) setShowTutorial(true); } } catch (e) { console.error(e); } setLoading(false); }
-  async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } try { setMeetings(await db.getMeetings(pid)); } catch { setMeetings([]); } } catch (e) { console.error(e); } }
+  async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } try { setMeetings(await db.getMeetings(pid)); } catch { setMeetings([]); } try { setPeople(await db.getPeople(pid)); } catch { setPeople([]); } } catch (e) { console.error(e); } }
   async function loadToday() { if (!activeProjectId) return; try { setTodaySessions(await db.getTodaySessions(activeProjectId)); } catch { setTodaySessions([]); } try { setAllSessions(await db.getAllSessions(activeProjectId)); } catch { setAllSessions([]); } }
   async function reload() { if (activeProjectId) await loadData(activeProjectId); }
 
@@ -149,9 +150,27 @@ export default function App({ session }) {
   const liveElapsed = (tmr.st === "running" && tmr.type === "work") ? (tmr.total - tmr.left) : 0;
   const tfm = Math.round((savedSeconds + liveElapsed) / 60);
 
-  const nav = [{ id: "dashboard", l: "Dashboard", ic: "⊞" }, { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 }, { id: "issues", l: "Issues", ic: "⚑", cnt: stats.ob + stats.ot }, { id: "tests", l: "Test cases", ic: "✓", cnt: stats.tt }, { id: "files", l: "Files", ic: "◇", cnt: stats.fc }, { id: "calendar", l: "Calendar", ic: "▦", cnt: meetings.filter(m => !m.attended && !m.cancelled).length || 0 }, { id: "notes", l: "Notes", ic: "≡", cnt: notes.length || 0 }, { id: "board", l: "Board", ic: "⊟", cnt: cards.length || 0 }];
+  const activeProject = projects.find(p => p.id === activeProjectId);
+  const isWorkshop = activeProject?.type === "workshop";
 
-  const addProject = async (n) => { const p = await db.createProject(n); setProjects([...projects, p]); setActiveProjectId(p.id); setModal(null); };
+  const nav = isWorkshop ? [
+    { id: "dashboard", l: "Dashboard", ic: "⊞" },
+    { id: "calendar", l: "Sessions", ic: "▦", cnt: meetings.filter(m => !m.attended && !m.cancelled).length || 0 },
+    { id: "notes", l: "Notes", ic: "≡", cnt: notes.length || 0 },
+    { id: "people", l: "People", ic: "◎", cnt: people.length || 0 },
+    { id: "board", l: "Board", ic: "⊟", cnt: cards.length || 0 },
+  ] : [
+    { id: "dashboard", l: "Dashboard", ic: "⊞" },
+    { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 },
+    { id: "issues", l: "Issues", ic: "⚑", cnt: stats.ob + stats.ot },
+    { id: "tests", l: "Test cases", ic: "✓", cnt: stats.tt },
+    { id: "files", l: "Files", ic: "◇", cnt: stats.fc },
+    { id: "calendar", l: "Calendar", ic: "▦", cnt: meetings.filter(m => !m.attended && !m.cancelled).length || 0 },
+    { id: "notes", l: "Notes", ic: "≡", cnt: notes.length || 0 },
+    { id: "board", l: "Board", ic: "⊟", cnt: cards.length || 0 },
+  ];
+
+  const addProject = async (n, type = "project") => { const p = await db.createProject(n, type); setProjects([...projects, p]); setActiveProjectId(p.id); setModal(null); };
   const renameProject = async (id, n) => { if (!n.trim()) return; await db.renameProject(id, n.trim()); setProjects(projects.map(p => p.id === id ? { ...p, name: n.trim() } : p)); setEditingProjectId(null); };
   const delProject = async (id) => { if (projects.length <= 1 || !confirm("Delete project and all data?")) return; await db.deleteProject(id); const r = projects.filter(p => p.id !== id); setProjects(r); if (activeProjectId === id) setActiveProjectId(r[0]?.id); };
   const addFile = async (n, c) => { await db.createFile(activeProjectId, n, c); await reload(); setModal(null); };
@@ -209,7 +228,8 @@ export default function App({ session }) {
           </div>
         </div>
         <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
-          {view === "dashboard" && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} />}
+          {view === "dashboard" && !isWorkshop && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} />}
+          {view === "dashboard" && isWorkshop && <WorkshopDashboard meetings={meetings} notes={notes} people={people} onNav={setView} />}
           {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} markDone={async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } }} />}
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
@@ -217,6 +237,7 @@ export default function App({ session }) {
           {view === "notes" && <NotesView notes={notes} issues={issues} files={files} testCases={testCases} projectId={activeProjectId} reload={reload} meetingTags={[...new Set(meetings.map(m => m.title))]} usedRepos={[...new Set([...issues, ...testCases].map(x => x.repo_name).filter(Boolean))]} />}
           {view === "calendar" && <CalendarView meetings={meetings} issues={issues} testCases={testCases} projectId={activeProjectId} reload={reload} onFocusMeeting={mt => setMeetingFocus(mt)} allNotes={notes} />}
           {view === "board" && <BoardView columns={columns} cards={cards} projectId={activeProjectId} reload={reload} issues={issues} files={files} addIssue={addIssue} />}
+          {view === "people" && <PeopleView people={people} meetings={meetings} projectId={activeProjectId} reload={reload} />}
         </div>
         {/* Music dock */}
         {!meetingFocus && <div style={{ background: "#161615", borderTop: "1px solid #1A1A18", padding: "4px 20px", flexShrink: 0 }}>
@@ -953,6 +974,144 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
                 {notesToday.length > 0 && <div style={{ color: "#AFA9EC" }}>{notesToday.length} note{notesToday.length !== 1 ? "s" : ""} written</div>}
               </div>);
             })()}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Workshop Dashboard
+// ============================================
+
+function WorkshopDashboard({ meetings, notes, people, onNav }) {
+  const activeMeetings = meetings.filter(m => !m.cancelled);
+  const attended = activeMeetings.filter(m => m.attended);
+  const rated = activeMeetings.filter(m => m.rating > 0);
+  const avgRating = rated.length > 0 ? (rated.reduce((a, m) => a + m.rating, 0) / rated.length).toFixed(1) : "—";
+
+  // Parse note prefixes
+  const allLines = notes.flatMap(n => (n.content || "").split("\n").map(line => ({ line: line.trim(), noteId: n.id, noteTitle: n.title })));
+  const actionItems = allLines.filter(l => l.line.startsWith("!")).map(l => ({ ...l, text: l.line.substring(1).trim() }));
+  const questions = allLines.filter(l => l.line.startsWith("?")).map(l => ({ ...l, text: l.line.substring(1).trim() }));
+  const insights = allLines.filter(l => l.line.startsWith("★")).map(l => ({ ...l, text: l.line.substring(1).trim() }));
+
+  const pendingFollowUps = people.filter(p => p.follow_up && !p.follow_up_done);
+
+  const MetricCard = ({ label, value, color, sub, onClick }) => (
+    <div onClick={onClick} style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18", cursor: onClick ? "pointer" : "default" }}>
+      <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: color || "#F1EFE8" }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: "#5F5E5A", marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+
+  const stars = (n) => "★".repeat(n) + "☆".repeat(5 - n);
+
+  return (
+    <div>
+      {/* Metrics */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 20 }}>
+        <MetricCard label="Sessions" value={`${attended.length}/${activeMeetings.length}`} color="#85B7EB" sub="attended" onClick={() => onNav("calendar")} />
+        <MetricCard label="Notes" value={notes.length} color="#AFA9EC" onClick={() => onNav("notes")} />
+        <MetricCard label="People met" value={people.length} color="#5DCAA5" sub={pendingFollowUps.length > 0 ? `${pendingFollowUps.length} need follow-up` : ""} onClick={() => onNav("people")} />
+        <MetricCard label="Action items" value={actionItems.length} color="#D85A30" sub="from ! prefixed notes" />
+        <MetricCard label="Key insights" value={insights.length} color="#FAC775" sub="from ★ prefixed notes" />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {/* Left column */}
+        <div>
+          {/* Sessions with ratings */}
+          <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18", marginBottom: 12 }}>
+            <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Sessions {avgRating !== "—" && <span style={{ color: "#FAC775" }}>· avg {avgRating}★</span>}</div>
+            {activeMeetings.length === 0 && <div style={{ fontSize: 12, color: "#5F5E5A" }}>No sessions yet. Add them in the calendar.</div>}
+            {activeMeetings.sort((a, b) => `${a.meeting_date}${a.start_time}`.localeCompare(`${b.meeting_date}${b.start_time}`)).map(m => (
+              <div key={m.id} style={{ padding: "8px 0", borderBottom: "1px solid #1A1A18", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", marginTop: 5, flexShrink: 0, background: m.attended ? "#5DCAA5" : "#2C2C2A" }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: m.attended ? "#D3D1C7" : "#5F5E5A" }}>{m.title}</div>
+                  <div style={{ fontSize: 10, color: "#5F5E5A" }}>
+                    {m.meeting_date} · {m.start_time}
+                    {m.speaker && <span> · {m.speaker}</span>}
+                    {m.track && <span style={{ padding: "0 4px", marginLeft: 4, borderRadius: 2, background: "#1A0A29", color: "#AFA9EC", fontSize: 9 }}>{m.track}</span>}
+                  </div>
+                  {m.rating > 0 && <div style={{ fontSize: 11, color: "#FAC775", marginTop: 2 }}>{stars(m.rating)}</div>}
+                  {m.takeaway && <div style={{ fontSize: 11, color: "#888780", marginTop: 2, fontStyle: "italic" }}>"{m.takeaway}"</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* People with follow-ups */}
+          {pendingFollowUps.length > 0 && (
+            <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #2A1209", marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: "#D85A30", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Pending follow-ups</div>
+              {pendingFollowUps.map(p => (
+                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #1A1A18" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#1A0A29", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 500, color: "#AFA9EC" }}>{p.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase()}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 11, color: "#D3D1C7" }}>{p.name} <span style={{ color: "#5F5E5A" }}>· {p.company}</span></div>
+                    <div style={{ fontSize: 10, color: "#F0997B" }}>{p.follow_up}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right column */}
+        <div>
+          {/* Key insights */}
+          {insights.length > 0 && (
+            <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #412402", marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: "#FAC775", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Key insights ({insights.length})</div>
+              {insights.map((item, idx) => (
+                <div key={idx} style={{ padding: "6px 0", borderBottom: idx < insights.length - 1 ? "1px solid #1A1A18" : "none", display: "flex", gap: 6 }}>
+                  <span style={{ color: "#FAC775", flexShrink: 0 }}>★</span>
+                  <span style={{ fontSize: 12, color: "#D3D1C7" }}>{item.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Action items */}
+          {actionItems.length > 0 && (
+            <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #4A1B0C", marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: "#D85A30", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Action items ({actionItems.length})</div>
+              {actionItems.map((item, idx) => (
+                <div key={idx} style={{ padding: "6px 0", borderBottom: idx < actionItems.length - 1 ? "1px solid #1A1A18" : "none", display: "flex", gap: 6 }}>
+                  <span style={{ color: "#D85A30", flexShrink: 0 }}>!</span>
+                  <span style={{ fontSize: 12, color: "#D3D1C7" }}>{item.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Questions */}
+          {questions.length > 0 && (
+            <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #042C53", marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: "#85B7EB", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Questions ({questions.length})</div>
+              {questions.map((item, idx) => (
+                <div key={idx} style={{ padding: "6px 0", borderBottom: idx < questions.length - 1 ? "1px solid #1A1A18" : "none", display: "flex", gap: 6 }}>
+                  <span style={{ color: "#85B7EB", flexShrink: 0 }}>?</span>
+                  <span style={{ fontSize: 12, color: "#D3D1C7" }}>{item.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Recent notes */}
+          <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
+            <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Recent notes</div>
+            {notes.length === 0 && <div style={{ fontSize: 12, color: "#5F5E5A" }}>No notes yet.</div>}
+            {notes.slice(0, 5).map(n => (
+              <div key={n.id} style={{ padding: "6px 0", borderBottom: "1px solid #1A1A18" }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: "#D3D1C7" }}>{n.title || n.category || "Untitled"}</div>
+                <div style={{ fontSize: 10, color: "#5F5E5A", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.content?.substring(0, 80)}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -1908,6 +2067,111 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
 }
 
 // ============================================
+// People View (Workshop contacts)
+// ============================================
+
+function PeopleView({ people, meetings, projectId, reload }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ name: "", company: "", role: "", context: "", follow_up: "", email: "", session_id: "" });
+  const [editId, setEditId] = useState(null);
+
+  const save = async () => {
+    if (!form.name.trim()) return;
+    try {
+      if (editId) await db.updatePerson(editId, form);
+      else await db.createPerson(projectId, form);
+      setForm({ name: "", company: "", role: "", context: "", follow_up: "", email: "", session_id: "" });
+      setShowAdd(false); setEditId(null); await reload();
+    } catch (e) { console.error(e); }
+  };
+  const del = async (id) => { if (confirm("Remove this person?")) { await db.deletePerson(id); await reload(); } };
+  const edit = (p) => { setForm({ name: p.name, company: p.company || "", role: p.role || "", context: p.context || "", follow_up: p.follow_up || "", email: p.email || "", session_id: p.session_id || "" }); setEditId(p.id); setShowAdd(true); };
+  const toggleFollowUp = async (p) => { await db.updatePerson(p.id, { follow_up_done: !p.follow_up_done }); await reload(); };
+  const sessionName = (sid) => { const m = meetings.find(x => x.id === sid); return m?.title || ""; };
+
+  const needFollowUp = people.filter(p => p.follow_up && !p.follow_up_done);
+  const others = people.filter(p => !p.follow_up || p.follow_up_done);
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: "#5F5E5A" }}>{people.length} contact{people.length !== 1 ? "s" : ""}</span>
+        <Btn primary small onClick={() => { setShowAdd(!showAdd); setEditId(null); setForm({ name: "", company: "", role: "", context: "", follow_up: "", email: "", session_id: "" }); }}>+ Person</Btn>
+      </div>
+
+      {showAdd && (
+        <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Name" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+            <input value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} placeholder="Company" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} placeholder="Role" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+            <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="Email" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+          </div>
+          <textarea value={form.context} onChange={e => setForm({ ...form, context: e.target.value })} placeholder="What did you discuss?" rows={2} style={{ width: "100%", padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", resize: "none", marginBottom: 8, boxSizing: "border-box", fontFamily: "inherit" }} />
+          <input value={form.follow_up} onChange={e => setForm({ ...form, follow_up: e.target.value })} placeholder="Follow-up action (e.g. Email benchmark results)" style={{ width: "100%", padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", marginBottom: 8, boxSizing: "border-box" }} />
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <select value={form.session_id} onChange={e => setForm({ ...form, session_id: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none" }}>
+              <option value="">Met at... (optional)</option>
+              {meetings.map(m => <option key={m.id} value={m.id}>{m.title} ({m.meeting_date})</option>)}
+            </select>
+            <Btn primary small onClick={save}>{editId ? "Update" : "Add"}</Btn>
+            <Btn small onClick={() => { setShowAdd(false); setEditId(null); }}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+
+      {needFollowUp.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 10, color: "#D85A30", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Needs follow-up ({needFollowUp.length})</div>
+          {needFollowUp.map(p => (
+            <div key={p.id} style={{ background: "#161615", border: "1px solid #2A1209", borderRadius: 8, padding: "12px 14px", marginBottom: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#1A0A29", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 500, color: "#AFA9EC" }}>{p.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase()}</div>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: "#F1EFE8" }}>{p.name}</span>
+                  {p.company && <span style={{ fontSize: 11, color: "#5F5E5A" }}> · {p.company}</span>}
+                </div>
+                <button onClick={() => edit(p)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>✎</button>
+                <button onClick={() => del(p.id)} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 11 }}>✕</button>
+              </div>
+              {p.context && <div style={{ fontSize: 11, color: "#888780", marginBottom: 4 }}>{p.context}</div>}
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={p.follow_up_done} onChange={() => toggleFollowUp(p)} style={{ cursor: "pointer" }} />
+                <span style={{ fontSize: 11, color: "#F0997B" }}>{p.follow_up}</span>
+              </div>
+              {p.session_id && <div style={{ fontSize: 9, color: "#5F5E5A", marginTop: 4 }}>Met at: {sessionName(p.session_id)}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {others.map(p => (
+        <div key={p.id} style={{ background: "#161615", border: "1px solid #1A1A18", borderRadius: 8, padding: "12px 14px", marginBottom: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#0A1929", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 500, color: "#85B7EB" }}>{p.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase()}</div>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "#F1EFE8" }}>{p.name}</span>
+              {p.company && <span style={{ fontSize: 11, color: "#5F5E5A" }}> · {p.company}</span>}
+              {p.role && <span style={{ fontSize: 11, color: "#5F5E5A" }}> · {p.role}</span>}
+            </div>
+            {p.email && <a href={`mailto:${p.email}`} style={{ fontSize: 10, color: "#85B7EB", textDecoration: "none" }}>✉</a>}
+            <button onClick={() => edit(p)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>✎</button>
+            <button onClick={() => del(p.id)} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 11 }}>✕</button>
+          </div>
+          {p.context && <div style={{ fontSize: 11, color: "#888780", marginTop: 4 }}>{p.context}</div>}
+          {p.follow_up_done && p.follow_up && <div style={{ fontSize: 10, color: "#5DCAA5", marginTop: 4, textDecoration: "line-through" }}>✓ {p.follow_up}</div>}
+          {p.session_id && <div style={{ fontSize: 9, color: "#5F5E5A", marginTop: 4 }}>Met at: {sessionName(p.session_id)}</div>}
+        </div>
+      ))}
+
+      {people.length === 0 && !showAdd && <EmptyState icon="◎" title="No contacts yet" sub="Add people you meet at the workshop" action="Add person" onAction={() => setShowAdd(true)} />}
+    </div>
+  );
+}
+
+// ============================================
 // Welcome Tutorial
 // ============================================
 
@@ -2070,7 +2334,7 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
   const submit = async () => {
     setSaving(true);
     try {
-      if (modal.type === "project" && n.trim()) await addProject(n.trim());
+      if (modal.type === "project" && n.trim()) await addProject(n.trim(), cat || "project");
       if (modal.type === "file" && n.trim()) await addFile(n.trim(), cat);
       if (modal.type === "issue" && n.trim() && fid) {
         if (isEdit) await editIssue(e.id, { title: n.trim(), type: ty, priority: pr, description: desc, file_id: fid, estimated_pomodoros: ep, due_date: dd || null, repo_name: rn, branch_name: bn, meeting_tag: mtag.length ? JSON.stringify(mtag) : null });
@@ -2127,7 +2391,13 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
       <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 440, maxHeight: "80vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}><span style={{ fontSize: 15, fontWeight: 500 }}>{titles[modal.type]}</span><button onClick={onClose} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {modal.type === "project" && <Input value={n} onChange={setN} placeholder="Project name" />}
+          {modal.type === "project" && <>
+            <Input value={n} onChange={setN} placeholder="Name (e.g. ETL Pipeline or AI Summit 2026)" />
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={() => setCat("project")} style={{ flex: 1, padding: "10px", borderRadius: 8, border: cat === "project" ? "2px solid #7F77DD" : "1px solid #2C2C2A", background: cat === "project" ? "#1A0A29" : "#161615", color: cat === "project" ? "#AFA9EC" : "#5F5E5A", cursor: "pointer", fontSize: 12 }}>⚑ Project<br /><span style={{ fontSize: 10, opacity: 0.7 }}>Issues, tests, focus timer</span></button>
+              <button onClick={() => setCat("workshop")} style={{ flex: 1, padding: "10px", borderRadius: 8, border: cat === "workshop" ? "2px solid #D85A30" : "1px solid #2C2C2A", background: cat === "workshop" ? "#2A1209" : "#161615", color: cat === "workshop" ? "#F0997B" : "#5F5E5A", cursor: "pointer", fontSize: 12 }}>◎ Workshop<br /><span style={{ fontSize: 10, opacity: 0.7 }}>Sessions, notes, people</span></button>
+            </div>
+          </>}
           {modal.type === "file" && <><Input value={n} onChange={setN} placeholder="filename.py" mono /><Select value={cat} onChange={setCat} options={CATEGORIES} style={{ width: "100%" }} /></>}
           {modal.type === "issue" && <><Select value={fid} onChange={setFid} options={files.map(f => ({ value: f.id, label: f.name }))} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Issue title" /><div style={{ display: "flex", gap: 8 }}><Select value={ty} onChange={setTy} options={ISSUE_TYPES} style={{ flex: 1 }} /><Select value={pr} onChange={setPr} options={PRIORITIES} style={{ flex: 1 }} /></div><TextArea value={desc} onChange={setDesc} placeholder="Description (optional)" />{planFields}</>}
           {modal.type === "test" && <><Select value={fid} onChange={setFid} options={files.map(f => ({ value: f.id, label: f.name }))} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Test case title" /><TextArea value={pre} onChange={setPre} placeholder="Precondition (optional)" rows={1} />{planFields}<div style={{ fontSize: 11, fontWeight: 500, color: "#888780", marginTop: 4 }}>STEPS</div>{steps.map((s, i) => (<div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><span style={{ fontSize: 11, color: "#5F5E5A", marginTop: 8, fontFamily: "'SF Mono', monospace", minWidth: 16 }}>{i + 1}.</span><div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}><Input value={s.step} onChange={v => updStep(i, "step", v)} placeholder="What to do" /><Input value={s.expected} onChange={v => updStep(i, "expected", v)} placeholder="Expected result" /></div>{steps.length > 1 && <button onClick={() => setSteps(steps.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", marginTop: 6 }}>✕</button>}</div>))}<button onClick={addStep} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#5F5E5A", cursor: "pointer", padding: 6, borderRadius: 6, fontSize: 12, width: "100%" }}>+ Add step</button></>}

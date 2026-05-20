@@ -20,11 +20,11 @@ export async function getProjects() {
   return data
 }
 
-export async function createProject(name) {
+export async function createProject(name, type = 'project') {
   const user_id = await uid()
   const { data, error } = await supabase
     .from('projects')
-    .insert({ name, user_id })
+    .insert({ name, user_id, type })
     .select()
     .single()
   if (error) throw error
@@ -445,11 +445,11 @@ export async function getMeetings(projectId) {
   return data || []
 }
 
-export async function createMeeting(projectId, { title, meeting_date, start_time, end_time }) {
+export async function createMeeting(projectId, { title, meeting_date, start_time, end_time, speaker, track }) {
   const user_id = await uid()
   const { data, error } = await supabase
     .from('meetings')
-    .insert({ user_id, project_id: projectId, title, meeting_date, start_time: start_time || '09:00', end_time: end_time || '10:00' })
+    .insert({ user_id, project_id: projectId, title, meeting_date, start_time: start_time || '09:00', end_time: end_time || '10:00', speaker: speaker || '', track: track || '' })
     .select().single()
   if (error) throw error
   return data
@@ -564,5 +564,39 @@ export async function updateCard(id, fields) {
 
 export async function deleteCard(id) {
   const { error } = await supabase.from('board_cards').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ============================================
+// Workshop People
+// ============================================
+
+export async function getPeople(projectId) {
+  const { data, error } = await supabase
+    .from('workshop_people')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+
+export async function createPerson(projectId, fields) {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('workshop_people')
+    .insert({ user_id, project_id: projectId, ...fields })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updatePerson(id, fields) {
+  const { error } = await supabase.from('workshop_people').update(fields).eq('id', id)
+  if (error) throw error
+}
+
+export async function deletePerson(id) {
+  const { error } = await supabase.from('workshop_people').delete().eq('id', id)
   if (error) throw error
 }
