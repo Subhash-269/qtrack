@@ -1563,13 +1563,15 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
                     {preppingId === mt.id && !isCancelled && !mt.attended && (() => {
                       const ti = (issues || []).filter(i => parseMtags(i.meeting_tag).includes(mt.title));
                       const tt = (testCases || []).filter(t => parseMtags(t.meeting_tag).includes(mt.title));
-                      const done = ti.filter(i => ["fixed","verified","wont_fix"].includes(i.status));
+                      const lastAtt = meetings.filter(m => m.title === mt.title && m.attended && m.meeting_date < mt.meeting_date).sort((a, b) => b.meeting_date.localeCompare(a.meeting_date))[0];
+                      const since = lastAtt ? new Date(lastAtt.meeting_date + "T23:59:59") : new Date(0);
+                      const done = ti.filter(i => ["fixed","verified","wont_fix"].includes(i.status) && i.resolved_at && new Date(i.resolved_at) > since);
                       const prog = ti.filter(i => ["in_progress","review"].includes(i.status));
                       const opn = ti.filter(i => ["open","reopened"].includes(i.status));
-                      const tpass = tt.filter(t => t.status === "pass");
+                      const tpass = tt.filter(t => t.status === "pass" && t.last_run && new Date(t.last_run) > since);
                       const tother = tt.filter(t => t.status !== "pass");
                       const tn = (allNotes || []).filter(n => parseMtags(n.meeting_tag).includes(mt.title));
-                      const hasAuto = ti.length + tt.length + tn.length > 0;
+                      const hasAuto = done.length + prog.length + opn.length + tpass.length + tother.length + tn.length > 0;
                       return (
                         <div style={{ padding: "0 12px 12px", borderTop: "1px solid #1A1A18", marginTop: 2, paddingTop: 10 }}>
                           <div style={{ fontSize: 10, color: "#7F77DD", fontWeight: 500, marginBottom: 8 }}>Agenda preview</div>
@@ -1684,11 +1686,15 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
   const taggedTests = (testCases || []).filter(t => parseMtags(t.meeting_tag).includes(meeting.title));
   const taggedNotes = (allNotes || []).filter(n => parseMtags(n.meeting_tag).includes(meeting.title));
 
-  // Group by status
-  const completedIssues = taggedIssues.filter(i => ["fixed","verified","wont_fix"].includes(i.status));
+  // Find last attended meeting with same title (before this one)
+  const lastAttended = (meetings || []).filter(m => m.title === meeting.title && m.attended && m.meeting_date < meeting.meeting_date).sort((a, b) => b.meeting_date.localeCompare(a.meeting_date))[0];
+  const sinceDate = lastAttended ? new Date(lastAttended.meeting_date + "T23:59:59") : new Date(0);
+
+  // Group by status — completed only since last attended meeting
+  const completedIssues = taggedIssues.filter(i => ["fixed","verified","wont_fix"].includes(i.status) && i.resolved_at && new Date(i.resolved_at) > sinceDate);
   const activeIssues = taggedIssues.filter(i => ["in_progress","review"].includes(i.status));
   const openIssues = taggedIssues.filter(i => ["open","reopened"].includes(i.status));
-  const passedTests = taggedTests.filter(t => t.status === "pass");
+  const passedTests = taggedTests.filter(t => t.status === "pass" && t.last_run && new Date(t.last_run) > sinceDate);
   const otherTests = taggedTests.filter(t => t.status !== "pass");
 
   const addManual = () => { if (!newItem.trim()) return; setManualItems([...manualItems, { q: newItem.trim(), a: "", status: "pending" }]); setNewItem(""); };

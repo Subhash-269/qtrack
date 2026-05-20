@@ -113,10 +113,10 @@ export async function createIssue(projectId, fileId, title, type, priority, desc
 }
 
 export async function updateIssueStatus(id, status) {
-  const { error } = await supabase
-    .from('issues')
-    .update({ status })
-    .eq('id', id)
+  const fields = { status };
+  if (["fixed", "verified", "wont_fix"].includes(status)) fields.resolved_at = new Date().toISOString();
+  else fields.resolved_at = null;
+  const { error } = await supabase.from('issues').update(fields).eq('id', id)
   if (error) throw error
 }
 
