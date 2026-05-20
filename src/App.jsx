@@ -1406,7 +1406,7 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
 
 function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusMeeting, allNotes }) {
   const [month, setMonth] = useState(new Date());
-  const [selectedDay, setSelectedDay] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
   const [showAdd, setShowAdd] = useState(false);
   const [mForm, setMForm] = useState({ title: "", meeting_date: "", start_time: "09:00", end_time: "10:00", recurrence: "none" });
   const [editingNotes, setEditingNotes] = useState(null);
@@ -1421,13 +1421,14 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
   const dayLabels = ["S","M","T","W","T","F","S"];
 
   const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-  const meetingsByDate = {}; meetings.forEach(mt => { const k = mt.meeting_date; if (!meetingsByDate[k]) meetingsByDate[k] = []; meetingsByDate[k].push(mt); });
+  const allMeetingsByDate = {}; meetings.forEach(mt => { const k = mt.meeting_date; if (!allMeetingsByDate[k]) allMeetingsByDate[k] = []; allMeetingsByDate[k].push(mt); });
+  const activeMeetingsByDate = {}; meetings.filter(mt => !mt.cancelled).forEach(mt => { const k = mt.meeting_date; if (!activeMeetingsByDate[k]) activeMeetingsByDate[k] = []; activeMeetingsByDate[k].push(mt); });
   const issueDues = {}; issues.forEach(i => { if (i.due_date) { if (!issueDues[i.due_date]) issueDues[i.due_date] = []; issueDues[i.due_date].push(i); } });
   const testDues = {}; (testCases || []).forEach(t => { if (t.due_date) { if (!testDues[t.due_date]) testDues[t.due_date] = []; testDues[t.due_date].push(t); } });
 
-  const prevMonth = () => setMonth(new Date(y, m - 1, 1));
-  const nextMonth = () => setMonth(new Date(y, m + 1, 1));
-  const goToday = () => { setMonth(new Date()); setSelectedDay(new Date()); };
+  const prevMonth = () => { const d = new Date(y, m - 1, 1); setMonth(d); setSelectedDay(d); };
+  const nextMonth = () => { const d = new Date(y, m + 1, 1); setMonth(d); setSelectedDay(d); };
+  const goToday = () => { const d = new Date(); d.setHours(0,0,0,0); setMonth(d); setSelectedDay(d); };
 
   const addMeeting = async () => {
     if (!mForm.title.trim() || !mForm.meeting_date) return;
@@ -1468,7 +1469,7 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
   const saveNotes = async (id) => { try { await db.updateMeeting(id, { meeting_notes: noteText }); setEditingNotes(null); await reload(); } catch {} };
 
   const selKey = selectedDay ? dateKey(selectedDay) : null;
-  const selMeetings = selKey ? (meetingsByDate[selKey] || []) : [];
+  const selMeetings = selKey ? (allMeetingsByDate[selKey] || []) : [];
   const selIssues = selKey ? (issueDues[selKey] || []) : [];
   const selTests = selKey ? (testDues[selKey] || []) : [];
   const selTotal = selMeetings.length + selIssues.length + selTests.length;
@@ -1496,7 +1497,7 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
               const key = dateKey(day);
               const isToday = day.getTime() === today.getTime();
               const isSel = selectedDay && day.getTime() === selectedDay.getTime();
-              const dayMeetings = meetingsByDate[key] || [];
+              const dayMeetings = activeMeetingsByDate[key] || [];
               const hasIssueDue = issueDues[key]?.length > 0;
               const hasTestDue = testDues[key]?.length > 0;
               const isWeekend = day.getDay() === 0 || day.getDay() === 6;
