@@ -16,7 +16,7 @@ export default function Auth() {
     setMessage(null)
 
     if (isSignUp) {
-      const { error } = await supabase.auth.signUp({ email, password })
+      const { error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } })
       if (error) setError(error.message)
       else setMessage('Check your email for a confirmation link!')
     } else {
@@ -27,11 +27,11 @@ export default function Auth() {
   }
 
   const handleGitHub = async () => {
-    await supabase.auth.signInWithOAuth({ provider: 'github' })
+    await supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: window.location.origin } })
   }
 
   const handleGoogle = async () => {
-    await supabase.auth.signInWithOAuth({ provider: 'google' })
+    await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })
   }
 
   const S = {
