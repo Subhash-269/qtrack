@@ -962,11 +962,21 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
 
 function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, setFilterFile, filterPriority, setFilterPriority, updS, del, onAdd, onEdit, links, tests, ulnk, openLink, focusOn, pomCount, fmtDue, notes, onViewNote }) {
   const [viewId, setViewId] = useState(null);
+  const [sortBy, setSortBy] = useState("created");
+  const [viewMode, setViewMode] = useState("card");
   const ltIds = (iid) => links.filter(l => l.issue_id === iid).map(l => l.test_case_id);
   const tm = Object.fromEntries(tests.map(t => [t.id, t]));
   const notesByIssue = (iid) => (notes || []).filter(n => n.linked_issue_id === iid);
-  const open = issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status));
-  const resolved = issues.filter(i => ["fixed","verified","wont_fix"].includes(i.status));
+
+  const priOrd = { critical: 0, high: 1, medium: 2, low: 3 };
+  const sortFn = (a, b) => {
+    if (sortBy === "due") return (a.due_date || "9999") < (b.due_date || "9999") ? -1 : 1;
+    if (sortBy === "priority") return (priOrd[a.priority] || 9) - (priOrd[b.priority] || 9);
+    if (sortBy === "status") return a.status.localeCompare(b.status);
+    return new Date(b.created_at) - new Date(a.created_at);
+  };
+  const open = issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status)).sort(sortFn);
+  const resolved = issues.filter(i => ["fixed","verified","wont_fix"].includes(i.status)).sort(sortFn);
 
   // Detail modal
   const vi = viewId ? issues.find(x => x.id === viewId) : null;
@@ -1038,25 +1048,72 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
     </div>); };
 
   return (<div>
-    <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}><Pill active={filterType === "all"} onClick={() => setFilterType("all")}>All</Pill><Pill active={filterType === "bug"} onClick={() => setFilterType("bug")}>Bugs</Pill><Pill active={filterType === "todo"} onClick={() => setFilterType("todo")}>To-dos</Pill><span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} /><Select value={filterFile} onChange={setFilterFile} options={[{ value: "all", label: "All files" }, ...files.map(f => ({ value: f.id, label: f.name }))]} /><Select value={filterPriority} onChange={setFilterPriority} options={[{ value: "all", label: "All priorities" }, ...PRIORITIES.map(p => ({ value: p, label: p }))]} /></div>
+    <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}><Pill active={filterType === "all"} onClick={() => setFilterType("all")}>All</Pill><Pill active={filterType === "bug"} onClick={() => setFilterType("bug")}>Bugs</Pill><Pill active={filterType === "todo"} onClick={() => setFilterType("todo")}>To-dos</Pill><span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} /><Select value={filterFile} onChange={setFilterFile} options={[{ value: "all", label: "All files" }, ...files.map(f => ({ value: f.id, label: f.name }))]} /><Select value={filterPriority} onChange={setFilterPriority} options={[{ value: "all", label: "All priorities" }, ...PRIORITIES.map(p => ({ value: p, label: p }))]} /><span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} /><select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 10, background: "#1A1A18", color: "#888780", border: "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}><option value="created">Newest</option><option value="due">Due date</option><option value="priority">Priority</option><option value="status">Status</option></select><span style={{ flex: 1 }} /><button onClick={() => setViewMode("card")} title="Cards" style={{ background: viewMode === "card" ? "#2C2C2A" : "none", border: "none", color: viewMode === "card" ? "#F1EFE8" : "#444441", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>◫</button><button onClick={() => setViewMode("list")} title="List" style={{ background: viewMode === "list" ? "#2C2C2A" : "none", border: "none", color: viewMode === "list" ? "#F1EFE8" : "#444441", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>≡</button></div>
     {issues.length === 0 && <EmptyState icon="◉" title="No issues found" sub="Create issues to track bugs and to-dos" action="New issue" onAction={onAdd} />}
-    {open.length > 0 && open.map(i => <IssueCard key={i.id} i={i} />)}
-    {resolved.length > 0 && (<>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "20px 0 10px" }}>
-        <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
-        <span style={{ fontSize: 11, color: "#5DCAA5", fontWeight: 500 }}>Resolved ({resolved.length})</span>
-        <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
+    {viewMode === "card" && <>
+      {open.length > 0 && open.map(i => <IssueCard key={i.id} i={i} />)}
+      {resolved.length > 0 && (<>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "20px 0 10px" }}>
+          <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
+          <span style={{ fontSize: 11, color: "#5DCAA5", fontWeight: 500 }}>Resolved ({resolved.length})</span>
+          <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
+        </div>
+        {resolved.map(i => <IssueCard key={i.id} i={i} dimmed />)}
+      </>)}
+    </>}
+    {viewMode === "list" && (<div>
+      <div style={{ border: "1px solid #2C2C2A", borderRadius: 8, overflow: "hidden" }}>
+        <div style={{ display: "flex", padding: "6px 12px", background: "#161615", borderBottom: "1px solid #2C2C2A", fontSize: 9, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>
+          <span style={{ width: 50 }}>Type</span><span style={{ flex: 1 }}>Title</span><span style={{ width: 70 }}>Priority</span><span style={{ width: 90 }}>Status</span><span style={{ width: 80 }}>Due</span><span style={{ width: 40 }}></span>
+        </div>
+        {open.map(i => { const due = fmtDue(i.due_date); return (
+          <div key={i.id} onClick={() => setViewId(i.id)} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #1A1A18", cursor: "pointer", fontSize: 12 }} onMouseEnter={e => e.currentTarget.style.background = "#161615"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+            <span style={{ width: 50 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small /></span>
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#D3D1C7" }}>{i.title}</span>
+            <span style={{ width: 70 }}><Badge label={i.priority} colors={PC[i.priority]} small /></span>
+            <span style={{ width: 90 }}><Badge label={i.status} colors={TC[i.status] || { bg: "#2C2C2A", text: "#888780", border: "#444441" }} small /></span>
+            <span style={{ width: 80, fontSize: 10, color: due?.color || "#5F5E5A" }}>{due?.text || "—"}</span>
+            <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(i); }} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11 }}>✎</button></span>
+          </div>
+        ); })}
       </div>
-      {resolved.map(i => <IssueCard key={i.id} i={i} dimmed />)}
-    </>)}
+      {resolved.length > 0 && (<>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "20px 0 10px" }}>
+          <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
+          <span style={{ fontSize: 11, color: "#5DCAA5", fontWeight: 500 }}>Resolved ({resolved.length})</span>
+          <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
+        </div>
+        <div style={{ border: "1px solid #2C2C2A", borderRadius: 8, overflow: "hidden", opacity: 0.5 }}>
+          {resolved.map(i => { const due = fmtDue(i.due_date); return (
+            <div key={i.id} onClick={() => setViewId(i.id)} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #1A1A18", cursor: "pointer", fontSize: 12 }} onMouseEnter={e => e.currentTarget.style.background = "#161615"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <span style={{ width: 50 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small /></span>
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#888780", textDecoration: "line-through" }}>{i.title}</span>
+              <span style={{ width: 70 }}><Badge label={i.priority} colors={PC[i.priority]} small /></span>
+              <span style={{ width: 90 }}><Badge label={i.status} colors={{ bg: "#081F12", text: "#5DCAA5", border: "#04342C" }} small /></span>
+              <span style={{ width: 80, fontSize: 10, color: "#5F5E5A" }}>{due?.text || "—"}</span>
+              <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(i); }} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11 }}>✎</button></span>
+            </div>
+          ); })}
+        </div>
+      </>)}
+    </div>)}
   </div>);
 }
 
 function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, updS, del, onAdd, onEdit, links, allIssues, ulnk, openLink, focusOn, pomCount, fmtDue, notes, onViewNote }) {
   const [viewTid, setViewTid] = useState(null);
+  const [sortBy, setSortBy] = useState("created");
+  const [viewMode, setViewMode] = useState("card");
   const liIds = (tid) => links.filter(l => l.test_case_id === tid).map(l => l.issue_id);
   const im = Object.fromEntries(allIssues.map(i => [i.id, i]));
   const notesByTest = (tid) => (notes || []).filter(n => n.linked_test_id === tid);
+  const sortFn = (a, b) => {
+    if (sortBy === "due") return (a.due_date || "9999") < (b.due_date || "9999") ? -1 : 1;
+    if (sortBy === "status") return a.status.localeCompare(b.status);
+    if (sortBy === "last_run") return new Date(b.last_run || 0) - new Date(a.last_run || 0);
+    return new Date(b.created_at) - new Date(a.created_at);
+  };
+  const sorted = [...tests].sort(sortFn);
 
   // Detail modal
   const vt = viewTid ? tests.find(x => x.id === viewTid) : null;
@@ -1094,9 +1151,9 @@ function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, u
   }
 
   return (<div>
-    <div style={{ display: "flex", gap: 6, marginBottom: 16 }}><Select value={filterFile} onChange={setFilterFile} options={[{ value: "all", label: "All files" }, ...files.map(f => ({ value: f.id, label: f.name }))]} /></div>
-    {tests.length === 0 && <EmptyState icon="▷" title="No test cases yet" sub="Write test cases to verify your code." action="New test case" onAction={onAdd} />}
-    {tests.map(t => { const ex = exp === t.id; const li = liIds(t.id); const done = pomCount("test", t.id); const est = t.estimated_pomodoros || 0; const due = fmtDue(t.due_date); return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 16, alignItems: "center" }}><Select value={filterFile} onChange={setFilterFile} options={[{ value: "all", label: "All files" }, ...files.map(f => ({ value: f.id, label: f.name }))]} /><span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} /><select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 10, background: "#1A1A18", color: "#888780", border: "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}><option value="created">Newest</option><option value="due">Due date</option><option value="status">Status</option><option value="last_run">Last run</option></select><span style={{ flex: 1 }} /><button onClick={() => setViewMode("card")} title="Cards" style={{ background: viewMode === "card" ? "#2C2C2A" : "none", border: "none", color: viewMode === "card" ? "#F1EFE8" : "#444441", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>◫</button><button onClick={() => setViewMode("list")} title="List" style={{ background: viewMode === "list" ? "#2C2C2A" : "none", border: "none", color: viewMode === "list" ? "#F1EFE8" : "#444441", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>≡</button></div>
+    {sorted.length === 0 && <EmptyState icon="▷" title="No test cases yet" sub="Write test cases to verify your code." action="New test case" onAction={onAdd} />}
+    {viewMode === "card" && sorted.map(t => { const ex = exp === t.id; const li = liIds(t.id); const done = pomCount("test", t.id); const est = t.estimated_pomodoros || 0; const due = fmtDue(t.due_date); return (
       <div key={t.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, marginBottom: 8 }}>
         <div style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 8 }} onClick={() => setExp(ex ? null : t.id)}>
           <span style={{ color: "#5F5E5A", fontSize: 12, marginTop: 2, transform: ex ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>▸</span>
@@ -1130,6 +1187,21 @@ function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, u
           {(t.steps||[]).map((s, idx) => (<div key={idx} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: idx < (t.steps||[]).length - 1 ? "1px solid #1A1A18" : "none" }}><span style={{ color: "#5F5E5A", fontSize: 11, fontFamily: "'SF Mono', monospace", minWidth: 20 }}>{idx + 1}.</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, color: "#D3D1C7", marginBottom: 2 }}>{s.step}</div><div style={{ fontSize: 11, color: "#5DCAA5", fontStyle: "italic" }}>→ {s.expected}</div></div></div>))}
         </div>)}
       </div>); })}
+    {viewMode === "list" && (<div style={{ border: "1px solid #2C2C2A", borderRadius: 8, overflow: "hidden" }}>
+      <div style={{ display: "flex", padding: "6px 12px", background: "#161615", borderBottom: "1px solid #2C2C2A", fontSize: 9, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>
+        <span style={{ flex: 1 }}>Title</span><span style={{ width: 70 }}>Status</span><span style={{ width: 60 }}>Steps</span><span style={{ width: 80 }}>Due</span><span style={{ width: 80 }}>Last run</span><span style={{ width: 40 }}></span>
+      </div>
+      {sorted.map(t => { const due = fmtDue(t.due_date); return (
+        <div key={t.id} onClick={() => setViewTid(t.id)} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #1A1A18", cursor: "pointer", fontSize: 12 }} onMouseEnter={e => e.currentTarget.style.background = "#161615"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#D3D1C7" }}>{t.title}</span>
+          <span style={{ width: 70 }}><Badge label={t.status} colors={TC[t.status]} small /></span>
+          <span style={{ width: 60, fontSize: 10, color: "#5F5E5A" }}>{(t.steps||[]).length}</span>
+          <span style={{ width: 80, fontSize: 10, color: due?.color || "#5F5E5A" }}>{due?.text || "—"}</span>
+          <span style={{ width: 80, fontSize: 10, color: "#5F5E5A" }}>{t.last_run ? SHORT_DATE(t.last_run) : "—"}</span>
+          <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(t); }} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11 }}>✎</button></span>
+        </div>
+      ); })}
+    </div>)}
   </div>);
 }
 
