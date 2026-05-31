@@ -97,7 +97,7 @@ export async function createIssue(projectId, fileId, title, type, priority, desc
     .from('issues')
     .insert({
       project_id: projectId,
-      file_id: fileId,
+      file_id: fileId || null,
       title, type, priority, description,
       estimated_pomodoros: estimatedPomodoros || 0,
       due_date: dueDate || null,
@@ -172,7 +172,7 @@ export async function createTestCase(projectId, fileId, title, precondition, ste
     .from('test_cases')
     .insert({
       project_id: projectId,
-      file_id: fileId,
+      file_id: fileId || null,
       title, precondition, steps,
       estimated_pomodoros: estimatedPomodoros || 0,
       due_date: dueDate || null,

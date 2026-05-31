@@ -2765,11 +2765,11 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
     try {
       if (modal.type === "project" && n.trim()) await addProject(n.trim(), cat || "project");
       if (modal.type === "file" && n.trim()) await addFile(n.trim(), cat);
-      if (modal.type === "issue" && n.trim() && fid) {
+      if (modal.type === "issue" && n.trim()) {
         if (isEdit) await editIssue(e.id, { title: n.trim(), type: ty, priority: pr, description: desc, file_id: fid, estimated_pomodoros: ep, due_date: dd || null, repo_name: rn, branch_name: bn, meeting_tag: mtag.length ? JSON.stringify(mtag) : null });
         else await addIssue(fid, n.trim(), ty, pr, desc, ep, dd || null, rn, bn, mtag.length ? JSON.stringify(mtag) : null);
       }
-      if (modal.type === "test" && n.trim() && fid) {
+      if (modal.type === "test" && n.trim()) {
         const cleanSteps = steps.filter(s => s.step.trim());
         if (isEdit) await editTest(e.id, { title: n.trim(), precondition: pre, steps: cleanSteps, file_id: fid, estimated_pomodoros: ep, due_date: dd || null, repo_name: rn, branch_name: bn, meeting_tag: mtag.length ? JSON.stringify(mtag) : null });
         else if (cleanSteps.length) await addTest(fid, n.trim(), pre, cleanSteps, ep, dd || null, rn, bn, mtag.length ? JSON.stringify(mtag) : null);
@@ -2779,7 +2779,7 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
   };
   const titles = isEdit ? { issue: "Edit issue", test: "Edit test case" } : { project: "New project", file: "Add file", issue: "New issue", test: "New test case" };
   const planFields = (modal.type === "issue" || modal.type === "test") ? (<>
-    <div style={{ display: "flex", gap: 8 }}>
+    {fid && <div style={{ display: "flex", gap: 8 }}>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Repo</div>
         <input list="repo-list" value={rn} onChange={e => setRn(e.target.value)} placeholder="Select or type repo" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "'SF Mono', monospace" }} />
@@ -2790,7 +2790,7 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
         <input list="branch-list" value={bn} onChange={e => setBn(e.target.value)} placeholder="Select or type branch" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "'SF Mono', monospace" }} />
         <datalist id="branch-list">{(usedBranches || []).map(b => <option key={b} value={b} />)}</datalist>
       </div>
-    </div>
+    </div>}
     <div style={{ display: "flex", gap: 8 }}>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Estimated pomodoros</div>
@@ -2828,8 +2828,8 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
             </div>
           </>}
           {modal.type === "file" && <><Input value={n} onChange={setN} placeholder="filename.py" mono /><Select value={cat} onChange={setCat} options={CATEGORIES} style={{ width: "100%" }} /></>}
-          {modal.type === "issue" && <><Select value={fid} onChange={setFid} options={files.map(f => ({ value: f.id, label: f.name }))} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Issue title" /><div style={{ display: "flex", gap: 8 }}><Select value={ty} onChange={setTy} options={ISSUE_TYPES} style={{ flex: 1 }} /><Select value={pr} onChange={setPr} options={PRIORITIES} style={{ flex: 1 }} /></div><TextArea value={desc} onChange={setDesc} placeholder="Description (optional)" />{planFields}</>}
-          {modal.type === "test" && <><Select value={fid} onChange={setFid} options={files.map(f => ({ value: f.id, label: f.name }))} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Test case title" /><TextArea value={pre} onChange={setPre} placeholder="Precondition (optional)" rows={1} />{planFields}<div style={{ fontSize: 11, fontWeight: 500, color: "#888780", marginTop: 4 }}>STEPS</div>{steps.map((s, i) => (<div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><span style={{ fontSize: 11, color: "#5F5E5A", marginTop: 8, fontFamily: "'SF Mono', monospace", minWidth: 16 }}>{i + 1}.</span><div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}><Input value={s.step} onChange={v => updStep(i, "step", v)} placeholder="What to do" /><Input value={s.expected} onChange={v => updStep(i, "expected", v)} placeholder="Expected result" /></div>{steps.length > 1 && <button onClick={() => setSteps(steps.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", marginTop: 6 }}>✕</button>}</div>))}<button onClick={addStep} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#5F5E5A", cursor: "pointer", padding: 6, borderRadius: 6, fontSize: 12, width: "100%" }}>+ Add step</button></>}
+          {modal.type === "issue" && <><Select value={fid} onChange={setFid} options={[{ value: "", label: "No file (general task)" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Issue title" /><div style={{ display: "flex", gap: 8 }}><Select value={ty} onChange={setTy} options={ISSUE_TYPES} style={{ flex: 1 }} /><Select value={pr} onChange={setPr} options={PRIORITIES} style={{ flex: 1 }} /></div><TextArea value={desc} onChange={setDesc} placeholder="Description (optional)" />{planFields}</>}
+          {modal.type === "test" && <><Select value={fid} onChange={setFid} options={[{ value: "", label: "No file (general task)" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Test case title" /><TextArea value={pre} onChange={setPre} placeholder="Precondition (optional)" rows={1} />{planFields}<div style={{ fontSize: 11, fontWeight: 500, color: "#888780", marginTop: 4 }}>STEPS</div>{steps.map((s, i) => (<div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><span style={{ fontSize: 11, color: "#5F5E5A", marginTop: 8, fontFamily: "'SF Mono', monospace", minWidth: 16 }}>{i + 1}.</span><div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}><Input value={s.step} onChange={v => updStep(i, "step", v)} placeholder="What to do" /><Input value={s.expected} onChange={v => updStep(i, "expected", v)} placeholder="Expected result" /></div>{steps.length > 1 && <button onClick={() => setSteps(steps.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", marginTop: 6 }}>✕</button>}</div>))}<button onClick={addStep} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#5F5E5A", cursor: "pointer", padding: 6, borderRadius: 6, fontSize: 12, width: "100%" }}>+ Add step</button></>}
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}><Btn onClick={onClose}>Cancel</Btn><Btn primary onClick={submit} style={{ opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : isEdit ? "Save" : "Create"}</Btn></div>
       </div>
