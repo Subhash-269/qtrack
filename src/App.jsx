@@ -32,9 +32,16 @@ function Ring({ size, stroke, timeLeft, totalTime, color }) {
 export default function App({ session }) {
   const [projects, setProjects] = useState([]); const [files, setFiles] = useState([]); const [issues, setIssues] = useState([]); const [testCases, setTestCases] = useState([]); const [links, setLinks] = useState([]); const [activeProjectId, setActiveProjectId] = useState(null);
   const [view, setView] = useState("dashboard"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null); const [sb, setSb] = useState(() => { try { return localStorage.getItem("qtrack_sb") !== "0"; } catch { return true; } });
-  const [hiddenTabs, setHiddenTabs] = useState(() => { try { return JSON.parse(localStorage.getItem("qtrack_hidden_tabs") || "[]"); } catch { return []; } });
+  const [hiddenTabsMap, setHiddenTabsMap] = useState(() => { try { return JSON.parse(localStorage.getItem("qtrack_hidden_tabs_v2") || "{}"); } catch { return {}; } });
   const [showNavSettings, setShowNavSettings] = useState(false);
-  const toggleTab = (id) => { const nt = hiddenTabs.includes(id) ? hiddenTabs.filter(t => t !== id) : [...hiddenTabs, id]; setHiddenTabs(nt); try { localStorage.setItem("qtrack_hidden_tabs", JSON.stringify(nt)); } catch {} };
+  const hiddenTabs = hiddenTabsMap[activeProjectId] || [];
+  const toggleTab = (id) => {
+    const cur = hiddenTabsMap[activeProjectId] || [];
+    const nt = cur.includes(id) ? cur.filter(t => t !== id) : [...cur, id];
+    const updated = { ...hiddenTabsMap, [activeProjectId]: nt };
+    setHiddenTabsMap(updated);
+    try { localStorage.setItem("qtrack_hidden_tabs_v2", JSON.stringify(updated)); } catch {}
+  };
   const [filterType, setFilterType] = useState("all"); const [filterFile, setFilterFile] = useState("all"); const [filterPriority, setFilterPriority] = useState("all"); const [searchQ, setSearchQ] = useState(""); const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
   const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null });
@@ -270,7 +277,7 @@ export default function App({ session }) {
           </div>
         </div>
         <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
-          {view === "dashboard" && !isWorkshop && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} todaySessions={todaySessions} />}
+          {view === "dashboard" && !isWorkshop && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} todaySessions={todaySessions} projectId={activeProjectId} />}
           {view === "dashboard" && isWorkshop && <WorkshopDashboard meetings={meetings} notes={notes} people={people} onNav={setView} />}
           {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} markDone={async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } }} />}
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
@@ -901,7 +908,7 @@ function MediaPlayer() {
   );
 }
 
-function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork, allSessions, notes, todaySessions }) {
+function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork, allSessions, notes, todaySessions, projectId }) {
   const pr = stats.tt > 0 ? Math.round((stats.tp / stats.tt) * 100) : 0;
   const branchColors = ["#E24B4A", "#378ADD", "#5DCAA5", "#D85A30", "#7F77DD", "#D4537E", "#BA7517", "#639922"];
 
@@ -910,14 +917,20 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
   const totalMin = tfm + meetMin;
 
   // Dashboard customization
-  const [dashConfig, setDashConfig] = useState(() => { try { return JSON.parse(localStorage.getItem("qtrack_dash_config") || "{}"); } catch { return {}; } });
+  const [dashConfigMap, setDashConfigMap] = useState(() => { try { return JSON.parse(localStorage.getItem("qtrack_dash_config_v2") || "{}"); } catch { return {}; } });
   const [showDashSettings, setShowDashSettings] = useState(false);
   const [chartWeekOff, setChartWeekOff] = useState(0);
   const [chartStart, setChartStart] = useState("");
   const [chartEnd, setChartEnd] = useState("");
   const useCustomRange = chartStart && chartEnd;
+  const dashConfig = dashConfigMap[projectId] || {};
   const isVisible = (key) => dashConfig[key] !== false;
-  const toggleSection = (key) => { const nc = { ...dashConfig, [key]: !isVisible(key) }; setDashConfig(nc); try { localStorage.setItem("qtrack_dash_config", JSON.stringify(nc)); } catch {} };
+  const toggleSection = (key) => {
+    const nc = { ...dashConfig, [key]: !isVisible(key) };
+    const updated = { ...dashConfigMap, [projectId]: nc };
+    setDashConfigMap(updated);
+    try { localStorage.setItem("qtrack_dash_config_v2", JSON.stringify(updated)); } catch {}
+  };
 
   const SECTIONS = [
     { key: "metrics", label: "Metrics" },
