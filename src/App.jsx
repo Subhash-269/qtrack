@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import { supabase } from "./supabaseClient";
 import * as db from "./storage";
 
@@ -123,7 +123,7 @@ export default function App({ session }) {
 
   const savePartial = async (t) => {
     if (t.type !== "work" || t.st === "idle") return;
-    const elapsed = t.total - t.left;
+    const elapsed = (t.total - t.left) - (t.taskOffset || 0);
     if (elapsed < 10) return;
     try { await db.saveFocusSession(activeProjectId, t.tType === "issue" ? t.tId : null, t.tType === "test" ? t.tId : null, "work", elapsed); loadToday(); } catch (e) { console.error(e); }
   };
@@ -133,7 +133,24 @@ export default function App({ session }) {
   };
 
   const resetTmr = async () => { if (tmr.st !== "idle" && !confirm("Stop the current timer?")) return; await savePartial(tmr); setTmr({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null }); };
-  const focusOn = async (type, id) => { if (tmr.st !== "idle" && !confirm("Switch task? Current progress will be saved.")) return; await savePartial(tmr); setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null }); setView("focus"); if (Notification.permission === "default") Notification.requestPermission(); };
+  const focusOn = async (type, id) => {
+    // If timer is running, save partial time on current task and switch — keep timer ticking
+    if (tmr.st !== "idle" && tmr.type === "work") {
+      // Calculate elapsed for the current task only (since task switch or session start)
+      const taskElapsed = tmr.total - tmr.left - (tmr.taskOffset || 0);
+      if (taskElapsed >= 10 && tmr.tId) {
+        try { await db.saveFocusSession(activeProjectId, tmr.tType === "issue" ? tmr.tId : null, tmr.tType === "test" ? tmr.tId : null, "work", taskElapsed); loadToday(); } catch (e) { console.error(e); }
+      }
+      // Update offset so future savePartial only counts time on new task; DON'T change startedAt
+      setTmr({ ...tmr, tType: type, tId: id, taskOffset: tmr.total - tmr.left });
+      setView("focus");
+      return;
+    }
+    // Idle or on break — start a fresh timer
+    setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null, taskOffset: 0 });
+    setView("focus");
+    if (Notification.permission === "default") Notification.requestPermission();
+  };
 
   useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); db.getUserProfile().then(p => setUserTier(p.tier || "free")).catch(() => {}); } }, []);
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
@@ -299,7 +316,22 @@ export default function App({ session }) {
 
 function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions, todaySessions, logManual, allNotes, markDone }) {
   const [picking, setPicking] = useState(false);
-  const [goalMin] = useState(120);
+  // Goal: sum of estimated_pomodoros across tasks due today, overdue, or without a due date
+  const todayStr = new Date().toISOString().split("T")[0];
+  const isRelevantForToday = (t) => !t.due_date || t.due_date <= todayStr;
+  const openIssues = issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status) && isRelevantForToday(i));
+  const openTests = tests.filter(t => t.status !== "pass" && isRelevantForToday(t));
+  const goalPoms = openIssues.reduce((a, i) => a + (i.estimated_pomodoros || 0), 0) + openTests.reduce((a, t) => a + (t.estimated_pomodoros || 0), 0) || 4;
+  const goalMin = goalPoms * 25;
+  const goalSessions = Math.ceil(goalPoms / 4);
+
+  // Today's completed sessions
+  const todayFocusSessions = (todaySessions || []).filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting" && s.duration_seconds >= 60);
+  const todayBreakSessions = (todaySessions || []).filter(s => s.session_type === "short_break" || s.session_type === "long_break");
+  const focusDone = todayFocusSessions.length;
+  const breakDone = todayBreakSessions.length;
+  const sessionsDone = Math.floor(focusDone / 4);
+  const pomsInCurrent = focusDone % 4;
   const [showLog, setShowLog] = useState(false);
   const [logForm, setLogForm] = useState({ taskType: "", taskId: "", date: new Date().toISOString().split("T")[0], startTime: "09:00", endTime: "10:00" });
   const [logError, setLogError] = useState(null);
@@ -542,11 +574,16 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", paddingRight: 16 }}>
           {/* Goal bar */}
           <div style={{ width: "100%", maxWidth: 500, marginBottom: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-              <span style={{ fontSize: 10, color: "#5F5E5A" }}>{FMTHR(tfm)} focused</span>
-              <span style={{ fontSize: 10, color: goalPct >= 100 ? "#5DCAA5" : "#444441" }}>{goalPct >= 100 ? "Goal reached" : `${FMTHR(goalMin)} goal`}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ fontSize: 10, color: "#5F5E5A" }}>Session {sessionsDone + 1}/{goalSessions} · {pomsInCurrent}/4 pomodoros</span>
+              <span style={{ fontSize: 10, color: focusDone >= goalPoms ? "#5DCAA5" : "#444441" }}>{focusDone >= goalPoms ? "Goal reached ✓" : `${FMTHR(tfm)} / ${FMTHR(goalMin)}`}</span>
             </div>
-            <div style={{ height: 2, background: "#1A1A18", borderRadius: 1 }}><div style={{ height: "100%", width: `${goalPct}%`, background: goalPct >= 100 ? "#5DCAA5" : color, borderRadius: 1, transition: "width 0.5s" }} /></div>
+            <div style={{ display: "flex", gap: 2, height: 6 }}>
+              {Array.from({ length: goalPoms }).map((_, i) => (<Fragment key={i}>
+                <div style={{ flex: 1, borderRadius: 2, background: i < focusDone ? "#5DCAA5" : (i === focusDone && tmr.st !== "idle" && tmr.type === "work") ? color : "#1A1A18", transition: "background 0.3s" }} />
+                {i < goalPoms - 1 && <div style={{ width: ((i + 1) % 4 === 0) ? 8 : 4, borderRadius: 2, background: i < breakDone ? "#378ADD" : (i === breakDone && tmr.type !== "work" && tmr.st !== "idle") ? "#378ADD" : "#1A1A18" }} />}
+              </Fragment>))}
+            </div>
           </div>
 
           {/* Task info bar — compact by default, expandable */}
@@ -621,11 +658,16 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   return (
     <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <div style={{ marginBottom: 32 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-          <span style={{ fontSize: 10, color: "#5F5E5A" }}>{FMTHR(tfm)} focused</span>
-          <span style={{ fontSize: 10, color: goalPct >= 100 ? "#5DCAA5" : "#444441" }}>{goalPct >= 100 ? "Goal reached" : `${FMTHR(goalMin)} goal`}</span>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <span style={{ fontSize: 10, color: "#5F5E5A" }}>Session {sessionsDone + 1}/{goalSessions} · {pomsInCurrent}/4 pomodoros</span>
+          <span style={{ fontSize: 10, color: focusDone >= goalPoms ? "#5DCAA5" : "#444441" }}>{focusDone >= goalPoms ? "Goal reached ✓" : `${FMTHR(tfm)} / ${FMTHR(goalMin)}`}</span>
         </div>
-        <div style={{ height: 2, background: "#1A1A18", borderRadius: 1 }}><div style={{ height: "100%", width: `${goalPct}%`, background: goalPct >= 100 ? "#5DCAA5" : color, borderRadius: 1, transition: "width 0.5s" }} /></div>
+        <div style={{ display: "flex", gap: 2, height: 6 }}>
+          {Array.from({ length: goalPoms }).map((_, i) => (<Fragment key={i}>
+            <div style={{ flex: 1, borderRadius: 2, background: i < focusDone ? "#5DCAA5" : (i === focusDone && tmr.st !== "idle" && tmr.type === "work") ? color : "#1A1A18", transition: "background 0.3s" }} />
+            {i < goalPoms - 1 && <div style={{ width: ((i + 1) % 4 === 0) ? 8 : 4, borderRadius: 2, background: i < breakDone ? "#378ADD" : (i === breakDone && tmr.type !== "work" && tmr.st !== "idle") ? "#378ADD" : "#1A1A18" }} />}
+          </Fragment>))}
+        </div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 32 }}>
