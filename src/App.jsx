@@ -29,6 +29,8 @@ function Ring({ size, stroke, timeLeft, totalTime, color }) {
   return (<svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#2C2C2A" strokeWidth={stroke} /><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={c} strokeDashoffset={c * (1 - p)} strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s linear" }} /></svg>);
 }
 
+const DEMO_EMAIL = "demo@qtrack.app";
+
 export default function App({ session }) {
   const [projects, setProjects] = useState([]); const [files, setFiles] = useState([]); const [issues, setIssues] = useState([]); const [testCases, setTestCases] = useState([]); const [links, setLinks] = useState([]); const [activeProjectId, setActiveProjectId] = useState(null);
   const [view, setView] = useState("dashboard"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null); const [sb, setSb] = useState(() => { try { return localStorage.getItem("qtrack_sb") !== "0"; } catch { return true; } });
@@ -41,6 +43,8 @@ export default function App({ session }) {
     const updated = { ...hiddenTabsMap, [activeProjectId]: nt };
     setHiddenTabsMap(updated);
     try { localStorage.setItem("qtrack_hidden_tabs_v2", JSON.stringify(updated)); } catch {}
+    let dashConfig = {}; try { dashConfig = JSON.parse(localStorage.getItem("qtrack_dash_config_v2") || "{}"); } catch {}
+    db.saveUserSettings({ hiddenTabs: updated, dashConfig }).catch(() => {});
   };
   const [filterType, setFilterType] = useState("all"); const [filterFile, setFilterFile] = useState("all"); const [filterPriority, setFilterPriority] = useState("all"); const [searchQ, setSearchQ] = useState(""); const [expandedTC, setExpandedTC] = useState(null);
   const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
@@ -50,6 +54,18 @@ export default function App({ session }) {
   const [people, setPeople] = useState([]);
   const [newsCache, setNewsCache] = useState([]);
   const [userTier, setUserTier] = useState("free");
+
+  // Show tutorial: always for demo user, once for everyone else
+  useEffect(() => {
+    const email = session?.user?.email;
+    if (email === DEMO_EMAIL) { setShowTutorial(true); return; }
+    try { if (!localStorage.getItem("qtrack_tutorial_seen")) setShowTutorial(true); } catch {}
+  }, [session?.user?.email]);
+
+  const closeTutorial = () => {
+    setShowTutorial(false);
+    try { localStorage.setItem("qtrack_tutorial_seen", "1"); } catch {}
+  };
   const tRef = useRef(null); const initRef = useRef(false); const syncRef = useRef(false); const loadedTimerRef = useRef(false);
 
   // Load timer from Supabase on mount
@@ -65,7 +81,7 @@ export default function App({ session }) {
             if (left <= 0) { st = "idle"; left = DUR.work; startedAt = null; }
           }
           syncRef.current = true;
-          setTmr({ st, left, total: saved.total_seconds, type: saved.session_type, done: saved.sessions_completed, tType: saved.task_type, tId: saved.task_id, startedAt });
+          setTmr({ st, left, total: saved.total_seconds, type: saved.session_type, done: saved.sessions_completed, tType: saved.task_type, tId: saved.task_id, studyTopic: saved.study_topic || "", startedAt });
           setTimeout(() => { syncRef.current = false; }, 200);
         }
         loadedTimerRef.current = true;
@@ -77,7 +93,7 @@ export default function App({ session }) {
   useEffect(() => {
     if (!loadedTimerRef.current || syncRef.current) return;
     db.saveTimerState(tmr).catch(e => console.error("Timer save:", e));
-  }, [tmr.st, tmr.type, tmr.done, tmr.tType, tmr.tId, tmr.startedAt]);
+  }, [tmr.st, tmr.type, tmr.done, tmr.tType, tmr.tId, tmr.studyTopic, tmr.startedAt]);
 
   // Subscribe to realtime for cross-device sync
   useEffect(() => {
@@ -90,7 +106,7 @@ export default function App({ session }) {
         left = Math.max(0, row.total_seconds - elapsed);
         if (left <= 0) { st = "idle"; left = DUR.work; startedAt = null; }
       }
-      setTmr({ st, left, total: row.total_seconds, type: row.session_type, done: row.sessions_completed, tType: row.task_type, tId: row.task_id, startedAt });
+      setTmr({ st, left, total: row.total_seconds, type: row.session_type, done: row.sessions_completed, tType: row.task_type, tId: row.task_id, studyTopic: row.study_topic || "", startedAt });
       setTimeout(() => { syncRef.current = false; }, 200);
     });
     return () => { supabase.removeChannel(channel); };
@@ -107,11 +123,11 @@ export default function App({ session }) {
   const finishSession = async (p) => {
     try { if (Notification.permission === "granted") new Notification(p.type === "work" ? "Focus done!" : "Break over!", { body: p.type === "work" ? "Time for a break." : "Ready to focus?" }); } catch {}
     try { const ctx = new AudioContext(); const o = ctx.createOscillator(); const g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.value = 800; g.gain.value = 0.3; o.start(); setTimeout(() => { o.frequency.value = 1000; }, 150); setTimeout(() => { o.stop(); ctx.close(); }, 400); } catch {}
-    if (p.type === "work") { try { await db.saveFocusSession(activeProjectId, p.tType === "issue" ? p.tId : null, p.tType === "test" ? p.tId : null, p.type, p.total); loadToday(); } catch (e) { console.error(e); } }
+    if (p.type === "work") { try { await db.saveFocusSession(activeProjectId, p.tType === "issue" ? p.tId : null, p.tType === "test" ? p.tId : null, p.type, p.total, p.tType === "study" ? "study" : "focus", p.studyTopic || ""); loadToday(); } catch (e) { console.error(e); } }
     const nd = p.type === "work" ? p.done + 1 : p.done;
     let nt, nc;
     if (p.type === "work") { nt = nd >= 4 ? "long_break" : "short_break"; nc = nd >= 4 ? 0 : nd; } else { nt = "work"; nc = p.type === "long_break" ? 0 : nd; }
-    setTmr({ st: "idle", left: DUR[nt], total: DUR[nt], type: nt, done: nc, tType: p.tType, tId: p.tId, startedAt: null });
+    setTmr({ st: "idle", left: DUR[nt], total: DUR[nt], type: nt, done: nc, tType: p.tType, tId: p.tId, studyTopic: p.studyTopic, startedAt: null });
   };
 
   const startTmr = (tt, ti) => { if (Notification.permission === "default") Notification.requestPermission(); setTmr(p => ({ ...p, st: "running", tType: tt || p.tType, tId: ti || p.tId, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null })); };
@@ -132,7 +148,7 @@ export default function App({ session }) {
     if (t.type !== "work" || t.st === "idle") return;
     const elapsed = (t.total - t.left) - (t.taskOffset || 0);
     if (elapsed < 10) return;
-    try { await db.saveFocusSession(activeProjectId, t.tType === "issue" ? t.tId : null, t.tType === "test" ? t.tId : null, "work", elapsed); loadToday(); } catch (e) { console.error(e); }
+    try { await db.saveFocusSession(activeProjectId, t.tType === "issue" ? t.tId : null, t.tType === "test" ? t.tId : null, "work", elapsed, t.tType === "study" ? "study" : "focus", t.studyTopic || ""); loadToday(); } catch (e) { console.error(e); }
   };
 
   const logManual = async (taskType, taskId, startTime, endTime) => {
@@ -159,10 +175,23 @@ export default function App({ session }) {
     if (Notification.permission === "default") Notification.requestPermission();
   };
 
-  useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); db.getUserProfile().then(p => setUserTier(p.tier || "free")).catch(() => {}); } }, []);
+  const startStudy = async (topic, navigate = true) => {
+    if (tmr.st !== "idle" && tmr.type === "work") { await savePartial(tmr); }
+    setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: "study", tId: null, studyTopic: topic, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null, taskOffset: 0 });
+    if (navigate) setView("focus");
+    if (Notification.permission === "default") Notification.requestPermission();
+  };
+
+  useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); db.getUserProfile().then(p => {
+    setUserTier(p.tier || "free");
+    if (p.settings && typeof p.settings === "object") {
+      if (p.settings.hiddenTabs) setHiddenTabsMap(p.settings.hiddenTabs);
+      if (p.settings.dashConfig) try { localStorage.setItem("qtrack_dash_config_v2", JSON.stringify(p.settings.dashConfig)); } catch {}
+    }
+  }).catch(() => {}); } }, []);
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
 
-  async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId(p[0].id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); if (!localStorage.getItem("qtrack_tutorial_done")) setShowTutorial(true); } } catch (e) { console.error(e); } setLoading(false); }
+  async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId(p[0].id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); } } catch (e) { console.error(e); } setLoading(false); }
   async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } try { setMeetings(await db.getMeetings(pid)); } catch { setMeetings([]); } try { setPeople(await db.getPeople(pid)); } catch { setPeople([]); } try { setNewsCache(await db.getNewsCache(pid)); } catch { setNewsCache([]); } } catch (e) { console.error(e); } }
   async function loadToday() { if (!activeProjectId) return; try { setTodaySessions(await db.getTodaySessions(activeProjectId)); } catch { setTodaySessions([]); } try { setAllSessions(await db.getAllSessions(activeProjectId)); } catch { setAllSessions([]); } }
   async function reload() { if (activeProjectId) await loadData(activeProjectId); }
@@ -223,7 +252,7 @@ export default function App({ session }) {
   const lnk = async (iid, tid) => { await db.linkIssueToTest(iid, tid); await reload(); };
   const ulnk = async (iid, tid) => { await db.unlinkIssueFromTest(iid, tid); await reload(); };
 
-  const taskName = tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId)?.title : tmr.tType === "test" ? testCases.find(t => t.id === tmr.tId)?.title : null;
+  const taskName = tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId)?.title : tmr.tType === "test" ? testCases.find(t => t.id === tmr.tId)?.title : tmr.tType === "study" ? `📚 ${tmr.studyTopic}` : null;
 
   return (
     <div style={{ minHeight: "100vh", background: "#111110", color: "#F1EFE8", fontFamily: "'DM Sans', -apple-system, sans-serif", fontSize: 13 }}>
@@ -259,7 +288,9 @@ export default function App({ session }) {
           {projects.map(p => editingProjectId === p.id ? (<div key={p.id} style={{ padding: "3px 6px", marginBottom: 1 }}><input autoFocus value={editingProjectName} onChange={e => setEditingProjectName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") renameProject(p.id, editingProjectName); if (e.key === "Escape") setEditingProjectId(null); }} onBlur={() => renameProject(p.id, editingProjectName)} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #444441", outline: "none", boxSizing: "border-box" }} /></div>) : (<div key={p.id} style={{ display: "flex", alignItems: "center", gap: 2, marginBottom: 1 }}><button onClick={() => setActiveProjectId(p.id)} onDoubleClick={() => { setEditingProjectId(p.id); setEditingProjectName(p.name); }} style={{ flex: 1, padding: "6px 10px", borderRadius: 5, border: "none", background: activeProjectId === p.id ? "#2C2C2A" : "transparent", color: activeProjectId === p.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 12, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</button>{projects.length > 1 && <button onClick={() => delProject(p.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11, padding: "4px", opacity: 0.5 }} onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#F09595"; }} onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#444441"; }}>✕</button>}</div>))}
           <button onClick={() => setModal({ type: "project" })} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>+ New project</button>
         </div>}
-        <div style={{ padding: sb ? "8px 10px" : "8px 4px", borderTop: "1px solid #2C2C2A" }}><button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: sb ? "left" : "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sb ? `Sign out (${session.user.email})` : "↗"}</button></div>
+        <div style={{ padding: sb ? "8px 10px" : "8px 4px", borderTop: "1px solid #2C2C2A" }}>
+          {sb && <button onClick={() => setShowTutorial(true)} style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: "left", marginBottom: 2 }}>? Replay tutorial</button>}
+          <button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: sb ? "left" : "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sb ? `Sign out (${session.user.email})` : "↗"}</button></div>
       </div>
 
       {/* Main */}
@@ -283,7 +314,7 @@ export default function App({ session }) {
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
-          {view === "notes" && <NotesView notes={notes} issues={issues} files={files} testCases={testCases} projectId={activeProjectId} reload={reload} meetingTags={[...new Set(meetings.map(m => m.title))]} usedRepos={[...new Set([...issues, ...testCases].map(x => x.repo_name).filter(Boolean))]} />}
+          {view === "notes" && <NotesView notes={notes} issues={issues} files={files} testCases={testCases} projectId={activeProjectId} reload={reload} meetingTags={[...new Set(meetings.map(m => m.title))]} usedRepos={[...new Set([...issues, ...testCases].map(x => x.repo_name).filter(Boolean))]} allSessions={allSessions} onStudyStart={startStudy} tmr={tmr} />}
           {view === "calendar" && <CalendarView meetings={meetings} issues={issues} testCases={testCases} projectId={activeProjectId} reload={reload} onFocusMeeting={mt => setMeetingFocus(mt)} allNotes={notes} />}
           {view === "board" && <BoardView columns={columns} cards={cards} projectId={activeProjectId} reload={reload} issues={issues} files={files} addIssue={addIssue} />}
           {view === "people" && <PeopleView people={people} meetings={meetings} projectId={activeProjectId} reload={reload} />}
@@ -295,6 +326,7 @@ export default function App({ session }) {
         </div>}
       </div>
 
+      {showTutorial && <Tutorial onClose={closeTutorial} />}
       {modal && <Modal modal={modal} files={files} onClose={() => setModal(null)} addProject={addProject} addFile={addFile} addIssue={addIssue} addTest={addTest} editIssue={editIssue} editTest={editTest} usedRepos={[...new Set([...issues, ...testCases].map(x => x.repo_name).filter(Boolean))]} usedBranches={[...new Set([...issues, ...testCases].map(x => x.branch_name).filter(Boolean))]} meetingTags={[...new Set(meetings.map(m => m.title))]} />}
       {linkModal && <LinkModal lm={linkModal} issues={issues} tests={testCases} links={links} lnk={lnk} onClose={() => setLinkModal(null)} />}
       {viewingNoteId && (() => { const n = notes.find(x => x.id === viewingNoteId); if (!n) return null; const cc = NOTE_CAT_COLORS[n.category] || NOTE_CAT_COLORS.scratch; const li = issues.find(i => i.id === n.linked_issue_id); const lt = testCases.find(t => t.id === n.linked_test_id); const lf = files.find(f => f.id === n.linked_file_id); return (
@@ -316,7 +348,7 @@ export default function App({ session }) {
           </div>
         </div>); })()}
       {meetingFocus && <MeetingFocusView meeting={meetingFocus} projectId={activeProjectId} onClose={async () => { setMeetingFocus(null); await reload(); }} issues={issues} testCases={testCases} meetings={meetings} allNotes={notes} />}
-      {showTutorial && <Tutorial onClose={() => { setShowTutorial(false); localStorage.setItem("qtrack_tutorial_done", "1"); }} />}
+
     </div>
   );
 }
@@ -677,6 +709,13 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
         </div>
       </div>
 
+      {tmr.tType === "study" && tmr.studyTopic && (
+        <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <span style={{ fontSize: 11, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>Studying</span>
+          <div style={{ fontSize: 20, fontWeight: 500, color: "#CECBF6", marginTop: 2 }}>📚 {tmr.studyTopic}</div>
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 32 }}>
         {timerSection(260)}
         {controls}
@@ -930,6 +969,8 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
     const updated = { ...dashConfigMap, [projectId]: nc };
     setDashConfigMap(updated);
     try { localStorage.setItem("qtrack_dash_config_v2", JSON.stringify(updated)); } catch {}
+    let hiddenTabs = {}; try { hiddenTabs = JSON.parse(localStorage.getItem("qtrack_hidden_tabs_v2") || "{}"); } catch {}
+    db.saveUserSettings({ hiddenTabs, dashConfig: updated }).catch(() => {});
   };
 
   const SECTIONS = [
@@ -1729,24 +1770,584 @@ function NoteContent({ content, maxHeight }) {
   );
 }
 
-function NotesView({ notes, issues, files, testCases, projectId, reload, meetingTags, usedRepos }) {
+// ============================================
+// Markdown renderer with mermaid support
+// ============================================
+
+let mermaidPromise = null;
+const loadMermaid = () => {
+  if (!mermaidPromise) {
+    mermaidPromise = import("https://esm.sh/mermaid@10").then(m => {
+      m.default.initialize({ startOnLoad: false, theme: "dark", themeVariables: { darkMode: true, background: "#161615", primaryColor: "#1A1A18", primaryTextColor: "#D3D1C7", lineColor: "#5F5E5A", primaryBorderColor: "#2C2C2A" } });
+      return m.default;
+    });
+  }
+  return mermaidPromise;
+};
+
+function MermaidDiagram({ code }) {
+  const ref = useRef(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadMermaid().then(async (mermaid) => {
+      if (cancelled || !ref.current) return;
+      try {
+        const id = "mer_" + Math.random().toString(36).slice(2);
+        const { svg } = await mermaid.render(id, code);
+        if (!cancelled && ref.current) ref.current.innerHTML = svg;
+      } catch (e) { if (!cancelled) setErr(e.message); }
+    }).catch(e => setErr(e.message));
+    return () => { cancelled = true; };
+  }, [code]);
+  if (err) return <div style={{ fontSize: 10, color: "#F09595", padding: 8, background: "#1A1A18", borderRadius: 4 }}>Mermaid error: {err}</div>;
+  return <div ref={ref} style={{ padding: 12, background: "#161615", border: "1px solid #2C2C2A", borderRadius: 6, overflowX: "auto", margin: "8px 0", textAlign: "center" }} />;
+}
+
+const parseInline = (text) => {
+  // Returns array of React elements/strings, parsing bold, italic, code, links inline
+  const parts = [];
+  let buf = ""; let i = 0;
+  while (i < text.length) {
+    if (text[i] === "*" && text[i + 1] === "*") {
+      if (buf) parts.push(buf); buf = "";
+      const end = text.indexOf("**", i + 2);
+      if (end === -1) { buf += text[i]; i++; continue; }
+      parts.push(<strong key={i} style={{ fontWeight: 500, color: "#F1EFE8" }}>{text.slice(i + 2, end)}</strong>);
+      i = end + 2;
+    } else if (text[i] === "*") {
+      if (buf) parts.push(buf); buf = "";
+      const end = text.indexOf("*", i + 1);
+      if (end === -1) { buf += text[i]; i++; continue; }
+      parts.push(<em key={i} style={{ fontStyle: "italic" }}>{text.slice(i + 1, end)}</em>);
+      i = end + 1;
+    } else if (text[i] === "`") {
+      if (buf) parts.push(buf); buf = "";
+      const end = text.indexOf("`", i + 1);
+      if (end === -1) { buf += text[i]; i++; continue; }
+      parts.push(<code key={i} style={{ background: "#1A1A18", color: "#F0997B", padding: "1px 5px", borderRadius: 3, fontSize: "0.9em", fontFamily: "'SF Mono', monospace" }}>{text.slice(i + 1, end)}</code>);
+      i = end + 1;
+    } else if (text[i] === "[") {
+      const close = text.indexOf("]", i + 1);
+      const paren = text.indexOf("(", close);
+      const pclose = text.indexOf(")", paren);
+      if (close !== -1 && paren === close + 1 && pclose !== -1) {
+        if (buf) parts.push(buf); buf = "";
+        parts.push(<a key={i} href={text.slice(paren + 1, pclose)} target="_blank" rel="noopener noreferrer" style={{ color: "#85B7EB", textDecoration: "none" }}>{text.slice(i + 1, close)}</a>);
+        i = pclose + 1;
+      } else { buf += text[i]; i++; }
+    } else { buf += text[i]; i++; }
+  }
+  if (buf) parts.push(buf);
+  return parts;
+};
+
+function MarkdownView({ content }) {
+  if (!content) return null;
+  const lines = content.split("\n");
+  const blocks = [];
+  let i = 0;
+  let key = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // Code block
+    if (line.startsWith("```")) {
+      const lang = line.slice(3).trim();
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) { codeLines.push(lines[i]); i++; }
+      const code = codeLines.join("\n");
+      if (lang === "mermaid") {
+        blocks.push(<MermaidDiagram key={key++} code={code} />);
+      } else {
+        blocks.push(<pre key={key++} style={{ background: "#0F0F0E", padding: "10px 14px", borderRadius: 6, overflowX: "auto", margin: "8px 0", fontSize: 12, fontFamily: "'SF Mono', monospace", color: "#D3D1C7", border: "1px solid #1A1A18", lineHeight: 1.5 }}>{lang && <div style={{ fontSize: 9, color: "#5F5E5A", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{lang}</div>}<code>{code}</code></pre>);
+      }
+      i++; continue;
+    }
+    // Headings
+    if (line.startsWith("### ")) { blocks.push(<h3 key={key++} style={{ fontSize: 14, fontWeight: 500, color: "#F1EFE8", margin: "12px 0 6px" }}>{parseInline(line.slice(4))}</h3>); i++; continue; }
+    if (line.startsWith("## ")) { blocks.push(<h2 key={key++} style={{ fontSize: 16, fontWeight: 500, color: "#F1EFE8", margin: "16px 0 6px" }}>{parseInline(line.slice(3))}</h2>); i++; continue; }
+    if (line.startsWith("# ")) { blocks.push(<h1 key={key++} style={{ fontSize: 18, fontWeight: 500, color: "#F1EFE8", margin: "20px 0 8px" }}>{parseInline(line.slice(2))}</h1>); i++; continue; }
+    // Horizontal rule
+    if (line.trim() === "---") { blocks.push(<hr key={key++} style={{ border: "none", borderTop: "1px solid #2C2C2A", margin: "12px 0" }} />); i++; continue; }
+    // Blockquote
+    if (line.startsWith("> ")) { blocks.push(<blockquote key={key++} style={{ borderLeft: "3px solid #2C2C2A", paddingLeft: 12, margin: "8px 0", color: "#888780", fontStyle: "italic" }}>{parseInline(line.slice(2))}</blockquote>); i++; continue; }
+    // Unordered list
+    if (line.match(/^\s*[-*]\s/)) {
+      const items = [];
+      while (i < lines.length && lines[i].match(/^\s*[-*]\s/)) { items.push(lines[i].replace(/^\s*[-*]\s/, "")); i++; }
+      blocks.push(<ul key={key++} style={{ margin: "6px 0", paddingLeft: 20 }}>{items.map((it, j) => <li key={j} style={{ fontSize: 13, color: "#D3D1C7", margin: "2px 0", lineHeight: 1.6 }}>{parseInline(it)}</li>)}</ul>);
+      continue;
+    }
+    // Ordered list
+    if (line.match(/^\s*\d+\.\s/)) {
+      const items = [];
+      while (i < lines.length && lines[i].match(/^\s*\d+\.\s/)) { items.push(lines[i].replace(/^\s*\d+\.\s/, "")); i++; }
+      blocks.push(<ol key={key++} style={{ margin: "6px 0", paddingLeft: 20 }}>{items.map((it, j) => <li key={j} style={{ fontSize: 13, color: "#D3D1C7", margin: "2px 0", lineHeight: 1.6 }}>{parseInline(it)}</li>)}</ol>);
+      continue;
+    }
+    // Empty line
+    if (line.trim() === "") { blocks.push(<div key={key++} style={{ height: 6 }} />); i++; continue; }
+    // Paragraph
+    blocks.push(<p key={key++} style={{ fontSize: 13, color: "#D3D1C7", margin: "4px 0", lineHeight: 1.7 }}>{parseInline(line)}</p>);
+    i++;
+  }
+  return <div>{blocks}</div>;
+}
+
+// ============================================
+// PDF Reader with text-selection highlighting (PDF.js)
+// ============================================
+let pdfjsPromise = null;
+const loadPdfJs = () => {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import("https://esm.sh/pdfjs-dist@4.4.168/build/pdf.min.mjs").then(lib => {
+      lib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs";
+      return lib;
+    });
+  }
+  return pdfjsPromise;
+};
+
+const HL_COLORS = { amber: "rgba(239,159,39,0.35)", teal: "rgba(93,202,165,0.35)", pink: "rgba(212,83,126,0.35)", blue: "rgba(55,138,221,0.35)" };
+
+function PdfReader({ docUrl, docId, topic, highlights, onSelectionHighlight, onHighlightClick, onHighlightDelete, jumpTo }) {
+  const containerRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [numPages, setNumPages] = useState(0);
+  const [sel, setSel] = useState(null); // { page, text, rects, x, y }
+  const [scale, setScale] = useState(1.4);
+  const pageDimsRef = useRef({}); // pageNum -> {width, height} of rendered page
+
+  // Inject text-layer CSS once (aligns invisible selectable text over the canvas)
+  useEffect(() => {
+    if (document.getElementById("pdf-text-layer-css")) return;
+    const style = document.createElement("style");
+    style.id = "pdf-text-layer-css";
+    style.textContent = `
+.pdf-text-layer { position:absolute; text-align:initial; inset:0; overflow:clip; line-height:1; text-size-adjust:none; forced-color-adjust:none; transform-origin:0 0; z-index:2; }
+.pdf-text-layer span, .pdf-text-layer br { color:transparent; position:absolute; white-space:pre; cursor:text; transform-origin:0% 0%; }
+.pdf-text-layer ::selection { background:rgba(127,119,221,0.45); }
+.pdf-text-layer span { pointer-events:auto; }`;
+    document.head.appendChild(style);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setErr(null); setSel(null);
+    (async () => {
+      try {
+        const pdfjs = await loadPdfJs();
+        if (cancelled) return;
+        const pdf = await pdfjs.getDocument(docUrl).promise;
+        if (cancelled) return;
+        setNumPages(pdf.numPages);
+        const container = containerRef.current;
+        if (!container) return;
+        container.innerHTML = "";
+        const RENDER_SCALE = 2;
+        for (let n = 1; n <= pdf.numPages; n++) {
+          const page = await pdf.getPage(n);
+          if (cancelled) return;
+          const viewport = page.getViewport({ scale: RENDER_SCALE });
+          // Wrapper sits in normal flow and is sized to the VISUAL (zoomed) size
+          const wrap = document.createElement("div");
+          wrap.className = "pdf-page-wrap";
+          wrap.dataset.page = n;
+          wrap.dataset.natw = viewport.width;
+          wrap.dataset.nath = viewport.height;
+          wrap.style.cssText = `position:relative;margin:0 auto 12px;`;
+          // pageDiv holds the actual content at natural size, scaled via transform
+          const pageDiv = document.createElement("div");
+          pageDiv.className = "pdf-page";
+          pageDiv.style.cssText = `position:absolute;top:0;left:0;width:${viewport.width}px;height:${viewport.height}px;background:#fff;transform-origin:top left;`;
+          const canvas = document.createElement("canvas");
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          canvas.width = Math.floor(viewport.width * dpr);
+          canvas.height = Math.floor(viewport.height * dpr);
+          canvas.style.cssText = `display:block;width:${viewport.width}px;height:${viewport.height}px;`;
+          pageDiv.appendChild(canvas);
+          const ctx = canvas.getContext("2d");
+          const renderViewport = page.getViewport({ scale: RENDER_SCALE * dpr });
+          await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
+          if (cancelled) return;
+          pageDimsRef.current[n] = { width: viewport.width, height: viewport.height };
+          // Text layer for selection
+          const textLayerDiv = document.createElement("div");
+          textLayerDiv.className = "pdf-text-layer";
+          textLayerDiv.style.cssText = `position:absolute;inset:0;overflow:clip;line-height:1;text-align:initial;transform-origin:0 0;`;
+          textLayerDiv.style.setProperty("--scale-factor", String(RENDER_SCALE));
+          pageDiv.appendChild(textLayerDiv);
+          try {
+            const textContent = await page.getTextContent();
+            const tl = new pdfjs.TextLayer({ textContentSource: textContent, container: textLayerDiv, viewport });
+            await tl.render();
+          } catch (e) { /* text layer optional */ }
+          // Highlight overlay layer
+          const hlLayer = document.createElement("div");
+          hlLayer.className = "pdf-hl-layer";
+          hlLayer.dataset.page = n;
+          hlLayer.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:3;";
+          pageDiv.appendChild(hlLayer);
+          wrap.appendChild(pageDiv);
+          container.appendChild(wrap);
+        }
+        if (!cancelled) { setLoading(false); applyZoom(); }
+      } catch (e) { if (!cancelled) { setErr(e.message); setLoading(false); } }
+    })();
+    return () => { cancelled = true; };
+  }, [docUrl]);
+
+  const RENDER_SCALE = 2;
+  // Apply zoom instantly via CSS transform (no re-render). Wrapper layout matches visual size.
+  const applyZoom = () => {
+    const container = containerRef.current;
+    if (!container) return;
+    const z = scale / RENDER_SCALE;
+    container.querySelectorAll(".pdf-page-wrap").forEach(wrap => {
+      const natW = Number(wrap.dataset.natw) || 0, natH = Number(wrap.dataset.nath) || 0;
+      wrap.style.width = `${natW * z}px`;
+      wrap.style.height = `${natH * z}px`;
+      const pageDiv = wrap.querySelector(".pdf-page");
+      if (pageDiv) pageDiv.style.transform = `scale(${z})`;
+    });
+  };
+  useEffect(() => { applyZoom(); }, [scale]);
+
+  // Render highlights whenever they change
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    container.querySelectorAll(".pdf-hl-layer").forEach(layer => {
+      const page = Number(layer.dataset.page);
+      layer.innerHTML = "";
+      (highlights || []).filter(h => h.page === page).forEach(h => {
+        (h.rects || []).forEach(r => {
+          const d = document.createElement("div");
+          d.style.cssText = `position:absolute;left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%;background:${HL_COLORS[h.color] || HL_COLORS.amber};cursor:pointer;pointer-events:auto;border-radius:2px;`;
+          d.title = h.note_id ? "Open linked note" : "Highlight";
+          d.onclick = () => onHighlightClick && onHighlightClick(h);
+          layer.appendChild(d);
+        });
+      });
+    });
+  }, [highlights, loading]);
+
+  // Scroll to a highlight when jumpTo changes
+  useEffect(() => {
+    if (!jumpTo || loading) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const wrap = container.querySelector(`.pdf-page-wrap[data-page="${jumpTo.page}"]`);
+    if (!wrap) return;
+    const z = scale / RENDER_SCALE;
+    const natH = Number(wrap.dataset.nath) || 0;
+    const firstRect = (jumpTo.rects || [])[0];
+    let offset = wrap.offsetTop;
+    if (firstRect) offset += firstRect.y * natH * z;
+    offset -= container.clientHeight / 2;
+    container.scrollTo({ top: Math.max(0, offset), behavior: "smooth" });
+    const hlLayer = wrap.querySelector(".pdf-hl-layer");
+    if (hlLayer) hlLayer.animate([{ opacity: 0.3 }, { opacity: 1 }, { opacity: 0.3 }, { opacity: 1 }], { duration: 800 });
+  }, [jumpTo, loading]);
+
+  // Pinch / ctrl+wheel zoom
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        setScale(s => Math.max(0.6, Math.min(3, +(s - e.deltaY * 0.01).toFixed(2))));
+      }
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const handleMouseUp = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.toString().trim()) { setSel(null); return; }
+    const range = selection.getRangeAt(0);
+    // Find the page div containing the selection
+    let node = range.startContainer;
+    while (node && node.nodeType !== 1) node = node.parentNode;
+    let pageDiv = node?.closest?.("[data-page]");
+    if (!pageDiv) { setSel(null); return; }
+    const page = Number(pageDiv.dataset.page);
+    const dims = pageDimsRef.current[page];
+    if (!dims) { setSel(null); return; }
+    const pageRect = pageDiv.getBoundingClientRect();
+    const scaleX = dims.width / pageRect.width, scaleY = dims.height / pageRect.height;
+    const clientRects = Array.from(range.getClientRects());
+    const rects = clientRects.map(cr => ({
+      x: ((cr.left - pageRect.left) * scaleX) / dims.width,
+      y: ((cr.top - pageRect.top) * scaleY) / dims.height,
+      w: (cr.width * scaleX) / dims.width,
+      h: (cr.height * scaleY) / dims.height,
+    })).filter(r => r.w > 0 && r.h > 0);
+    if (rects.length === 0) { setSel(null); return; }
+    const last = clientRects[clientRects.length - 1];
+    const contRect = containerRef.current.getBoundingClientRect();
+    setSel({ page, text: selection.toString().trim(), rects, x: last.right - contRect.left, y: last.bottom - contRect.top + containerRef.current.scrollTop });
+  };
+
+  return (
+    <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderBottom: "1px solid #2C2C2A", flexShrink: 0, background: "#1A1A18" }}>
+        <button onClick={() => setScale(s => Math.max(0.6, +(s - 0.2).toFixed(1)))} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 13, padding: "2px 8px", borderRadius: 4 }}>−</button>
+        <span style={{ fontSize: 10, color: "#888780", minWidth: 38, textAlign: "center", fontFamily: "'SF Mono', monospace" }}>{Math.round(scale / 1.4 * 100)}%</span>
+        <button onClick={() => setScale(s => Math.min(3, +(s + 0.2).toFixed(1)))} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 13, padding: "2px 8px", borderRadius: 4 }}>+</button>
+        <button onClick={() => setScale(1.4)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Reset</button>
+        {numPages > 0 && <span style={{ fontSize: 10, color: "#5F5E5A", marginLeft: "auto" }}>{numPages} page{numPages !== 1 ? "s" : ""}</span>}
+      </div>
+      {loading && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#5F5E5A", fontSize: 12, zIndex: 5 }}>Loading PDF…</div>}
+      {err && <div style={{ padding: 16, color: "#F09595", fontSize: 12 }}>Couldn't load PDF: {err}</div>}
+      <div ref={containerRef} onMouseUp={handleMouseUp} style={{ flex: 1, overflowY: "auto", background: "#333330", padding: "12px 0", position: "relative" }} />
+      {sel && (
+        <div style={{ position: "absolute", left: Math.min(sel.x, 280), top: Math.min(sel.y + 60, 400), zIndex: 10, background: "#1A1A18", border: "1px solid #534AB7", borderRadius: 6, padding: 4, display: "flex", gap: 4, boxShadow: "0 4px 12px rgba(0,0,0,0.5)" }}>
+          <button onClick={() => { onSelectionHighlight(sel, false); setSel(null); window.getSelection().removeAllRanges(); }} style={{ background: "#26215C", border: "none", color: "#CECBF6", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>✎ Highlight</button>
+          <button onClick={() => { onSelectionHighlight(sel, true); setSel(null); window.getSelection().removeAllRanges(); }} style={{ background: "#534AB7", border: "none", color: "#F1EFE8", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>+ Note</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// Topic Study View — split pane: PDF + notes
+// ============================================
+function TopicStudyView({ topic, projectId, notes, onClose, onStudyStart, reload, tmr, FMT }) {
+  const [docs, setDocs] = useState([]);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [docUrl, setDocUrl] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [activeNote, setActiveNote] = useState(null);
+  const [noteContent, setNoteContent] = useState("");
+  const [noteTitle, setNoteTitle] = useState("");
+  const [savedTick, setSavedTick] = useState(0);
+  const [preview, setPreview] = useState(false);
+  const [highlights, setHighlights] = useState([]);
+  const [jumpTo, setJumpTo] = useState(null);
+  const saveTimer = useRef(null);
+  const fileRef = useRef(null);
+
+  const topicNotes = notes.filter(n => n.is_study && n.topic === topic);
+
+  useEffect(() => { db.getStudyDocs(projectId, topic).then(setDocs).catch(() => {}); }, [topic, projectId]);
+  useEffect(() => { if (selectedDoc) db.getHighlights(selectedDoc.id).then(setHighlights).catch(() => setHighlights([])); else setHighlights([]); }, [selectedDoc]);
+
+  const onSelectionHighlight = async (s, withNote) => {
+    try {
+      let noteId = null;
+      if (withNote) {
+        const created = await db.createNote(projectId, { title: s.text.slice(0, 50), content: `> ${s.text}\n\n`, is_study: true, topic, tags: [] });
+        noteId = created.id;
+        await reload();
+      }
+      const h = await db.createHighlight(selectedDoc.id, topic, s.page, s.text, s.rects, "amber", noteId);
+      setHighlights([...highlights, h]);
+      if (withNote) openNote({ id: noteId, title: s.text.slice(0, 50), content: `> ${s.text}\n\n` });
+    } catch (e) { console.error(e); }
+  };
+
+  const onHighlightClick = (h) => {
+    if (h.note_id) {
+      const n = topicNotes.find(x => x.id === h.note_id);
+      if (n) openNote(n);
+    }
+  };
+
+  const onHighlightDelete = async (h) => {
+    try { await db.deleteHighlight(h.id); setHighlights(highlights.filter(x => x.id !== h.id)); } catch (e) { console.error(e); }
+  };
+
+  const openDoc = async (doc) => {
+    setSelectedDoc(doc); setDocUrl(null);
+    try { const url = await db.getStudyDocUrl(doc.storage_path); setDocUrl(url); } catch (e) { console.error(e); }
+  };
+
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== "application/pdf") { alert("Only PDF files supported for inline viewing."); return; }
+    setUploading(true);
+    try { const doc = await db.uploadStudyDoc(projectId, topic, file); setDocs([doc, ...docs]); openDoc(doc); } catch (e) { alert("Upload failed: " + e.message); }
+    setUploading(false);
+  };
+
+  const delDoc = async (doc) => {
+    if (!confirm(`Delete ${doc.name}?`)) return;
+    try { await db.deleteStudyDoc(doc.id, doc.storage_path); setDocs(docs.filter(d => d.id !== doc.id)); if (selectedDoc?.id === doc.id) { setSelectedDoc(null); setDocUrl(null); } } catch (e) { console.error(e); }
+  };
+
+  const openNote = async (n) => {
+    setActiveNote(n.id); setNoteTitle(n.title || ""); setNoteContent(n.content || ""); setPreview(false);
+    // If this note is linked to a highlight, switch to its doc and scroll there
+    try {
+      const h = await db.getHighlightByNote(n.id);
+      if (h) {
+        if (!selectedDoc || selectedDoc.id !== h.doc_id) {
+          const doc = docs.find(d => d.id === h.doc_id);
+          if (doc) { await openDoc(doc); }
+        }
+        setTimeout(() => setJumpTo({ ...h, _t: Date.now() }), 300);
+      }
+    } catch {}
+  };
+  const newNote = () => { setActiveNote("new"); setNoteTitle(""); setNoteContent(""); setPreview(false); };
+  const delNote = async (n) => {
+    const linked = highlights.filter(h => h.note_id === n.id);
+    const msg = linked.length ? `Delete note "${n.title || "Untitled"}" and its linked highlight${linked.length > 1 ? "s" : ""}?` : `Delete note "${n.title || "Untitled"}"? (any linked highlight will be removed too)`;
+    if (!confirm(msg)) return;
+    try {
+      // remove all highlights linked to this note (across any doc)
+      await db.deleteHighlightsByNote(n.id).catch(() => {});
+      setHighlights(hs => hs.filter(h => h.note_id !== n.id));
+      await db.deleteNote(n.id);
+      if (activeNote === n.id) { setActiveNote(null); setNoteTitle(""); setNoteContent(""); }
+      await reload();
+    } catch (e) { console.error(e); }
+  };
+  const saveNote = (title, content) => {
+    setSavedTick(1);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      try {
+        if (activeNote === "new") {
+          const created = await db.createNote(projectId, { title, content, category: "investigation", is_study: true, topic, tags: [] });
+          setActiveNote(created.id);
+        } else {
+          await db.updateNote(activeNote, { title, content });
+        }
+        setSavedTick(2); setTimeout(() => setSavedTick(0), 1500); await reload();
+      } catch (e) { console.error(e); setSavedTick(0); }
+    }, 900);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#0F0F0E", zIndex: 200, display: "flex", flexDirection: "column" }}>
+      {/* Top bar */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: "1px solid #2C2C2A", flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 12, padding: "4px 10px", borderRadius: 4 }}>← Back</button>
+        <span style={{ fontSize: 16, fontWeight: 500, color: "#CECBF6" }}>📚 {topic}</span>
+        {tmr.st !== "idle" && tmr.tType === "study" && tmr.studyTopic === topic && (
+          <span style={{ fontSize: 13, fontFamily: "'SF Mono', monospace", color: "#E24B4A", padding: "2px 8px", background: "#2D0A0A", borderRadius: 4 }}>● {FMT(tmr.left)}</span>
+        )}
+        <span style={{ flex: 1 }} />
+        {!(tmr.st !== "idle" && tmr.tType === "study" && tmr.studyTopic === topic) && <button onClick={() => onStudyStart(topic, false)} style={{ background: "#26215C", border: "none", color: "#CECBF6", cursor: "pointer", fontSize: 12, padding: "5px 12px", borderRadius: 4 }}>▶ Start study timer</button>}
+      </div>
+
+      {/* Split */}
+      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+        {/* Left: PDF */}
+        <div style={{ flex: 1.3, display: "flex", flexDirection: "column", borderRight: "1px solid #2C2C2A", minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderBottom: "1px solid #1A1A18", flexShrink: 0, overflowX: "auto" }}>
+            <input ref={fileRef} type="file" accept="application/pdf" onChange={handleUpload} style={{ display: "none" }} />
+            <button onClick={() => fileRef.current?.click()} disabled={uploading} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 11, padding: "3px 10px", borderRadius: 4, whiteSpace: "nowrap" }}>{uploading ? "Uploading..." : "+ Upload PDF"}</button>
+            {docs.map(d => (
+              <button key={d.id} onClick={() => openDoc(d)} style={{ background: selectedDoc?.id === d.id ? "#1A0F2E" : "#1A1A18", border: selectedDoc?.id === d.id ? "1px solid #534AB7" : "1px solid #2C2C2A", color: selectedDoc?.id === d.id ? "#CECBF6" : "#888780", cursor: "pointer", fontSize: 11, padding: "3px 10px", borderRadius: 4, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+                📄 {d.name.length > 20 ? d.name.slice(0, 18) + "…" : d.name}
+                <span onClick={e => { e.stopPropagation(); delDoc(d); }} style={{ color: "#5F5E5A", fontSize: 10 }}>✕</span>
+              </button>
+            ))}
+          </div>
+          <div style={{ flex: 1, background: "#222220", minHeight: 0 }}>
+            {selectedDoc && docUrl ? (
+              <PdfReader docUrl={docUrl} docId={selectedDoc.id} topic={topic} highlights={highlights} onSelectionHighlight={onSelectionHighlight} onHighlightClick={onHighlightClick} onHighlightDelete={onHighlightDelete} jumpTo={jumpTo} />
+            ) : selectedDoc && !docUrl ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#5F5E5A", fontSize: 12 }}>Loading PDF…</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "#5F5E5A", fontSize: 12, gap: 8 }}>
+                <span style={{ fontSize: 32 }}>📄</span>
+                <span>{docs.length === 0 ? "Upload a PDF to read here" : "Select a PDF above"}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Notes */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+          {activeNote ? (<>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid #1A1A18", flexShrink: 0 }}>
+              <button onClick={() => setActiveNote(null)} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 12 }}>←</button>
+              <input value={noteTitle} onChange={e => { setNoteTitle(e.target.value); saveNote(e.target.value, noteContent); }} placeholder="Note title" style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 13, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+              <button onClick={() => setPreview(!preview)} style={{ background: preview ? "#1A0F2E" : "none", border: "1px solid #2C2C2A", color: preview ? "#AFA9EC" : "#888780", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>{preview ? "Edit" : "Preview"}</button>
+              {activeNote !== "new" && <button onClick={() => { const n = topicNotes.find(x => x.id === activeNote); if (n) delNote(n); }} title="Delete note" style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }} onMouseEnter={e => { e.currentTarget.style.color = "#F09595"; e.currentTarget.style.borderColor = "#A32D2D"; }} onMouseLeave={e => { e.currentTarget.style.color = "#888780"; e.currentTarget.style.borderColor = "#2C2C2A"; }}>🗑</button>}
+              <span style={{ fontSize: 9, color: savedTick === 2 ? "#5DCAA5" : savedTick === 1 ? "#FAC775" : "#2C2C2A" }}>{savedTick === 2 ? "✓" : savedTick === 1 ? "…" : ""}</span>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+              {preview ? (
+                <div style={{ padding: "12px 16px" }}><MarkdownView content={noteContent} /></div>
+              ) : (
+                <textarea value={noteContent} onChange={e => { setNoteContent(e.target.value); saveNote(noteTitle, e.target.value); }} placeholder={"Write notes... supports markdown + ```mermaid"} style={{ width: "100%", height: "100%", padding: "12px 16px", background: "#111110", color: "#F1EFE8", border: "none", outline: "none", resize: "none", fontFamily: "'SF Mono', monospace", fontSize: 13, lineHeight: 1.6, boxSizing: "border-box" }} />
+              )}
+            </div>
+          </>) : (<>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px solid #1A1A18", flexShrink: 0 }}>
+              <span style={{ fontSize: 11, color: "#5F5E5A" }}>NOTES ({topicNotes.length})</span>
+              <button onClick={newNote} style={{ background: "#26215C", border: "none", color: "#CECBF6", cursor: "pointer", fontSize: 11, padding: "3px 10px", borderRadius: 4 }}>+ New note</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
+              {topicNotes.length === 0 && <div style={{ textAlign: "center", color: "#5F5E5A", fontSize: 12, padding: 24 }}>No notes yet. Click "+ New note" to start.</div>}
+              {topicNotes.map(n => (
+                <div key={n.id} onClick={() => openNote(n)} style={{ padding: "10px 12px", background: "#161615", border: "1px solid #2C2C2A", borderRadius: 6, marginBottom: 6, cursor: "pointer", position: "relative" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#444441"; const b = e.currentTarget.querySelector(".note-del"); if (b) b.style.opacity = "1"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#2C2C2A"; const b = e.currentTarget.querySelector(".note-del"); if (b) b.style.opacity = "0"; }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "#F1EFE8", marginBottom: 2, paddingRight: 20 }}>{n.title || "Untitled"}</div>
+                  <div style={{ fontSize: 11, color: "#888780", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(n.content || "").slice(0, 80)}</div>
+                  <button className="note-del" onClick={e => { e.stopPropagation(); delNote(n); }} title="Delete note" style={{ position: "absolute", top: 8, right: 8, background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 13, opacity: 0, transition: "opacity 0.15s", padding: 2, lineHeight: 1 }} onMouseEnter={e => e.currentTarget.style.color = "#F09595"} onMouseLeave={e => e.currentTarget.style.color = "#5F5E5A"}>🗑</button>
+                </div>
+              ))}
+            </div>
+          </>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotesView({ notes, issues, files, testCases, projectId, reload, meetingTags, usedRepos, allSessions, onStudyStart, tmr }) {
+  const [openTopic, setOpenTopic] = useState(null);
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [filterCat, setFilterCat] = useState("all");
   const [filterRepo, setFilterRepo] = useState("all");
+  const [filterMode, setFilterMode] = useState("all"); // all | regular | study
+  const [filterTag, setFilterTag] = useState("all");
+  const [filterTopic, setFilterTopic] = useState("all");
   const [searchQ, setSearchQ] = useState("");
-  const [form, setForm] = useState({ title: "", content: "", category: "scratch", linked_issue_id: "", linked_file_id: "", linked_test_id: "", code_lang: "", meeting_tag: [], repo_name: "" });
+  const [form, setForm] = useState({ title: "", content: "", category: "scratch", linked_issue_id: "", linked_file_id: "", linked_test_id: "", code_lang: "", meeting_tag: [], repo_name: "", is_study: false, tags: [], topic: "" });
+  const [newTag, setNewTag] = useState("");
 
   const allNoteRepos = [...new Set([...(usedRepos || []), ...notes.map(n => n.repo_name).filter(Boolean)])];
+  const allTags = [...new Set(notes.flatMap(n => Array.isArray(n.tags) ? n.tags : []))];
+  const allTopics = [...new Set(notes.filter(n => n.is_study && n.topic).map(n => n.topic))].sort();
+
+  // Per-topic stats (note count + study time)
+  const topicStats = {};
+  allTopics.forEach(t => { topicStats[t] = { notes: 0, seconds: 0, lastStudied: null }; });
+  notes.forEach(n => { if (n.is_study && n.topic && topicStats[n.topic]) topicStats[n.topic].notes++; });
+  (allSessions || []).forEach(s => {
+    if (s.study_topic && topicStats[s.study_topic]) {
+      topicStats[s.study_topic].seconds += s.duration_seconds || 0;
+      const d = new Date(s.completed_at);
+      if (!topicStats[s.study_topic].lastStudied || d > topicStats[s.study_topic].lastStudied) topicStats[s.study_topic].lastStudied = d;
+    }
+  });
+
   const filtered = notes.filter(n => {
+    if (filterMode === "study" && !n.is_study) return false;
+    if (filterMode === "regular" && n.is_study) return false;
     if (filterCat !== "all" && n.category !== filterCat) return false;
     if (filterRepo !== "all" && n.repo_name !== filterRepo) return false;
+    if (filterTag !== "all" && !(Array.isArray(n.tags) && n.tags.includes(filterTag))) return false;
+    if (filterTopic !== "all" && n.topic !== filterTopic) return false;
     if (searchQ && !n.title.toLowerCase().includes(searchQ.toLowerCase()) && !n.content.toLowerCase().includes(searchQ.toLowerCase())) return false;
     return true;
   });
 
-  const startNew = (cat) => { setForm({ title: "", content: "", category: cat || "scratch", linked_issue_id: "", linked_file_id: "", linked_test_id: "", code_lang: "", meeting_tag: [], repo_name: "" }); setEditing("new"); };
-  const startEdit = (n) => { setForm({ title: n.title, content: n.content, category: n.category, linked_issue_id: n.linked_issue_id || "", linked_file_id: n.linked_file_id || "", linked_test_id: n.linked_test_id || "", code_lang: n.code_lang || "", meeting_tag: parseMtags(n.meeting_tag), repo_name: n.repo_name || "" }); setEditing(n.id); setViewing(null); };
+  const startNew = (cat) => { setForm({ title: "", content: "", category: cat || "scratch", linked_issue_id: "", linked_file_id: "", linked_test_id: "", code_lang: "", meeting_tag: [], repo_name: "", is_study: filterMode === "study", tags: [], topic: "" }); setEditing("new"); };
+  const startEdit = (n) => { setForm({ title: n.title, content: n.content, category: n.category, linked_issue_id: n.linked_issue_id || "", linked_file_id: n.linked_file_id || "", linked_test_id: n.linked_test_id || "", code_lang: n.code_lang || "", meeting_tag: parseMtags(n.meeting_tag), repo_name: n.repo_name || "", is_study: !!n.is_study, tags: Array.isArray(n.tags) ? n.tags : [], topic: n.topic || "" }); setEditing(n.id); setViewing(null); };
   const save = async () => {
     if (!form.content.trim() && !form.title.trim()) return;
     try {
@@ -1756,6 +2357,8 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
       setEditing(null); await reload();
     } catch (e) { console.error(e); }
   };
+  const addTag = () => { const t = newTag.trim(); if (t && !form.tags.includes(t)) { setForm({ ...form, tags: [...form.tags, t] }); setNewTag(""); } };
+  const removeTag = (t) => setForm({ ...form, tags: form.tags.filter(x => x !== t) });
   const del = async (id) => { try { await db.deleteNote(id); setViewing(null); await reload(); } catch (e) { console.error(e); } };
   const pin = async (id, pinned) => { try { await db.updateNote(id, { pinned: !pinned }); await reload(); } catch (e) { console.error(e); } };
 
@@ -1770,16 +2373,19 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setViewing(null)}>
         <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 640, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexShrink: 0, flexWrap: "wrap" }}>
+            {n.is_study && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "#1A0F2E", color: "#AFA9EC", border: "1px solid #534AB7" }}>★ Study</span>}
+            {n.is_study && n.topic && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "#1A0F2E", color: "#CECBF6" }}>📁 {n.topic}</span>}
             <Badge label={n.category} colors={cc} />
             {n.repo_name && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{n.repo_name}</span>}
+            {Array.isArray(n.tags) && n.tags.map(t => <span key={t} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#2D1F4E", color: "#AFA9EC" }}>#{t}</span>)}
             {n.title && <span style={{ fontSize: 15, fontWeight: 500, flex: 1 }}>{n.title}</span>}
             {!n.title && <span style={{ flex: 1 }} />}
             <button onClick={() => startEdit(n)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#B4B2A9", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>Edit</button>
             <button onClick={() => setViewing(null)} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <NoteContent content={n.content} />
+            {n.is_study ? <MarkdownView content={n.content} /> : <NoteContent content={n.content} />}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", marginTop: 12, paddingTop: 10, borderTop: "1px solid #2C2C2A", flexShrink: 0 }}>
             <span>{SHORT_DATE(n.updated_at)}</span>
@@ -1803,9 +2409,25 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
           <div style={{ display: "flex", gap: 6 }}><Btn onClick={() => setEditing(null)}>Cancel</Btn><Btn primary onClick={save}>Save</Btn></div>
         </div>
         <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-          <Select value={form.category} onChange={v => setForm({ ...form, category: v })} options={NOTE_CATS} />
-          {form.category !== "scratch" && <Input value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="Title" style={{ flex: 1 }} />}
+          {!form.is_study && <Select value={form.category} onChange={v => setForm({ ...form, category: v })} options={NOTE_CATS} />}
+          {form.is_study && <Input value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="Note title" style={{ flex: 1 }} />}
+          {!form.is_study && form.category !== "scratch" && <Input value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="Title" style={{ flex: 1 }} />}
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: form.is_study ? "#AFA9EC" : "#888780", cursor: "pointer", padding: "0 8px", border: "1px solid", borderColor: form.is_study ? "#534AB7" : "#2C2C2A", borderRadius: 4, background: form.is_study ? "#1A0F2E" : "transparent" }}>
+            <input type="checkbox" checked={form.is_study} onChange={e => setForm({ ...form, is_study: e.target.checked })} style={{ cursor: "pointer" }} />
+            ★ Study note
+          </label>
         </div>
+        {form.is_study && <div style={{ marginBottom: 10, padding: "8px 12px", background: "#1A0F2E", border: "1px solid #534AB7", borderRadius: 6 }}>
+          <div style={{ fontSize: 10, color: "#AFA9EC", marginBottom: 6 }}>TAGS · supports markdown + ```mermaid blocks</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+            {form.tags.map(t => (
+              <span key={t} style={{ fontSize: 10, padding: "2px 6px", background: "#2D1F4E", color: "#AFA9EC", borderRadius: 3, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                #{t} <button onClick={() => removeTag(t)} style={{ background: "none", border: "none", color: "#7F77DD", cursor: "pointer", padding: 0, fontSize: 10 }}>✕</button>
+              </span>
+            ))}
+            <input value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }} placeholder="+ add tag" style={{ padding: "2px 6px", borderRadius: 3, fontSize: 10, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: 100 }} />
+          </div>
+        </div>}
         <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 10, color: "#5F5E5A", marginBottom: 4 }}>Editor — use ```sql or ```python for code blocks</div>
@@ -1818,6 +2440,15 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
             </div>
           )}
         </div>
+        {form.is_study ? (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <div style={{ flex: 1, maxWidth: 280 }}>
+              <div style={{ fontSize: 11, color: "#AFA9EC", marginBottom: 4 }}>📚 Topic</div>
+              <input list="study-topic-list" value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} placeholder="e.g. Kafka, SQL, System Design" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #534AB7", outline: "none", width: "100%", boxSizing: "border-box" }} />
+              <datalist id="study-topic-list">{allTopics.map(f => <option key={f} value={f} />)}</datalist>
+            </div>
+          </div>
+        ) : (<>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to issue</div><Select value={form.linked_issue_id} onChange={v => setForm({ ...form, linked_issue_id: v })} options={[{ value: "", label: "None" }, ...issues.map(i => ({ value: i.id, label: i.title }))]} style={{ width: "100%" }} /></div>
           <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to test</div><Select value={form.linked_test_id} onChange={v => setForm({ ...form, linked_test_id: v })} options={[{ value: "", label: "None" }, ...(testCases || []).map(t => ({ value: t.id, label: t.title }))]} style={{ width: "100%" }} /></div>
@@ -1838,25 +2469,70 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
             </div>
           </div>}
         </div>
+        </>)}
       </div>
     );
   }
 
   // List view
+  if (openTopic) {
+    return <TopicStudyView topic={openTopic} projectId={projectId} notes={notes} onClose={() => setOpenTopic(null)} onStudyStart={onStudyStart} reload={reload} tmr={tmr} FMT={FMT} />;
+  }
   return (<div>
-    <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-      <Pill active={filterCat === "all"} onClick={() => setFilterCat("all")}>All</Pill>
-      {NOTE_CATS.map(c => <Pill key={c} active={filterCat === c} onClick={() => setFilterCat(c)}>{c}</Pill>)}
+    <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <Pill active={filterMode === "all"} onClick={() => setFilterMode("all")}>All</Pill>
+      <Pill active={filterMode === "regular"} onClick={() => setFilterMode("regular")}>☰ Regular</Pill>
+      <Pill active={filterMode === "study"} onClick={() => setFilterMode("study")}>★ Study</Pill>
       <span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} />
+      <Pill active={filterCat === "all"} onClick={() => setFilterCat("all")}>All cats</Pill>
+      {NOTE_CATS.map(c => <Pill key={c} active={filterCat === c} onClick={() => setFilterCat(c)}>{c}</Pill>)}
+      {filterMode === "study" && allTopics.length > 0 && <select value={filterTopic} onChange={e => setFilterTopic(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: filterTopic !== "all" ? "#1A0F2E" : "#1A1A18", color: filterTopic !== "all" ? "#AFA9EC" : "#888780", border: filterTopic !== "all" ? "1px solid #534AB7" : "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}>
+        <option value="all">All topics</option>
+        {allTopics.map(f => <option key={f} value={f}>📁 {f}</option>)}
+      </select>}
+      {allTags.length > 0 && <>
+        <span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} />
+        <select value={filterTag} onChange={e => setFilterTag(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: filterTag !== "all" ? "#2D1F4E" : "#1A1A18", color: filterTag !== "all" ? "#AFA9EC" : "#888780", border: filterTag !== "all" ? "1px solid #534AB7" : "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}>
+          <option value="all">All tags</option>
+          {allTags.map(t => <option key={t} value={t}>#{t}</option>)}
+        </select>
+      </>}
       {allNoteRepos.length > 0 && <select value={filterRepo} onChange={e => setFilterRepo(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: filterRepo !== "all" ? "#0A1929" : "#1A1A18", color: filterRepo !== "all" ? "#85B7EB" : "#888780", border: filterRepo !== "all" ? "1px solid #042C53" : "1px solid #2C2C2A", outline: "none", cursor: "pointer", fontFamily: "'SF Mono', monospace" }}>
         <option value="all">All repos</option>
         {allNoteRepos.map(r => <option key={r} value={r}>{r}</option>)}
       </select>}
-      <Input value={searchQ} onChange={setSearchQ} placeholder="Search notes..." style={{ width: 160, fontSize: 12 }} />
+      <Input value={searchQ} onChange={setSearchQ} placeholder="Search..." style={{ width: 140, fontSize: 12 }} />
       <span style={{ flex: 1 }} />
-      <Btn onClick={() => startNew("scratch")} small>+ Scratch</Btn>
+      <Btn onClick={() => { setForm({ title: "", content: "", category: "scratch", linked_issue_id: "", linked_file_id: "", linked_test_id: "", code_lang: "", meeting_tag: [], repo_name: "", is_study: true, tags: [], topic: "" }); setEditing("new"); }} small>+ ★ Study</Btn>
       <Btn primary onClick={() => startNew()}>+ Note</Btn>
     </div>
+    {filterMode === "study" && allTopics.length > 0 && (
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>📚 Topics</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
+          {allTopics.map(t => {
+            const st = topicStats[t];
+            const active = filterTopic === t;
+            return (
+              <div key={t} onClick={() => setFilterTopic(active ? "all" : t)} style={{ background: active ? "#1A0F2E" : "#161615", border: active ? "1px solid #534AB7" : "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", cursor: "pointer", transition: "all 0.15s" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span onClick={e => { e.stopPropagation(); setOpenTopic(t); }} style={{ fontSize: 13, fontWeight: 500, color: "#CECBF6", cursor: "pointer", textDecoration: "underline", textDecorationColor: "#534AB7" }}>{t}</span>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={e => { e.stopPropagation(); setOpenTopic(t); }} title="Open study view" style={{ background: "#1A0F2E", border: "1px solid #534AB7", color: "#AFA9EC", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>Open</button>
+                    <button onClick={e => { e.stopPropagation(); onStudyStart && onStudyStart(t); }} title="Start study session" style={{ background: "#26215C", border: "none", color: "#CECBF6", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>▶</button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 10, fontSize: 10, color: "#888780" }}>
+                  <span>{st.notes} note{st.notes !== 1 ? "s" : ""}</span>
+                  <span style={{ color: "#5DCAA5" }}>{st.seconds >= 60 ? FMTHR(Math.round(st.seconds / 60)) : "—"}</span>
+                  {st.lastStudied && <span>· {SHORT_DATE(st.lastStudied)}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    )}
     {filtered.length === 0 && <EmptyState icon="☰" title="No notes yet" sub="Capture decisions, investigations, and scratch thoughts" action="New note" onAction={() => startNew()} />}
     {filtered.map(n => {
       const cc = NOTE_CAT_COLORS[n.category] || NOTE_CAT_COLORS.scratch;
@@ -1870,13 +2546,16 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                {n.is_study && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#1A0F2E", color: "#AFA9EC", border: "1px solid #534AB7" }}>★ Study</span>}
+                {n.is_study && n.topic && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#1A0F2E", color: "#CECBF6" }}>📁 {n.topic}</span>}
                 <Badge label={n.category} colors={cc} small />
                 {n.repo_name && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{n.repo_name}</span>}
                 {hasCode && <Badge label={blocks.find(b => b.type === "code")?.lang?.toUpperCase() || "CODE"} colors={{ bg: "#111110", text: "#888780", border: "#2C2C2A" }} small />}
+                {Array.isArray(n.tags) && n.tags.slice(0, 3).map(t => <span key={t} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#2D1F4E", color: "#AFA9EC" }}>#{t}</span>)}
                 {n.title && <span style={{ fontSize: 13, fontWeight: 500 }}>{n.title}</span>}
                 {n.pinned && <span style={{ fontSize: 10, color: "#FAC775" }}>pinned</span>}
               </div>
-              <NoteContent content={n.content} maxHeight={100} />
+              {n.is_study ? <div style={{ fontSize: 12, color: "#888780", lineHeight: 1.5, maxHeight: 80, overflow: "hidden", position: "relative" }}>{n.content.split("\n").slice(0, 4).join(" ").substring(0, 200)}{n.content.length > 200 ? "..." : ""}</div> : <NoteContent content={n.content} maxHeight={100} />}
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", marginTop: 6 }}>
                 <span>{SHORT_DATE(n.updated_at)}</span>
                 {linkedIssue && <><span>·</span><span style={{ color: "#F09595" }}>◉ {linkedIssue.title}</span></>}
@@ -2618,14 +3297,27 @@ function PeopleView({ people, meetings, projectId, reload }) {
 // ============================================
 
 const TUTORIAL_STEPS = [
-  { icon: "⊞", title: "Welcome to QTrack", sub: "Your personal productivity command center", desc: "Track issues, manage tests, stay focused with Pomodoro timers, take meeting notes, and organize your work — all in one place. Let's take a quick tour." },
-  { icon: "◎", title: "Focus timer", sub: "Pomodoro sessions with smart tracking", desc: "Start a 25-minute focus session on any task. Pause with reasons — 'Waiting' for code to run, 'Interrupted' for calls. Each type is tracked separately so you see where your time really goes. Partial sessions count too." },
-  { icon: "⚑", title: "Issues & tests", sub: "Track bugs, to-dos, and test cases", desc: "Create issues with priority, link them to files and repos. Build test cases with steps. Link issues to tests bidirectionally. Tag items with meetings so they auto-populate your meeting prep." },
-  { icon: "▦", title: "Calendar & meetings", sub: "Schedule, prepare, and take notes", desc: "Add meetings (one-time or recurring). Click 'Prep' to see your auto-populated agenda from tagged items. Click 'Join' for a full-screen meeting mode with notes. Everything syncs to the Notes tab." },
-  { icon: "≡", title: "Notes", sub: "Code snippets, decisions, investigations", desc: "Write notes with mixed text and code blocks. Use ```sql or ```python fences for syntax highlighting. Link notes to issues, tests, files, repos, and meetings. Filter by category or repo." },
-  { icon: "⊟", title: "Board", sub: "Kanban for visual planning", desc: "Create columns, add color-coded sticky cards, move them between columns. Convert any card into a real issue with one click." },
-  { icon: "♪", title: "Music dock", sub: "Spotify and YouTube while you work", desc: "Paste a Spotify or YouTube URL in the bottom bar. Music persists across tab switches. YouTube gets a full custom player with play/pause, seek, and volume. Your playlist history syncs across devices." },
+  { icon: "⊞", title: "Welcome to QTrack", sub: "Your focus & learning command center", desc: "Track tasks, run Pomodoro sessions, take notes, and study — all in one place. This tour shows you how to do each thing. Takes a minute." },
+  { icon: "⚑", title: "Create an issue or task", sub: "Bugs, features, or simple to-dos", how: ["Go to the Issues tab", "Click + Issue (top right)", "Pick a file, or choose 'No file (general task)' for a plain to-do", "Add a title, priority, and estimated pomodoros", "Save — it appears in your list"] },
+  { icon: "◎", title: "Start a focus timer", sub: "25-minute Pomodoro sessions", how: ["On any issue, click ▶ Focus (or + Queue to line up several)", "The 25-min timer starts — the ring counts down", "Pause with a reason: 'Waiting' (code running) or 'Interrupted' (a call)", "Switch tasks anytime — the clock keeps ticking", "Each session is tracked toward your daily goal bar"] },
+  { icon: "≡", title: "Take a note", sub: "Capture decisions and code", how: ["Open the Notes tab", "Click + Note", "Write freely — use ```sql or ```python fences for code blocks", "Optionally link it to an issue, test, or file", "It auto-saves and shows in your notes list"] },
+  { icon: "★", title: "Make a study note", sub: "Learn & revise topics", how: ["In Notes, switch to the ★ Study filter", "Click + ★ Study", "Give it a Topic (e.g. 'Kafka', 'SQL') and optional #tags", "Write with markdown — even ```mermaid diagrams render", "Click Open on a topic to read PDFs + write notes side by side"] },
+  { icon: "📚", title: "Study with the timer", sub: "Read, write, track time", how: ["In ★ Study, click Open on a topic", "Upload a PDF — it shows on the left", "Click ▶ Start study timer", "Read on the left, write notes on the right", "Your study time accumulates per topic"] },
+  { icon: "📊", title: "Track your progress", sub: "Dashboard & weekly chart", desc: "The Dashboard shows today's focus time, meetings, open tasks, and a weekly chart of focus vs meetings. Use ⚙ Customize to show/hide sections per project. You're all set — start with your first issue!" },
 ];
+
+function HowList({ steps }) {
+  return (
+    <div style={{ textAlign: "left", maxWidth: 360, margin: "0 auto" }}>
+      {steps.map((s, i) => (
+        <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 8 }}>
+          <span style={{ flexShrink: 0, width: 18, height: 18, borderRadius: "50%", background: "#26215C", color: "#CECBF6", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 1 }}>{i + 1}</span>
+          <span style={{ fontSize: 13, color: "#B4B2A9", lineHeight: 1.5 }}>{s}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Tutorial({ onClose }) {
   const [step, setStep] = useState(0);
@@ -2642,8 +3334,8 @@ function Tutorial({ onClose }) {
         </div>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ fontSize: 20, fontWeight: 500, color: "#F1EFE8", marginBottom: 4 }}>{s.title}</div>
-          <div style={{ fontSize: 13, color: "#7F77DD", marginBottom: 12 }}>{s.sub}</div>
-          <div style={{ fontSize: 13, color: "#888780", lineHeight: 1.7, maxWidth: 380, margin: "0 auto" }}>{s.desc}</div>
+          <div style={{ fontSize: 13, color: "#7F77DD", marginBottom: 16 }}>{s.sub}</div>
+          {s.how ? <HowList steps={s.how} /> : <div style={{ fontSize: 13, color: "#888780", lineHeight: 1.7, maxWidth: 380, margin: "0 auto" }}>{s.desc}</div>}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12 }}>Skip tour</button>

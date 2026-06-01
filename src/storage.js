@@ -280,7 +280,7 @@ export async function unlinkIssueFromTest(issueId, testCaseId) {
 // Focus Sessions (Pomodoro)
 // ============================================
 
-export async function saveFocusSession(projectId, issueId, testCaseId, sessionType, durationSeconds, subtype) {
+export async function saveFocusSession(projectId, issueId, testCaseId, sessionType, durationSeconds, subtype, studyTopic) {
   const user_id = await uid()
   const { data, error } = await supabase
     .from('focus_sessions')
@@ -292,6 +292,7 @@ export async function saveFocusSession(projectId, issueId, testCaseId, sessionTy
       session_type: sessionType,
       duration_seconds: durationSeconds,
       subtype: subtype || 'focus',
+      study_topic: studyTopic || '',
     })
     .select()
     .single()
@@ -376,6 +377,7 @@ export async function saveTimerState(state) {
       started_at: state.startedAt || null,
       task_type: state.tType || null,
       task_id: state.tId || null,
+      study_topic: state.studyTopic || '',
       updated_at: new Date().toISOString()
     }, { onConflict: 'user_id' })
     .select()
@@ -501,11 +503,11 @@ export async function getNotes(projectId) {
   return data || []
 }
 
-export async function createNote(projectId, { title, content, category, linked_issue_id, linked_file_id, linked_test_id, code_lang, meeting_tag, repo_name }) {
+export async function createNote(projectId, { title, content, category, linked_issue_id, linked_file_id, linked_test_id, code_lang, meeting_tag, repo_name, is_study, tags, topic }) {
   const user_id = await uid()
   const { data, error } = await supabase
     .from('notes')
-    .insert({ user_id, project_id: projectId, title: title || '', content: content || '', category: category || 'scratch', linked_issue_id: linked_issue_id || null, linked_file_id: linked_file_id || null, linked_test_id: linked_test_id || null, code_lang: code_lang || '', meeting_tag: meeting_tag || null, repo_name: repo_name || '' })
+    .insert({ user_id, project_id: projectId, title: title || '', content: content || '', category: category || 'scratch', linked_issue_id: linked_issue_id || null, linked_file_id: linked_file_id || null, linked_test_id: linked_test_id || null, code_lang: code_lang || '', meeting_tag: meeting_tag || null, repo_name: repo_name || '', is_study: !!is_study, tags: tags || [], topic: topic || '' })
     .select().single()
   if (error) throw error
   return data
@@ -527,6 +529,80 @@ export async function getNote(id) {
     .single()
   if (error) throw error
   return data
+}
+
+// ===== Study docs (PDFs) =====
+export async function uploadStudyDoc(projectId, topic, file) {
+  const user_id = await uid()
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const path = `${user_id}/${Date.now()}_${safeName}`
+  const { error: upErr } = await supabase.storage.from('study-docs').upload(path, file, { contentType: file.type || 'application/pdf' })
+  if (upErr) throw upErr
+  const { data, error } = await supabase
+    .from('study_docs')
+    .insert({ user_id, project_id: projectId || null, topic: topic || '', name: file.name, storage_path: path, size_bytes: file.size || 0 })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function getStudyDocs(projectId, topic) {
+  let q = supabase.from('study_docs').select('*').order('created_at', { ascending: false })
+  if (projectId) q = q.eq('project_id', projectId)
+  if (topic) q = q.eq('topic', topic)
+  const { data, error } = await q
+  if (error) throw error
+  return data || []
+}
+
+export async function getStudyDocUrl(storagePath) {
+  const { data, error } = await supabase.storage.from('study-docs').createSignedUrl(storagePath, 3600)
+  if (error) throw error
+  return data.signedUrl
+}
+
+export async function deleteStudyDoc(id, storagePath) {
+  await supabase.storage.from('study-docs').remove([storagePath])
+  const { error } = await supabase.from('study_docs').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ===== PDF highlights =====
+export async function getHighlights(docId) {
+  const { data, error } = await supabase.from('study_highlights').select('*').eq('doc_id', docId).order('page', { ascending: true })
+  if (error) throw error
+  return data || []
+}
+
+export async function createHighlight(docId, topic, page, text, rects, color, noteId) {
+  const user_id = await uid()
+  const { data, error } = await supabase
+    .from('study_highlights')
+    .insert({ user_id, doc_id: docId, topic: topic || '', page, text: text || '', rects: rects || [], color: color || 'amber', note_id: noteId || null })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+export async function updateHighlight(id, fields) {
+  const { error } = await supabase.from('study_highlights').update(fields).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteHighlight(id) {
+  const { error } = await supabase.from('study_highlights').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function getHighlightByNote(noteId) {
+  const { data, error } = await supabase.from('study_highlights').select('*').eq('note_id', noteId).limit(1).maybeSingle()
+  if (error) return null
+  return data
+}
+
+export async function deleteHighlightsByNote(noteId) {
+  const { error } = await supabase.from('study_highlights').delete().eq('note_id', noteId)
+  if (error) throw error
 }
 
 export async function deleteNote(id) {
@@ -654,6 +730,15 @@ export async function getUserProfile() {
     .single()
   if (error) return { tier: 'free' }
   return data || { tier: 'free' }
+}
+
+export async function saveUserSettings(settings) {
+  const user_id = await uid()
+  const { error } = await supabase
+    .from('user_profiles')
+    .update({ settings })
+    .eq('id', user_id)
+  if (error) throw error
 }
 
 export async function getTaskScratch(type, id) {
