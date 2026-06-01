@@ -10,10 +10,62 @@ const PRIORITIES = ["critical", "high", "medium", "low"];
 const ISSUE_STATUSES = ["open", "in_progress", "fixed", "verified", "wont_fix"];
 const ISSUE_TYPES = ["bug", "todo"];
 const DUR = { work: 25 * 60, short_break: 5 * 60, long_break: 15 * 60 };
+// const DUR = { work: 5, short_break: 5 * 60, long_break: 15 * 60 };
 const PC = { critical: { bg: "#2D0A0A", text: "#F09595", border: "#501313" }, high: { bg: "#2A1209", text: "#F0997B", border: "#4A1B0C" }, medium: { bg: "#261A04", text: "#FAC775", border: "#412402" }, low: { bg: "#0E1A08", text: "#C0DD97", border: "#173404" } };
 const parseMtags = (v) => { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return v ? [v] : []; } };
 const TC = { not_run: { bg: "#1A1A18", text: "#B4B2A9", border: "#2C2C2A" }, pass: { bg: "#0E1A08", text: "#97C459", border: "#173404" }, fail: { bg: "#2D0A0A", text: "#F09595", border: "#501313" }, blocked: { bg: "#261A04", text: "#FAC775", border: "#412402" } };
 const SC = { work: "#E24B4A", short_break: "#5DCAA5", long_break: "#378ADD" };
+
+const BREAK_TIPS = {
+  office: {
+    short: [
+      "Walk to get water — take the long way back",
+      "Look out a window or across the room to rest your eyes",
+      "Stand up and just stand for a minute",
+      "Roll your shoulders and stretch your neck",
+      "Refill your water bottle, even if it's not empty",
+      "Box breathing: in 4, hold 4, out 4, hold 4 — 3 rounds",
+      "Take a short bathroom trip and walk a lap on the way",
+      "Grab a snack from the kitchen, eat it away from the screen",
+      "Reach under the desk and stretch your back",
+      "Step into a stairwell or quiet spot for a minute",
+    ],
+    long: [
+      "Walk outside the building for a few minutes — no phone",
+      "Take the stairs up and down a flight or two",
+      "Find a colleague and chat about something not-work",
+      "Eat something properly, away from your desk",
+      "Walk a full lap of the floor, slowly",
+      "Step outside for fresh air and just stand there",
+      "Do a few stretches or a quick walk to shake off the stiffness",
+      "Sit somewhere different and let your mind wander",
+    ],
+  },
+  home: {
+    short: [
+      "Step outside or onto the balcony for fresh air",
+      "Lie on the floor for two minutes",
+      "Pet your dog or cat",
+      "Do a few push-ups or squats",
+      "Make a proper tea or coffee and wait for it",
+      "Splash cold water on your face",
+      "Water a plant or look at something green",
+      "Put on one song and do nothing but listen",
+      "Walk into another room for a change of scene",
+      "Box breathing: in 4, hold 4, out 4, hold 4 — 3 rounds",
+    ],
+    long: [
+      "Walk around the block — no phone",
+      "Cook or eat something properly",
+      "Lie down with your eyes closed for a bit",
+      "Do a quick stretch or yoga set",
+      "Step into the garden or outside",
+      "Call a friend about something not-work",
+      "Make a real meal and eat away from the desk",
+      "Take a short walk and let your mind wander",
+    ],
+  },
+};
 
 const Badge = ({ label, colors, small }) => (<span style={{ display: "inline-block", fontSize: small ? 10 : 11, padding: small ? "1px 6px" : "2px 8px", borderRadius: 4, fontWeight: 500, background: colors.bg, color: colors.text, border: `1px solid ${colors.border}`, whiteSpace: "nowrap" }}>{label.replace(/_/g, " ")}</span>);
 const Pill = ({ children, active, onClick }) => (<button onClick={onClick} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: active ? 500 : 400, background: active ? "#2C2C2A" : "transparent", color: active ? "#F1EFE8" : "#888780", border: active ? "1px solid #444441" : "1px solid transparent", cursor: "pointer" }}>{children}</button>);
@@ -355,6 +407,9 @@ export default function App({ session }) {
 
 function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions, todaySessions, logManual, allNotes, markDone }) {
   const [picking, setPicking] = useState(false);
+  const [breakTipBump, setBreakTipBump] = useState(0);
+  const [breakLoc, setBreakLoc] = useState(() => { try { return localStorage.getItem("qtrack_break_loc") || "office"; } catch { return "office"; } });
+  const setBreakLocPersist = (loc) => { setBreakLoc(loc); try { localStorage.setItem("qtrack_break_loc", loc); } catch {} };
   // Goal: sum of estimated_pomodoros across tasks due today, overdue, or without a due date
   const todayStr = new Date().toISOString().split("T")[0];
   const isRelevantForToday = (t) => !t.due_date || t.due_date <= todayStr;
@@ -580,6 +635,22 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           <div style={{ display: "flex", gap: 5, marginTop: 8 }}>{[0,1,2,3].map(i => (<div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: i < tmr.done ? color : "#2C2C2A" }} />))}</div>
         </div>
       </div>
+      {tmr.type !== "work" && tmr.st !== "idle" && (() => {
+        const tips = BREAK_TIPS[breakLoc][tmr.type === "long_break" ? "long" : "short"];
+        const tip = tips[(breakDone + breakTipBump) % tips.length];
+        return (
+          <div style={{ marginTop: 18, maxWidth: 300, padding: "12px 16px", background: "#0E1A14", border: `1px solid ${color}44`, borderRadius: 10, textAlign: "center" }}>
+            <div style={{ display: "flex", justifyContent: "center", gap: 4, marginBottom: 10 }}>
+              {["office", "home"].map(loc => (
+                <button key={loc} onClick={() => setBreakLocPersist(loc)} style={{ background: breakLoc === loc ? `${color}22` : "none", border: `1px solid ${breakLoc === loc ? color + "66" : "#2C2C2A"}`, color: breakLoc === loc ? color : "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "3px 10px", borderRadius: 5 }}>{loc === "office" ? "🏢 Office" : "🏠 Home"}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color, marginBottom: 6 }}>Break idea</div>
+            <div style={{ fontSize: 13, color: "#B4B2A9", lineHeight: 1.5 }}>{tip}</div>
+            <button onClick={() => setBreakTipBump(b => b + 1)} style={{ marginTop: 8, background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 10 }}>↻ another</button>
+          </div>
+        );
+      })()}
     </div>
   );
 
