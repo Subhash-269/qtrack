@@ -143,6 +143,10 @@ export default function Auth() {
           Continue with Google
         </button>
 
+        <a href="/demo" style={{ ...S.oauthBtn, textDecoration: 'none', boxSizing: 'border-box', color: '#AFA9EC', borderColor: '#26215C' }}>
+          Try the demo — no sign-up
+        </a>
+
         <p style={{ textAlign: 'center', fontSize: 13, color: '#888780', marginTop: 16 }}>
           {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
           <button

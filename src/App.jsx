@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from "react";
-import { supabase } from "./supabaseClient";
+import { supabase, isDemo } from "./supabaseClient";
 import * as db from "./storage";
 
 const SHORT_DATE = (d) => { if (!d) return "—"; const dt = new Date(d); const diff = Date.now() - dt.getTime(); if (diff < 60000) return "just now"; if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`; if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`; return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
@@ -81,8 +81,6 @@ function Ring({ size, stroke, timeLeft, totalTime, color }) {
   return (<svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#2C2C2A" strokeWidth={stroke} /><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={c} strokeDashoffset={c * (1 - p)} strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s linear" }} /></svg>);
 }
 
-const DEMO_EMAIL = "demo@qtrack.app";
-
 export default function App({ session }) {
   const [projects, setProjects] = useState([]); const [files, setFiles] = useState([]); const [issues, setIssues] = useState([]); const [testCases, setTestCases] = useState([]); const [links, setLinks] = useState([]); const [activeProjectId, setActiveProjectId] = useState(null);
   const [view, setView] = useState("dashboard"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null); const [sb, setSb] = useState(() => { try { return localStorage.getItem("qtrack_sb") !== "0"; } catch { return true; } });
@@ -107,10 +105,8 @@ export default function App({ session }) {
   const [newsCache, setNewsCache] = useState([]);
   const [userTier, setUserTier] = useState("free");
 
-  // Show tutorial: always for demo user, once for everyone else
+  // Show tutorial once per browser
   useEffect(() => {
-    const email = session?.user?.email;
-    if (email === DEMO_EMAIL) { setShowTutorial(true); return; }
     try { if (!localStorage.getItem("qtrack_tutorial_seen")) setShowTutorial(true); } catch {}
   }, [session?.user?.email]);
 
@@ -342,7 +338,7 @@ export default function App({ session }) {
         </div>}
         <div style={{ padding: sb ? "8px 10px" : "8px 4px", borderTop: "1px solid #2C2C2A" }}>
           {sb && <button onClick={() => setShowTutorial(true)} style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: "left", marginBottom: 2 }}>? Replay tutorial</button>}
-          <button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: sb ? "left" : "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sb ? `Sign out (${session.user.email})` : "↗"}</button></div>
+          <button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: sb ? "left" : "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sb ? (isDemo ? "Exit demo · sign up" : `Sign out (${session.user.email})`) : "↗"}</button></div>
       </div>
 
       {/* Main */}

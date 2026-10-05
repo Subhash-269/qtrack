@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 .env
+
+# Browser automation output
+.playwright-mcp
