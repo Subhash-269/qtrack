@@ -38,6 +38,28 @@ export async function deleteProject(id) {
   if (error) throw error
 }
 
+export async function setProjectColor(id, color) {
+  const { error } = await supabase.from('projects').update({ color }).eq('id', id)
+  if (error) throw error
+}
+
+// Open (not done) tasks per project, for the project switcher
+export async function getOpenTaskCounts() {
+  const user_id = await uid()
+  const { data, error } = await supabase.from('issues').select('id, project_id, status').eq('user_id', user_id)
+  if (error) throw error
+  const out = {}
+  for (const r of data || []) if (!['fixed', 'verified', 'wont_fix'].includes(r.status)) out[r.project_id] = (out[r.project_id] || 0) + 1
+  return out
+}
+
+// What deleting a project would remove, for the confirm dialog
+export async function getProjectCounts(projectId) {
+  const count = async (t) => { const { data, error } = await supabase.from(t).select('id').eq('project_id', projectId); if (error) throw error; return (data || []).length }
+  const [tasks, tests, notes, meetings, sessions] = await Promise.all([count('issues'), count('test_cases'), count('notes'), count('meetings'), count('focus_sessions')])
+  return { tasks, tests, notes, meetings, sessions }
+}
+
 // Archive (archived = true) or restore a project. Its data stays; it just leaves the active list.
 export async function setProjectArchived(id, archived) {
   const archived_at = archived ? new Date().toISOString() : null

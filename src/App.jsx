@@ -3,6 +3,7 @@ import { supabase, isDemo } from "./supabaseClient";
 import * as db from "./storage";
 import TodayView from "./views/TodayView";
 import AssistantView from "./views/AssistantView";
+import Sidebar, { ProjectList, DeleteProjectDialog } from "./components/Sidebar";
 
 const SHORT_DATE = (d) => { if (!d) return "—"; const dt = new Date(d); const diff = Date.now() - dt.getTime(); if (diff < 60000) return "just now"; if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`; if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`; return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
 const FMT = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -83,8 +84,6 @@ function Ring({ size, stroke, timeLeft, totalTime, color }) {
   return (<svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#2C2C2A" strokeWidth={stroke} /><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={c} strokeDashoffset={c * (1 - p)} strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s linear" }} /></svg>);
 }
 
-const projIconBtn = { background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11, padding: "4px", opacity: 0.5 };
-
 // Tabs that can't be hidden from the sidebar
 const ALWAYS_TABS = ["today", "dashboard"];
 
@@ -102,7 +101,6 @@ export default function App({ session }) {
   const [projects, setProjects] = useState([]); const [files, setFiles] = useState([]); const [issues, setIssues] = useState([]); const [testCases, setTestCases] = useState([]); const [links, setLinks] = useState([]); const [activeProjectId, setActiveProjectId] = useState(null);
   const [view, setView] = useState("today"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null); const [sb, setSb] = useState(() => { try { return localStorage.getItem("qtrack_sb") !== "0"; } catch { return true; } });
   const [hiddenTabsMap, setHiddenTabsMap] = useState(() => { try { return JSON.parse(localStorage.getItem("qtrack_hidden_tabs_v2") || "{}"); } catch { return {}; } });
-  const [showNavSettings, setShowNavSettings] = useState(false);
   const hiddenTabs = hiddenTabsMap[activeProjectId] || [];
   const toggleTab = (id) => {
     const cur = hiddenTabsMap[activeProjectId] || [];
@@ -114,7 +112,7 @@ export default function App({ session }) {
     db.saveUserSettings({ hiddenTabs: updated, dashConfig }).catch(() => {});
   };
   const [filterType, setFilterType] = useState("all"); const [filterFile, setFilterFile] = useState("all"); const [filterPriority, setFilterPriority] = useState("all"); const [searchQ, setSearchQ] = useState(""); const [expandedTC, setExpandedTC] = useState(null);
-  const [loading, setLoading] = useState(true); const [editingProjectId, setEditingProjectId] = useState(null); const [editingProjectName, setEditingProjectName] = useState(""); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
+  const [loading, setLoading] = useState(true); const [todaySessions, setTodaySessions] = useState([]); const [allSessions, setAllSessions] = useState([]);
   const [tmr, setTmr] = useState({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null });
   const [notes, setNotes] = useState([]); const [columns, setColumns] = useState([]); const [cards, setCards] = useState([]); const [viewingNoteId, setViewingNoteId] = useState(null); const [queue, setQueue] = useState([]); const [meetings, setMeetings] = useState([]); const [meetingFocus, setMeetingFocus] = useState(null);
   const [showTutorial, setShowTutorial] = useState(false);
@@ -122,7 +120,7 @@ export default function App({ session }) {
   const [newsCache, setNewsCache] = useState([]);
   const [userTier, setUserTier] = useState("free");
   const mobile = useIsMobile(); const [moreOpen, setMoreOpen] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  const [deletingProject, setDeletingProject] = useState(null);
 
   // Show tutorial once per browser
   useEffect(() => {
@@ -309,9 +307,8 @@ export default function App({ session }) {
   ]).filter(n => n.id !== "news" || isPremium);
 
   const addProject = async (n, type = "project") => { const p = await db.createProject(n, type); setProjects([...projects, p]); setActiveProjectId(p.id); setModal(null); };
-  const renameProject = async (id, n) => { if (!n.trim()) return; await db.renameProject(id, n.trim()); setProjects(projects.map(p => p.id === id ? { ...p, name: n.trim() } : p)); setEditingProjectId(null); };
+  const renameProject = async (id, n) => { if (!n.trim()) return; await db.renameProject(id, n.trim()); setProjects(projects.map(p => p.id === id ? { ...p, name: n.trim() } : p)); };
   const liveProjects = projects.filter(p => !p.archived_at);
-  const archivedProjects = projects.filter(p => p.archived_at);
   const archiveProject = async (id, archive) => {
     if (archive && liveProjects.length <= 1) { alert("You need at least one active project. Create another before archiving this one."); return; }
     try {
@@ -321,7 +318,19 @@ export default function App({ session }) {
       if (!archive) setActiveProjectId(id);
     } catch (e) { alert("Couldn't " + (archive ? "archive" : "restore") + " the project: " + (e.message || e)); }
   };
-  const delProject = async (id) => { const isLive = liveProjects.some(p => p.id === id); if (projects.length <= 1 || (isLive && liveProjects.length <= 1)) return; if (!confirm("Delete project and all data?")) return; await db.deleteProject(id); const r = projects.filter(p => p.id !== id); setProjects(r); if (activeProjectId === id) setActiveProjectId((r.find(p => !p.archived_at) || r[0])?.id); };
+  const recolorProject = async (id, color) => {
+    try { await db.setProjectColor(id, color); setProjects(ps => ps.map(p => p.id === id ? { ...p, color } : p)); }
+    catch (e) { alert("Couldn't change the color: " + (e.message || e)); }
+  };
+  // Called from the delete dialog, after the user typed the project name
+  const confirmDeleteProject = async (id) => {
+    try {
+      await db.deleteProject(id);
+      const r = projects.filter(p => p.id !== id); setProjects(r);
+      if (activeProjectId === id) setActiveProjectId((r.find(p => !p.archived_at) || r[0])?.id);
+    } catch (e) { alert("Couldn't delete the project: " + (e.message || e)); }
+    setDeletingProject(null);
+  };
   const addFile = async (n, c) => { await db.createFile(activeProjectId, n, c); await reload(); setModal(null); };
   const addIssue = async (fid, t, ty, pr, d, ep, dd, rn, bn, mt) => { await db.createIssue(activeProjectId, fid, t, ty, pr, d, ep, dd, rn, bn, mt); await reload(); setModal(null); };
   const addTest = async (fid, t, pre, st, ep, dd, rn, bn, mt) => { await db.createTestCase(activeProjectId, fid, t, pre, st, ep, dd, rn, bn, mt); await reload(); setModal(null); };
@@ -350,47 +359,17 @@ export default function App({ session }) {
   return (
     <div className={mobile ? "qt-mobile" : undefined} style={{ minHeight: "100vh", background: "#111110", color: "#F1EFE8", fontFamily: "'DM Sans', -apple-system, sans-serif", fontSize: 13 }}>
       {mobile && <style>{MOBILE_CSS}</style>}
-      {/* Sidebar — fixed */}
-      {!mobile && <div style={{ width: sb ? 220 : 54, borderRight: "1px solid #2C2C2A", display: "flex", flexDirection: "column", flexShrink: 0, background: "#161615", transition: "width 0.2s ease", position: "fixed", top: 0, left: 0, height: "100vh", overflowY: "auto", zIndex: 50 }}>
-        <div style={{ padding: sb ? "14px 18px" : "14px 0", borderBottom: "1px solid #2C2C2A", display: "flex", alignItems: "center", justifyContent: sb ? "space-between" : "center" }}>
-          {sb ? (<div style={{ fontSize: 15, fontWeight: 500, letterSpacing: -0.5, display: "flex", alignItems: "center", gap: 8 }}><span style={{ background: "#D3D1C7", color: "#111110", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>QTrack</div>) : (<span style={{ background: "#D3D1C7", color: "#111110", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>)}
-          <button onClick={() => { const v = !sb; setSb(v); try { localStorage.setItem("qtrack_sb", v ? "1" : "0"); } catch {} }} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px", display: sb ? "block" : "none" }}>{sb ? "◂" : "▸"}</button>
-        </div>
-        <div style={{ padding: sb ? "12px 10px" : "12px 4px", flex: 1 }}>
-          {nav.filter(n => ALWAYS_TABS.includes(n.id) || !hiddenTabs.includes(n.id)).map(n => (<button key={n.id} onClick={() => { setView(n.id); setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all"); if (!sb) setSb(false); }} title={sb ? undefined : n.l} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: sb ? "8px 10px" : "8px 0", borderRadius: 6, border: "none", background: view === n.id ? "#2C2C2A" : "transparent", color: view === n.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 13, textAlign: "left", marginBottom: 2, justifyContent: sb ? "flex-start" : "center" }}><span style={{ fontSize: 14, width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span>{sb && <span style={{ flex: 1 }}>{n.l}</span>}{sb && n.cnt ? <span style={{ fontSize: 10, background: n.id === "focus" ? "#2D0A0A" : "#2C2C2A", padding: "1px 6px", borderRadius: 4, color: n.id === "focus" ? "#F09595" : "#888780" }}>{n.cnt}</span> : null}</button>))}
-          {/* Settings gear */}
-          <div style={{ marginTop: "auto", borderTop: "1px solid #1A1A18", paddingTop: 6, position: "relative" }}>
-            <button onClick={() => setShowNavSettings(!showNavSettings)} title="Show/hide tabs" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: sb ? "8px 10px" : "8px 0", borderRadius: 6, border: "none", background: showNavSettings ? "#2C2C2A" : "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 13, justifyContent: sb ? "flex-start" : "center" }}><span style={{ fontSize: 14, width: 20, textAlign: "center" }}>⚙</span>{sb && <span>Settings</span>}</button>
-            {showNavSettings && (
-              <div style={{ position: "absolute", bottom: 40, left: sb ? 10 : 54, background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", width: 180, zIndex: 60, boxShadow: "0 4px 12px rgba(0,0,0,0.4)" }}>
-                <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Show in sidebar</div>
-                <button onClick={() => { setView("assistant"); setShowNavSettings(false); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "6px 0 10px", marginBottom: 8, border: "none", borderBottom: "1px solid #2C2C2A", background: "transparent", color: "#D3D1C7", cursor: "pointer", fontSize: 12, textAlign: "left" }}><span style={{ opacity: 0.7 }}>✦</span><span style={{ flex: 1 }}>Assistant access</span><span style={{ color: "#5F5E5A" }}>›</span></button>
-                {nav.filter(n => !ALWAYS_TABS.includes(n.id)).map(n => (
-                  <label key={n.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12, color: hiddenTabs.includes(n.id) ? "#444441" : "#D3D1C7", cursor: "pointer" }}>
-                    <input type="checkbox" checked={!hiddenTabs.includes(n.id)} onChange={() => toggleTab(n.id)} style={{ cursor: "pointer" }} />
-                    <span style={{ opacity: 0.7 }}>{n.ic}</span>
-                    <span>{n.l}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-          {!sb && <button onClick={() => setSb(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "100%", padding: "8px 0", borderRadius: 6, border: "none", background: "transparent", color: "#444441", cursor: "pointer", fontSize: 14, marginTop: 4 }}>▸</button>}
-        </div>
-        {tmr.st !== "idle" && view !== "focus" && (<div onClick={() => setView("focus")} style={{ margin: sb ? "0 10px 10px" : "0 4px 10px", padding: sb ? "10px 12px" : "8px 4px", background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, cursor: "pointer", textAlign: sb ? "left" : "center" }}>{sb ? (<><div style={{ display: "flex", alignItems: "center", gap: 8 }}><Ring size={32} stroke={3} timeLeft={tmr.left} totalTime={tmr.total} color={SC[tmr.type]} /><div><div style={{ fontSize: 14, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: SC[tmr.type] }}>{FMT(tmr.left)}</div><div style={{ fontSize: 10, color: "#5F5E5A" }}>{tmr.type === "work" ? "Focusing" : "Break"}{tmr.st === "paused" ? " (paused)" : ""}</div></div></div>{taskName && <div style={{ fontSize: 10, color: "#888780", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{taskName}</div>}</>) : (<><Ring size={28} stroke={3} timeLeft={tmr.left} totalTime={tmr.total} color={SC[tmr.type]} /><div style={{ fontSize: 10, fontFamily: "'SF Mono', monospace", color: SC[tmr.type], marginTop: 4 }}>{FMT(tmr.left)}</div></>)}</div>)}
-        {sb && <div style={{ padding: "12px 10px", borderTop: "1px solid #2C2C2A" }}>
-          <div style={{ fontSize: 10, color: "#5F5E5A", padding: "0 10px 6px", textTransform: "uppercase", letterSpacing: 0.5 }}>Projects</div>
-          {liveProjects.map(p => editingProjectId === p.id ? (<div key={p.id} style={{ padding: "3px 6px", marginBottom: 1 }}><input autoFocus value={editingProjectName} onChange={e => setEditingProjectName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") renameProject(p.id, editingProjectName); if (e.key === "Escape") setEditingProjectId(null); }} onBlur={() => renameProject(p.id, editingProjectName)} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #444441", outline: "none", boxSizing: "border-box" }} /></div>) : (<div key={p.id} style={{ display: "flex", alignItems: "center", gap: 2, marginBottom: 1 }}><button onClick={() => setActiveProjectId(p.id)} onDoubleClick={() => { setEditingProjectId(p.id); setEditingProjectName(p.name); }} style={{ flex: 1, padding: "6px 10px", borderRadius: 5, border: "none", background: activeProjectId === p.id ? "#2C2C2A" : "transparent", color: activeProjectId === p.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 12, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</button>{liveProjects.length > 1 && <><button onClick={() => archiveProject(p.id, true)} title="Archive project" aria-label={`Archive ${p.name}`} style={{ ...projIconBtn }} onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#FAC775"; }} onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#444441"; }}>⊟</button><button onClick={() => delProject(p.id)} title="Delete project" aria-label={`Delete ${p.name}`} style={{ ...projIconBtn }} onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#F09595"; }} onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#444441"; }}>✕</button></>}</div>))}
-          {archivedProjects.length > 0 && <div style={{ marginTop: 6 }}>
-            <button onClick={() => setShowArchived(!showArchived)} style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "5px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: "left" }}><span style={{ width: 8 }}>{showArchived ? "▾" : "▸"}</span>Archived ({archivedProjects.length})</button>
-            {showArchived && archivedProjects.map(p => (<div key={p.id} style={{ display: "flex", alignItems: "center", gap: 2, marginBottom: 1 }}><button onClick={() => setActiveProjectId(p.id)} title="Open (stays archived)" style={{ flex: 1, padding: "5px 10px 5px 24px", borderRadius: 5, border: "none", background: activeProjectId === p.id ? "#2C2C2A" : "transparent", color: activeProjectId === p.id ? "#B4B2A9" : "#5F5E5A", cursor: "pointer", fontSize: 12, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: "italic" }}>{p.name}</button><button onClick={() => archiveProject(p.id, false)} title="Restore project" aria-label={`Restore ${p.name}`} style={{ ...projIconBtn }} onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#5DCAA5"; }} onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#444441"; }}>↺</button><button onClick={() => delProject(p.id)} title="Delete project" aria-label={`Delete ${p.name}`} style={{ ...projIconBtn }} onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = "#F09595"; }} onMouseLeave={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = "#444441"; }}>✕</button></div>))}
-          </div>}
-          <button onClick={() => setModal({ type: "project" })} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>+ New project</button>
-        </div>}
-        <div style={{ padding: sb ? "8px 10px" : "8px 4px", borderTop: "1px solid #2C2C2A" }}>
-          {sb && <button onClick={() => setShowTutorial(true)} style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: "left", marginBottom: 2 }}>? Replay tutorial</button>}
-          <button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: sb ? "left" : "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sb ? (isDemo ? "Exit demo · sign up" : `Sign out (${session.user.email})`) : "↗"}</button></div>
-      </div>}
+      {/* Sidebar — fixed (src/components/Sidebar.jsx) */}
+      {!mobile && <Sidebar
+        sb={sb} onToggle={() => { const v = !sb; setSb(v); try { localStorage.setItem("qtrack_sb", v ? "1" : "0"); } catch { /* storage blocked */ } }}
+        nav={nav.filter(n => ALWAYS_TABS.includes(n.id) || !hiddenTabs.includes(n.id))} hideableNav={nav.filter(n => !ALWAYS_TABS.includes(n.id))}
+        hiddenTabs={hiddenTabs} onToggleTab={toggleTab}
+        view={view} onNav={(id) => { setView(id); setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all"); }}
+        tmr={tmr} taskName={taskName}
+        projects={projects} activeProjectId={activeProjectId} onSelectProject={setActiveProjectId}
+        onRename={renameProject} onRecolor={recolorProject} onArchive={archiveProject} onDelete={setDeletingProject} onNewProject={() => setModal({ type: "project" })}
+        onAssistant={() => setView("assistant")} onTutorial={() => setShowTutorial(true)} onSignOut={() => supabase.auth.signOut()}
+        email={session.user.email} isDemo={isDemo} />}
 
       {/* Main */}
       <div style={{ marginLeft: mobile ? 0 : sb ? 220 : 54, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh", transition: "margin-left 0.2s ease", paddingBottom: mobile ? 64 : 0 }}>
@@ -459,13 +438,10 @@ export default function App({ session }) {
                 <div style={{ width: 36, height: 4, borderRadius: 2, background: "#2C2C2A", margin: "0 auto 12px" }} />
                 {rest.map(n => (<button key={n.id} onClick={() => go(n.id)} style={{ ...rowBtn, color: view === n.id ? "#F1EFE8" : "#B4B2A9" }}><span style={{ width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span><span style={{ flex: 1 }}>{n.l}</span>{n.cnt ? <span style={{ fontSize: 10, color: "#888780" }}>{n.cnt}</span> : null}</button>))}
                 <button onClick={() => go("assistant")} style={{ ...rowBtn, color: view === "assistant" ? "#F1EFE8" : "#B4B2A9" }}><span style={{ width: 20, textAlign: "center", opacity: 0.7 }}>✦</span><span style={{ flex: 1 }}>Assistant access</span></button>
-                <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, margin: "14px 0 4px" }}>Projects</div>
-                {liveProjects.map(p => (<div key={p.id} style={{ display: "flex", alignItems: "center" }}><button onClick={() => { setActiveProjectId(p.id); setMoreOpen(false); }} style={{ ...rowBtn, flex: 1, color: activeProjectId === p.id ? "#F1EFE8" : "#888780" }}>{activeProjectId === p.id ? "● " : ""}{p.name}</button>{liveProjects.length > 1 && <button onClick={() => archiveProject(p.id, true)} style={{ ...rowBtn, width: "auto", padding: "11px 8px", color: "#5F5E5A", fontSize: 12 }}>Archive</button>}</div>))}
-                {archivedProjects.length > 0 && <>
-                  <button onClick={() => setShowArchived(!showArchived)} style={{ ...rowBtn, color: "#5F5E5A", fontSize: 12 }}>{showArchived ? "▾" : "▸"} Archived ({archivedProjects.length})</button>
-                  {showArchived && archivedProjects.map(p => (<div key={p.id} style={{ display: "flex", alignItems: "center" }}><button onClick={() => { setActiveProjectId(p.id); setMoreOpen(false); }} style={{ ...rowBtn, flex: 1, paddingLeft: 18, color: "#5F5E5A", fontStyle: "italic" }}>{activeProjectId === p.id ? "● " : ""}{p.name}</button><button onClick={() => archiveProject(p.id, false)} style={{ ...rowBtn, width: "auto", padding: "11px 8px", color: "#5DCAA5", fontSize: 12 }}>Restore</button></div>))}
-                </>}
-                <button onClick={() => { setModal({ type: "project" }); setMoreOpen(false); }} style={{ ...rowBtn, color: "#5F5E5A", fontSize: 13 }}>+ New project</button>
+                <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, margin: "14px 0 6px" }}>Projects</div>
+                <ProjectList big autoFocus={false} projects={projects} activeProjectId={activeProjectId}
+                  onSelect={(id) => { setActiveProjectId(id); setMoreOpen(false); }} onRename={renameProject} onRecolor={recolorProject}
+                  onArchive={archiveProject} onDelete={(p) => { setMoreOpen(false); setDeletingProject(p); }} onNewProject={() => { setModal({ type: "project" }); setMoreOpen(false); }} />
                 <div style={{ borderTop: "1px solid #2C2C2A", marginTop: 8, paddingTop: 4 }}>
                   <button onClick={() => { setShowTutorial(true); setMoreOpen(false); }} style={{ ...rowBtn, color: "#5F5E5A", fontSize: 13 }}>? Replay tutorial</button>
                   <button onClick={() => supabase.auth.signOut()} style={{ ...rowBtn, color: "#5F5E5A", fontSize: 13 }}>{isDemo ? "Exit demo · sign up" : `Sign out (${session.user.email})`}</button>
@@ -477,6 +453,11 @@ export default function App({ session }) {
       })()}
 
       {showTutorial && <Tutorial onClose={closeTutorial} />}
+      {deletingProject && <DeleteProjectDialog project={deletingProject}
+        canDelete={!!deletingProject.archived_at || liveProjects.filter(p => p.id !== deletingProject.id).length > 0}
+        onCancel={() => setDeletingProject(null)}
+        onArchive={async () => { const p = deletingProject; setDeletingProject(null); await archiveProject(p.id, true); }}
+        onConfirm={() => confirmDeleteProject(deletingProject.id)} />}
       {modal && <Modal modal={modal} files={files} onClose={() => setModal(null)} addProject={addProject} addFile={addFile} addIssue={addIssue} addTest={addTest} editIssue={editIssue} editTest={editTest} usedRepos={[...new Set([...issues, ...testCases].map(x => x.repo_name).filter(Boolean))]} usedBranches={[...new Set([...issues, ...testCases].map(x => x.branch_name).filter(Boolean))]} meetingTags={[...new Set(meetings.map(m => m.title))]} />}
       {linkModal && <LinkModal lm={linkModal} issues={issues} tests={testCases} links={links} lnk={lnk} onClose={() => setLinkModal(null)} />}
       {viewingNoteId && (() => { const n = notes.find(x => x.id === viewingNoteId); if (!n) return null; const cc = NOTE_CAT_COLORS[n.category] || NOTE_CAT_COLORS.scratch; const li = issues.find(i => i.id === n.linked_issue_id); const lt = testCases.find(t => t.id === n.linked_test_id); const lf = files.find(f => f.id === n.linked_file_id); return (
