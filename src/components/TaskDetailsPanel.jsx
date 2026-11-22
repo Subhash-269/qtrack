@@ -182,7 +182,7 @@ export default function TaskDetailsPanel({ item, projects, inQueue, mobile, focu
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
           <Stat value={extra ? extra.pomodoros : "–"} label="pomodoros" />
           <Stat value={extra ? fmtDur(extra.focusedSeconds) : "–"} label="focused" />
-          <Stat value={row.estimated_pomodoros ?? "–"} label="estimated" />
+          <Stepper value={row.estimated_pomodoros || 0} label="estimated" onChange={n => save({ estimated_pomodoros: n })} />
         </div>
 
         {extra && (extra.linked.length > 0 || extra.notes.length > 0) && (
@@ -218,6 +218,19 @@ export default function TaskDetailsPanel({ item, projects, inQueue, mobile, focu
 
 const iconBtn = { width: 24, height: 24, borderRadius: 6, border: `1px solid ${C.line}`, background: "transparent", color: C.sub, cursor: "pointer", fontSize: 11, display: "grid", placeItems: "center", padding: 0, flexShrink: 0 };
 const linkRow = { display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "5px 0", color: C.title, borderBottom: `1px solid ${C.line2}` };
+
+// Estimate you can change in place: − 3 +
+function Stepper({ value, label, onChange }) {
+  const b = { width: 22, height: 22, borderRadius: 5, border: `1px solid ${C.dim}`, background: "transparent", color: C.soft, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "grid", placeItems: "center", padding: 0 };
+  return (<div style={{ background: C.raise, border: `1px solid ${C.line}`, borderRadius: 6, padding: "5px 8px" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
+      <button aria-label="Fewer pomodoros" disabled={value <= 0} onClick={() => onChange(Math.max(0, value - 1))} style={{ ...b, opacity: value <= 0 ? 0.4 : 1 }}>−</button>
+      <b style={{ fontFamily: "'SF Mono', monospace", fontWeight: 500, fontSize: 14, color: C.text }}>{value}</b>
+      <button aria-label="More pomodoros" disabled={value >= 20} onClick={() => onChange(Math.min(20, value + 1))} style={b}>+</button>
+    </div>
+    <small style={{ fontSize: 10, color: C.muted }}>{label}</small>
+  </div>);
+}
 
 function Stat({ value, label }) {
   return (<div style={{ background: C.raise, border: `1px solid ${C.line}`, borderRadius: 6, padding: "7px 9px" }}>
