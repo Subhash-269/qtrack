@@ -1,4 +1,4 @@
-// QTrack MCP server: lets an MCP client (Claude, Cursor, ...) read the signed-in user's QTrack data.
+// QTrack MCP server: lets an MCP client (Claude, Cursor, ...) read and change the signed-in user's QTrack data.
 // Auth: Supabase Auth is the OAuth 2.1 authorization server. withOAuthProtectedResource() serves the
 // discovery metadata + WWW-Authenticate challenge; withSupabase({ auth: 'user' }) verifies the token
 // and gives us a client scoped to that user, so every query runs under RLS. No secret key is used.
@@ -11,7 +11,7 @@ import { z } from 'npm:zod@4.3.6'
 
 import { TOOLS, callTool } from './tools.js'
 
-const VERSION = '0.1.0'
+const VERSION = '0.2.0'
 
 Deno.serve(
   pipeline(
@@ -37,7 +37,7 @@ Deno.serve(
               title: tool.title,
               description: tool.description,
               inputSchema: z.object(tool.input(z)),
-              annotations: { readOnlyHint: true, openWorldHint: false },
+              annotations: { readOnlyHint: tool.scope === 'read', destructiveHint: name === 'undo', openWorldHint: false },
             },
             async (args: Record<string, unknown>) => {
               try {

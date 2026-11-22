@@ -144,7 +144,7 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
           {data && data.scribbles.length === 0 && <Empty>Nothing jotted today.</Empty>}
           {data?.scribbles.slice(0, 6).map(n => (<div key={n.id} style={{ ...row, alignItems: "flex-start", flexDirection: "column", gap: 2 }}>
             <span style={{ color: "#D3D1C7", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{n.content || n.title}</span>
-            <span style={{ fontSize: 10, color: "#5F5E5A" }}>{new Date(n.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}{multi && pname[n.project_id] ? ` · ${pname[n.project_id]}` : ""}</span>
+            <span style={{ fontSize: 10, color: "#5F5E5A" }}>{n.source === "assistant" && <span style={{ color: "#AFA9EC", background: "#1A0A29", border: "1px solid #2E2950", borderRadius: 4, padding: "0 5px", marginRight: 6 }}>via assistant</span>}{new Date(n.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}{multi && pname[n.project_id] ? ` · ${pname[n.project_id]}` : ""}</span>
           </div>))}
         </div>
       </div>

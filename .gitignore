@@ -27,3 +27,7 @@ dist-ssr
 
 # Browser automation output
 .playwright-mcp
+
+# Supabase CLI local state
+supabase/.temp
+supabase/.branches
