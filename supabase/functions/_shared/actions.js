@@ -23,16 +23,20 @@ const escapeLike = (s) => String(s).replace(/[%_\\]/g, (c) => '\\' + c)
 
 // ---------- lookups ----------
 
-async function projects(client, userId) {
-  return many(await client.from('projects').select('id, name, created_at').eq('user_id', userId).order('created_at', { ascending: true }))
+// Active (not archived) projects. select('*') so it works before the archive migration too.
+async function projects(client, userId, { includeArchived = false } = {}) {
+  const all = many(await client.from('projects').select('*').eq('user_id', userId).order('created_at', { ascending: true }))
+  return includeArchived ? all : all.filter(p => !p.archived_at)
 }
 
 // A project by (part of) its name, or the one used most recently.
 export async function resolveProject(client, userId, name) {
   const list = await projects(client, userId)
-  if (!list.length) throw new UserError('You have no projects in QTrack yet.')
+  if (!list.length) throw new UserError('You have no active projects in QTrack. Create one, or unarchive one.')
   if (name) {
     const n = name.trim().toLowerCase()
+    const archived = (await projects(client, userId, { includeArchived: true })).find(p => p.archived_at && p.name.toLowerCase() === n)
+    if (archived && !list.some(p => p.name.toLowerCase() === n)) throw new UserError(`"${archived.name}" is archived. Unarchive it in QTrack first.`)
     const exact = list.filter(p => p.name.toLowerCase() === n)
     const partial = exact.length ? exact : list.filter(p => p.name.toLowerCase().includes(n))
     if (partial.length === 1) return partial[0]
@@ -311,7 +315,7 @@ export async function captureNote(client, userId, { text, project, link_task_id 
   if (link_task_id) {
     linked = await findItem(client, userId, link_task_id)
     projectId = linked.project_id
-    projectName = (await projects(client, userId)).find(p => p.id === projectId)?.name
+    projectName = (await projects(client, userId, { includeArchived: true })).find(p => p.id === projectId)?.name
   } else {
     const p = await resolveProject(client, userId, project); projectId = p.id; projectName = p.name
   }
