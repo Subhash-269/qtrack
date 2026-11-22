@@ -2,7 +2,7 @@
 
 A personal workspace for developers, students, and anyone who lives in their notes. It brings a Pomodoro focus timer, tasks, meetings, notes, and study material together in one dark-themed app.
 
-Queue up what you need to do and run focus sessions against it. Keep notes with code and diagrams, and walk into meetings with an agenda that's already filled in. You can also read PDFs and turn highlights into notes. Developers get issues, test cases, and repo/branch tracking. Students and note-takers get study topics, a PDF reader, and a notes space that links everything together.
+Queue up what you need to do and run focus sessions against it. Keep notes with code and diagrams, and walk into meetings with an agenda that's already filled in. You can also read PDFs and turn highlights into notes. Developers get tasks, test cases, and repo/branch tracking. Students and note-takers get study topics, a PDF reader, and a notes space that links everything together.
 
 **[▶ Try the live demo](https://qtrack-steel.vercel.app/demo)** (no sign-up needed) · [Create an account](https://qtrack-steel.vercel.app/)
 
@@ -16,7 +16,7 @@ Queue up what you need to do and run focus sessions against it. Keep notes with 
 A Pomodoro timer that knows what you're working on.
 
 - 25 / 5 / 15 cycle with a long break after every 4 sessions, plus browser notifications and a chime
-- Attach a session to an issue, test case, or study topic. Pomodoros are counted against each task's estimate
+- Attach a session to a task, test case, or study topic. Pomodoros are counted against each task's estimate
 - Pause with a reason (*waiting*, *interrupted*). That time is logged separately and doesn't count as focus
 - **Up next** queue you can reorder by dragging
 - **Context drawer** for the current task, with a step checklist and a scratchpad that saves to the linked note
@@ -36,7 +36,7 @@ Topics, PDFs, and notes in one place.
 ### ≡ Notes
 - Categories (*scratch, decision, investigation, meeting*) and pinning
 - Fenced code blocks with syntax highlighting
-- Link a note to an issue, test case, file, repo, or meeting
+- Link a note to a task, test case, file, repo, or meeting
 
 ### ▦ Calendar & meetings
 Walk into every meeting already prepared.
@@ -47,18 +47,18 @@ Walk into every meeting already prepared.
 - **Tag a task or note with a meeting** and it shows up on that meeting's agenda, grouped into *shipped*, *in progress*, and *notes*. Only items that changed since the last meeting you attended are included
 - Join a meeting to get a timer and a notes pad that saves automatically. Track attendance, cancellations, and talking points
 
-### ⚑ Issues & test cases
+### ⚑ Tasks & test cases
 Lightweight tracking for code you're working on.
 
-![Issues view: bugs and todos with priority, status, repo/branch, pomodoro progress, and linked test cases](docs/screenshots/issues.png)
+![Tasks view: bugs and todos with priority, status, repo/branch, pomodoro progress, and linked test cases](docs/screenshots/issues.png)
 
-- **Issues** are bugs or todos, with priority, status, due date, estimated pomodoros, and repo/branch. Attaching a file is optional, so general todos work too
+- **Tasks** are bugs or todos, with priority, status, due date, estimated pomodoros, and repo/branch. Attaching a file is optional, so general todos work too
 - **Test cases** have preconditions, inline-editable steps with expected results, and pass/fail/blocked status
-- Link issues to test cases. Filter, sort, switch between cards and a list, and add any task to the focus queue with one click
+- Link tasks to test cases. Filter, sort, switch between cards and a list, and add any task to the focus queue with one click
 
 ### ⊞ Dashboard
 
-![Dashboard: today's stats, issues grouped by repo and branch, recently resolved work, and a weekly focus chart](docs/screenshots/dashboard.png)
+![Dashboard: today's stats, tasks grouped by repo and branch, recently resolved work, and a weekly focus chart](docs/screenshots/dashboard.png)
 
 - Today's focus and meeting time, open bugs and todos, and test pass rate
 - Open work grouped by **repo : branch**, with "hot" files
@@ -66,7 +66,7 @@ Lightweight tracking for code you're working on.
 - Pick which widgets the dashboard shows, and choose which sidebar tabs each project shows in **Settings**
 
 ### And also
-- **Board:** a sticky-note Kanban per project. Cards can become issues
+- **Board:** a sticky-note Kanban per project. Cards can become tasks
 - **Workshop projects:** a project type for conferences, with *Sessions* (speaker, track, rating) and *People* you met with follow-ups. Its dashboard collects lines starting with `!` (action items), `?` (questions), and `★` (insights) from your notes
 - **News** *(premium)*: an AI-curated feed for topics you choose, served by a Supabase Edge Function
 - **Guided tour** on first visit, which you can replay from the sidebar
@@ -145,7 +145,7 @@ You'll also need:
 src/
 ├── main.jsx              # Auth gate: <Auth/> or <App/> depending on the session
 ├── Auth.jsx              # Sign in / sign up / "Try the demo"
-├── App.jsx               # Every view: Focus, Dashboard, Issues, Notes, Study, Calendar, …
+├── App.jsx               # Every view: Focus, Dashboard, Tasks, Notes, Study, Calendar, …
 ├── storage.js            # Data layer: all Supabase queries, grouped by domain
 ├── supabaseClient.js     # Real Supabase client, or the demo client on /demo
 └── demo/

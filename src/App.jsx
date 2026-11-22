@@ -965,7 +965,7 @@ function FocusLogView({ allSessions, issues, tests, logManual }) {
 
   const label = (s) => {
     if (s.subtype === "meeting") return { name: s.study_topic || "Meeting", kind: "meeting", color: "#7F77DD" };
-    if (s.issue_id) { const i = issues.find(x => x.id === s.issue_id); return { name: i?.title || "Issue", kind: i?.type || "issue", color: i?.type === "todo" ? "#85B7EB" : "#E24B4A" }; }
+    if (s.issue_id) { const i = issues.find(x => x.id === s.issue_id); return { name: i?.title || "Task", kind: i?.type || "issue", color: i?.type === "todo" ? "#85B7EB" : "#E24B4A" }; }
     if (s.test_case_id) return { name: tests.find(x => x.id === s.test_case_id)?.title || "Test case", kind: "test", color: "#5DCAA5" };
     if (s.study_topic) return { name: s.study_topic, kind: "study", color: "#AFA9EC" };
     return { name: "Focus", kind: "focus", color: "#888780" };
@@ -1251,7 +1251,7 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
 
   const SECTIONS = [
     { key: "metrics", label: "Metrics" },
-    { key: "repos", label: "Issues by repo" },
+    { key: "repos", label: "Tasks by repo" },
     { key: "hotfiles", label: "Hot files" },
     { key: "resolved", label: "Recently shipped" },
     { key: "chart", label: "Weekly chart" },
@@ -1311,7 +1311,7 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
       {/* Repo+branch sections */}
       {isVisible("repos") && (sortedKeys.length > 1 || (sortedKeys.length === 1 && sortedKeys[0] !== "")) ? (
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12, color: "#B4B2A9" }}>Issues by repo & branch</div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12, color: "#B4B2A9" }}>Tasks by repo & branch</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {sortedKeys.map(key => {
               const gi = groups[key];
@@ -1375,8 +1375,8 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
         /* Fallback if no repo/branch data - show simple recent + hot */
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Recent issues</div>
-            {issues.length === 0 && <div style={{ fontSize: 12, color: "#5F5E5A", padding: 16 }}>No issues yet</div>}
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Recent tasks</div>
+            {issues.length === 0 && <div style={{ fontSize: 12, color: "#5F5E5A", padding: 16 }}>No tasks yet</div>}
             {[...issues].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5).map(i => (
               <div key={i.id} onClick={() => onNav("issues", i.file_id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 6, marginBottom: 2, cursor: "pointer", background: "#161615", border: "1px solid #1A1A18" }} onMouseEnter={e => e.currentTarget.style.background = "#1A1A18"} onMouseLeave={e => e.currentTarget.style.background = "#161615"}>
                 <Badge label={i.type} colors={i.type === "bug" ? PC.critical : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small />
@@ -1734,7 +1734,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
             <Select value={vi.status} onChange={s => { updS(vi.id, s); }} options={ISSUE_STATUSES} style={{ fontSize: 12 }} />
             <Btn small onClick={() => { setViewId(null); focusOn("issue", vi.id); }}>▶ Focus</Btn>
             <Btn small onClick={() => { setViewId(null); onEdit(vi); }}>✎ Edit</Btn>
-            <Btn small onClick={() => { if (confirm("Delete this issue?")) { del(vi.id); setViewId(null); } }} style={{ color: "#F09595" }}>Delete</Btn>
+            <Btn small onClick={() => { if (confirm("Delete this task?")) { del(vi.id); setViewId(null); } }} style={{ color: "#F09595" }}>Delete</Btn>
           </div>
           {/* Description */}
           {vi.description && <div style={{ fontSize: 13, color: "#D3D1C7", lineHeight: 1.6, marginBottom: 16, padding: "10px 12px", background: "#111110", borderRadius: 6 }}>{vi.description}</div>}
@@ -1788,7 +1788,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
 
   return (<div>
     <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}><Pill active={filterType === "all"} onClick={() => setFilterType("all")}>All</Pill><Pill active={filterType === "bug"} onClick={() => setFilterType("bug")}>Bugs</Pill><Pill active={filterType === "todo"} onClick={() => setFilterType("todo")}>To-dos</Pill><span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} /><Select value={filterFile} onChange={setFilterFile} options={[{ value: "all", label: "All files" }, ...files.map(f => ({ value: f.id, label: f.name }))]} /><Select value={filterPriority} onChange={setFilterPriority} options={[{ value: "all", label: "All priorities" }, ...PRIORITIES.map(p => ({ value: p, label: p }))]} /><span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} /><select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 10, background: "#1A1A18", color: "#888780", border: "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}><option value="created">Newest</option><option value="due">Due date</option><option value="priority">Priority</option><option value="status">Status</option></select><span style={{ flex: 1 }} /><button onClick={() => setViewMode("card")} title="Cards" style={{ background: viewMode === "card" ? "#2C2C2A" : "none", border: "none", color: viewMode === "card" ? "#F1EFE8" : "#444441", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>◫</button><button onClick={() => setViewMode("list")} title="List" style={{ background: viewMode === "list" ? "#2C2C2A" : "none", border: "none", color: viewMode === "list" ? "#F1EFE8" : "#444441", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>≡</button></div>
-    {issues.length === 0 && <EmptyState icon="◉" title="No issues found" sub="Create issues to track bugs and to-dos" action="New issue" onAction={onAdd} />}
+    {issues.length === 0 && <EmptyState icon="◉" title="No tasks found" sub="Create tasks to track bugs and to-dos" action="New task" onAction={onAdd} />}
     {viewMode === "card" && <>
       {open.length > 0 && open.map(i => <IssueCard key={i.id} i={i} />)}
       {resolved.length > 0 && (<>
@@ -1883,7 +1883,7 @@ function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, u
           </div>
           {vt.precondition && <div style={{ fontSize: 12, color: "#888780", padding: "8px 10px", background: "#111110", borderRadius: 6, marginBottom: 12 }}><span style={{ color: "#5F5E5A", fontSize: 10, textTransform: "uppercase" }}>Precondition: </span>{vt.precondition}</div>}
           {(vt.steps||[]).length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 6 }}>STEPS</div>{(vt.steps||[]).map((s, idx) => (<div key={idx} style={{ display: "flex", gap: 10, padding: "8px 10px", background: "#111110", borderRadius: 6, marginBottom: 4 }}><span style={{ color: "#5F5E5A", fontSize: 11, fontFamily: "'SF Mono', monospace", minWidth: 20 }}>{idx + 1}.</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, color: "#D3D1C7", marginBottom: 2 }}>{s.step}</div><div style={{ fontSize: 11, color: "#5DCAA5", fontStyle: "italic" }}>→ {s.expected}</div></div></div>))}</div>}
-          {li.length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 6 }}>LINKED ISSUES</div>{li.map(iid => { const issue = im[iid]; if (!issue) return null; return (<div key={iid} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: "#111110", borderRadius: 6, marginBottom: 4, fontSize: 12 }}><span style={{ color: issue.type === "bug" ? "#F09595" : "#85B7EB" }}>{issue.type === "bug" ? "◉" : "○"}</span><span style={{ flex: 1, color: "#D3D1C7" }}>{issue.title}</span><Badge label={issue.priority} colors={PC[issue.priority]} small /></div>); })}</div>}
+          {li.length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 6 }}>LINKED TASKS</div>{li.map(iid => { const issue = im[iid]; if (!issue) return null; return (<div key={iid} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: "#111110", borderRadius: 6, marginBottom: 4, fontSize: 12 }}><span style={{ color: issue.type === "bug" ? "#F09595" : "#85B7EB" }}>{issue.type === "bug" ? "◉" : "○"}</span><span style={{ flex: 1, color: "#D3D1C7" }}>{issue.title}</span><Badge label={issue.priority} colors={PC[issue.priority]} small /></div>); })}</div>}
           {tnotes.length > 0 && <div><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 6 }}>LINKED NOTES</div>{tnotes.map(n => (<div key={n.id} onClick={() => { setViewTid(null); onViewNote(n.id); }} style={{ padding: "6px 10px", background: "#111110", borderRadius: 6, marginBottom: 4, fontSize: 12, cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.background = "#1A1A18"} onMouseLeave={e => e.currentTarget.style.background = "#111110"}><span style={{ color: "#AFA9EC" }}>☰ </span><span style={{ color: "#D3D1C7" }}>{n.title || n.category}</span>{n.content && <div style={{ fontSize: 11, color: "#5F5E5A", marginTop: 2, maxHeight: 40, overflow: "hidden" }}>{n.content.substring(0, 100)}{n.content.length > 100 ? "..." : ""}</div>}</div>))}</div>}
         </div>
       </div>
@@ -1922,7 +1922,7 @@ function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, u
         <div style={{ padding: "0 14px 10px 32px", display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
           {li.map(iid => { const issue = im[iid]; if (!issue) return null; const ic = issue.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }; return (<span key={iid} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: ic.bg, color: ic.text, border: `1px solid ${ic.border}` }}>{issue.type === "bug" ? "◉" : "○"} {issue.title}<button onClick={() => ulnk(iid, t.id)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 10, padding: 0, marginLeft: 2, opacity: 0.6 }}>✕</button></span>); })}
           {notesByTest(t.id).map(n => (<span key={n.id} onClick={() => onViewNote(n.id)} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C", cursor: "pointer" }}>☰ {n.title || n.category}</span>))}
-          <button onClick={() => openLink(t.id)} style={{ background: "none", border: "1px dashed #444441", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>+ Link issue</button>
+          <button onClick={() => openLink(t.id)} style={{ background: "none", border: "1px dashed #444441", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>+ Link task</button>
         </div>
         {ex && (<div style={{ padding: "0 14px 14px 32px", borderTop: "1px solid #2C2C2A" }}>
           {t.precondition && <div style={{ fontSize: 12, color: "#888780", margin: "10px 0 8px", padding: "6px 10px", background: "#1A1A18", borderRadius: 6 }}><span style={{ color: "#5F5E5A", fontSize: 10, textTransform: "uppercase" }}>Precondition: </span>{t.precondition}</div>}
@@ -1952,8 +1952,8 @@ function FilesView({ files, issues, tests, del, onAdd, onNav }) {
   const ic = (fid) => issues.filter(i => i.file_id === fid && !["fixed","verified","wont_fix"].includes(i.status)).length;
   const tc = (fid) => tests.filter(t => t.file_id === fid).length;
   const tp = (fid) => tests.filter(t => t.file_id === fid && t.status === "pass").length;
-  if (files.length === 0) return <EmptyState icon="⊞" title="No files yet" sub="Add files to attach issues and tests" action="Add file" onAction={onAdd} />;
-  return (<div>{CATEGORIES.filter(c => g[c]).map(cat => (<div key={cat} style={{ marginBottom: 20 }}><div style={{ fontSize: 11, fontWeight: 500, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{cat}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>{g[cat].map(f => { const a = ic(f.id), b = tc(f.id), c = tp(f.id); return (<div key={f.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, fontWeight: 500, color: "#D3D1C7" }}>{f.name}</span><button onClick={() => del(f.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 12 }}>✕</button></div><div style={{ display: "flex", gap: 12, fontSize: 11 }}><span onClick={() => onNav("issues", f.id)} style={{ cursor: "pointer", color: a > 0 ? "#F09595" : "#5F5E5A" }}>{a} issue{a !== 1 ? "s" : ""}</span><span onClick={() => onNav("tests", f.id)} style={{ cursor: "pointer", color: b > 0 ? "#85B7EB" : "#5F5E5A" }}>{c}/{b} tests</span></div></div>); })}</div></div>))}</div>);
+  if (files.length === 0) return <EmptyState icon="⊞" title="No files yet" sub="Add files to attach tasks and tests" action="Add file" onAction={onAdd} />;
+  return (<div>{CATEGORIES.filter(c => g[c]).map(cat => (<div key={cat} style={{ marginBottom: 20 }}><div style={{ fontSize: 11, fontWeight: 500, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{cat}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>{g[cat].map(f => { const a = ic(f.id), b = tc(f.id), c = tp(f.id); return (<div key={f.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, fontWeight: 500, color: "#D3D1C7" }}>{f.name}</span><button onClick={() => del(f.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 12 }}>✕</button></div><div style={{ display: "flex", gap: 12, fontSize: 11 }}><span onClick={() => onNav("issues", f.id)} style={{ cursor: "pointer", color: a > 0 ? "#F09595" : "#5F5E5A" }}>{a} task{a !== 1 ? "s" : ""}</span><span onClick={() => onNav("tests", f.id)} style={{ cursor: "pointer", color: b > 0 ? "#85B7EB" : "#5F5E5A" }}>{c}/{b} tests</span></div></div>); })}</div></div>))}</div>);
 }
 
 // ============================================
@@ -2726,7 +2726,7 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
           </div>
         ) : (<>
         <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to issue</div><Select value={form.linked_issue_id} onChange={v => setForm({ ...form, linked_issue_id: v })} options={[{ value: "", label: "None" }, ...issues.map(i => ({ value: i.id, label: i.title }))]} style={{ width: "100%" }} /></div>
+          <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to task</div><Select value={form.linked_issue_id} onChange={v => setForm({ ...form, linked_issue_id: v })} options={[{ value: "", label: "None" }, ...issues.map(i => ({ value: i.id, label: i.title }))]} style={{ width: "100%" }} /></div>
           <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to test</div><Select value={form.linked_test_id} onChange={v => setForm({ ...form, linked_test_id: v })} options={[{ value: "", label: "None" }, ...(testCases || []).map(t => ({ value: t.id, label: t.title }))]} style={{ width: "100%" }} /></div>
           <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to file</div><Select value={form.linked_file_id} onChange={v => setForm({ ...form, linked_file_id: v })} options={[{ value: "", label: "None" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /></div>
         </div>
@@ -2971,7 +2971,7 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
           {/* Legend */}
           <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 10, color: "#444441" }}>
             <span><span style={{ display: "inline-block", width: 8, height: 4, borderRadius: 1, background: "#1A0A29", marginRight: 3, verticalAlign: "middle" }} />Meeting</span>
-            <span><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: "#F09595", marginRight: 3, verticalAlign: "middle" }} />Issue due</span>
+            <span><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: "#F09595", marginRight: 3, verticalAlign: "middle" }} />Task due</span>
             <span><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: "#85B7EB", marginRight: 3, verticalAlign: "middle" }} />Test due</span>
           </div>
         </div>
@@ -3064,9 +3064,9 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
                 })}
               </div>}
 
-              {/* Issue dues */}
+              {/* Task dues */}
               {selIssues.length > 0 && <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 10, color: "#F09595", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Issues due ({selIssues.length})</div>
+                <div style={{ fontSize: 10, color: "#F09595", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Tasks due ({selIssues.length})</div>
                 {selIssues.map(i => (
                   <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#161615", borderRadius: 6, marginBottom: 4, border: "1px solid #2C2C2A" }}>
                     <Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small />
@@ -3241,7 +3241,7 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
               </div>
             )}
 
-            {taggedTotal === 0 && <div style={{ padding: "12px 8px", fontSize: 11, color: "#2C2C2A" }}>No items tagged with this meeting. Tag issues, tests, or notes in the editor.</div>}
+            {taggedTotal === 0 && <div style={{ padding: "12px 8px", fontSize: 11, color: "#2C2C2A" }}>No items tagged with this meeting. Tag tasks, tests, or notes in the editor.</div>}
 
             {/* Manual talking points */}
             <div style={{ borderTop: taggedTotal > 0 ? "1px solid #1A1A18" : "none", paddingTop: taggedTotal > 0 ? 12 : 0 }}>
@@ -3574,12 +3574,12 @@ function PeopleView({ people, meetings, projectId, reload }) {
 
 const TUTORIAL_STEPS = [
   { icon: "⊞", title: "Welcome to QTrack", sub: "Your focus & learning command center", desc: "Track tasks, run Pomodoro sessions, take notes, and study — all in one place. This tour shows you how to do each thing. Takes a minute." },
-  { icon: "⚑", title: "Create an issue or task", sub: "Bugs, features, or simple to-dos", how: ["Go to the Issues tab", "Click + Issue (top right)", "Pick a file, or choose 'No file (general task)' for a plain to-do", "Add a title, priority, and estimated pomodoros", "Save — it appears in your list"] },
-  { icon: "◎", title: "Start a focus timer", sub: "25-minute Pomodoro sessions", how: ["On any issue, click ▶ Focus (or + Queue to line up several)", "The 25-min timer starts — the ring counts down", "Pause with a reason: 'Waiting' (code running) or 'Interrupted' (a call)", "Switch tasks anytime — the clock keeps ticking", "Each session is tracked toward your daily goal bar"] },
-  { icon: "≡", title: "Take a note", sub: "Capture decisions and code", how: ["Open the Notes tab", "Click + Note", "Write freely — use ```sql or ```python fences for code blocks", "Optionally link it to an issue, test, or file", "It auto-saves and shows in your notes list"] },
+  { icon: "⚑", title: "Create a task", sub: "Bugs, features, or simple to-dos", how: ["Go to the Tasks tab", "Click + Task (top right)", "Pick a file, or choose 'No file (general task)' for a plain to-do", "Add a title, priority, and estimated pomodoros", "Save — it appears in your list"] },
+  { icon: "◎", title: "Start a focus timer", sub: "25-minute Pomodoro sessions", how: ["On any task, click ▶ Focus (or + Queue to line up several)", "The 25-min timer starts — the ring counts down", "Pause with a reason: 'Waiting' (code running) or 'Interrupted' (a call)", "Switch tasks anytime — the clock keeps ticking", "Each session is tracked toward your daily goal bar"] },
+  { icon: "≡", title: "Take a note", sub: "Capture decisions and code", how: ["Open the Notes tab", "Click + Note", "Write freely — use ```sql or ```python fences for code blocks", "Optionally link it to a task, test, or file", "It auto-saves and shows in your notes list"] },
   { icon: "★", title: "Make a study note", sub: "Learn & revise topics", how: ["In Notes, switch to the ★ Study filter", "Click + ★ Study", "Give it a Topic (e.g. 'Kafka', 'SQL') and optional #tags", "Write with markdown — even ```mermaid diagrams render", "Click Open on a topic to read PDFs + write notes side by side"] },
   { icon: "📚", title: "Study with the timer", sub: "Read, write, track time", how: ["In ★ Study, click Open on a topic", "Upload a PDF — it shows on the left", "Click ▶ Start study timer", "Read on the left, write notes on the right", "Your study time accumulates per topic"] },
-  { icon: "📊", title: "Track your progress", sub: "Dashboard & weekly chart", desc: "The Dashboard shows today's focus time, meetings, open tasks, and a weekly chart of focus vs meetings. Use ⚙ Customize to show/hide sections per project. You're all set — start with your first issue!" },
+  { icon: "📊", title: "Track your progress", sub: "Dashboard & weekly chart", desc: "The Dashboard shows today's focus time, meetings, open tasks, and a weekly chart of focus vs meetings. Use ⚙ Customize to show/hide sections per project. You're all set — start with your first task!" },
 ];
 
 function HowList({ steps }) {
@@ -3658,7 +3658,7 @@ function BoardView({ columns, cards, projectId, reload, issues, files, addIssue 
   const delCard = async (id) => { try { await db.deleteCard(id); await reload(); } catch (e) { console.error(e); } };
   const moveCard = async (cardId, newColId) => { try { await db.updateCard(cardId, { column_id: newColId }); await reload(); } catch (e) { console.error(e); } };
   const convertToIssue = async (card) => {
-    if (!files.length) { alert("Add a file first to create issues."); return; }
+    if (!files.length) { alert("Add a file first to create tasks."); return; }
     try { await addIssue(files[0].id, card.text, "todo", "medium", "", 0, null, "", ""); await db.deleteCard(card.id); await reload(); } catch (e) { console.error(e); }
   };
 
@@ -3701,7 +3701,7 @@ function BoardView({ columns, cards, projectId, reload, issues, files, addIssue 
                       {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                     <span style={{ flex: 1 }} />
-                    <button onClick={() => convertToIssue(card)} title="Convert to issue" style={{ background: "none", border: "1px solid #2C2C2A", color: "#85B7EB", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>→ issue</button>
+                    <button onClick={() => convertToIssue(card)} title="Convert to task" style={{ background: "none", border: "1px solid #2C2C2A", color: "#85B7EB", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>→ task</button>
                     <button onClick={() => startEditCard(card)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✎</button>
                     <button onClick={() => delCard(card.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✕</button>
                   </div>
@@ -3758,7 +3758,7 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
     } catch (err) { console.error(err); }
     setSaving(false);
   };
-  const titles = isEdit ? { issue: "Edit issue", test: "Edit test case" } : { project: "New project", file: "Add file", issue: "New issue", test: "New test case" };
+  const titles = isEdit ? { issue: "Edit task", test: "Edit test case" } : { project: "New project", file: "Add file", issue: "New task", test: "New test case" };
   const planFields = (modal.type === "issue" || modal.type === "test") ? (<>
     {fid && <div style={{ display: "flex", gap: 8 }}>
       <div style={{ flex: 1 }}>
@@ -3804,12 +3804,12 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
           {modal.type === "project" && <>
             <Input value={n} onChange={setN} placeholder="Name (e.g. ETL Pipeline or AI Summit 2026)" />
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button onClick={() => setCat("project")} style={{ flex: 1, padding: "10px", borderRadius: 8, border: cat === "project" ? "2px solid #7F77DD" : "1px solid #2C2C2A", background: cat === "project" ? "#1A0A29" : "#161615", color: cat === "project" ? "#AFA9EC" : "#5F5E5A", cursor: "pointer", fontSize: 12 }}>⚑ Project<br /><span style={{ fontSize: 10, opacity: 0.7 }}>Issues, tests, focus timer</span></button>
+              <button onClick={() => setCat("project")} style={{ flex: 1, padding: "10px", borderRadius: 8, border: cat === "project" ? "2px solid #7F77DD" : "1px solid #2C2C2A", background: cat === "project" ? "#1A0A29" : "#161615", color: cat === "project" ? "#AFA9EC" : "#5F5E5A", cursor: "pointer", fontSize: 12 }}>⚑ Project<br /><span style={{ fontSize: 10, opacity: 0.7 }}>Tasks, tests, focus timer</span></button>
               <button onClick={() => setCat("workshop")} style={{ flex: 1, padding: "10px", borderRadius: 8, border: cat === "workshop" ? "2px solid #D85A30" : "1px solid #2C2C2A", background: cat === "workshop" ? "#2A1209" : "#161615", color: cat === "workshop" ? "#F0997B" : "#5F5E5A", cursor: "pointer", fontSize: 12 }}>◎ Workshop<br /><span style={{ fontSize: 10, opacity: 0.7 }}>Sessions, notes, people</span></button>
             </div>
           </>}
           {modal.type === "file" && <><Input value={n} onChange={setN} placeholder="filename.py" mono /><Select value={cat} onChange={setCat} options={CATEGORIES} style={{ width: "100%" }} /></>}
-          {modal.type === "issue" && <><Select value={fid} onChange={setFid} options={[{ value: "", label: "No file (general task)" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Issue title" /><div style={{ display: "flex", gap: 8 }}><Select value={ty} onChange={setTy} options={ISSUE_TYPES} style={{ flex: 1 }} /><Select value={pr} onChange={setPr} options={PRIORITIES} style={{ flex: 1 }} /></div><TextArea value={desc} onChange={setDesc} placeholder="Description (optional)" />{planFields}</>}
+          {modal.type === "issue" && <><Select value={fid} onChange={setFid} options={[{ value: "", label: "No file (general task)" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Task title" /><div style={{ display: "flex", gap: 8 }}><Select value={ty} onChange={setTy} options={ISSUE_TYPES} style={{ flex: 1 }} /><Select value={pr} onChange={setPr} options={PRIORITIES} style={{ flex: 1 }} /></div><TextArea value={desc} onChange={setDesc} placeholder="Description (optional)" />{planFields}</>}
           {modal.type === "test" && <><Select value={fid} onChange={setFid} options={[{ value: "", label: "No file (general task)" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Test case title" /><TextArea value={pre} onChange={setPre} placeholder="Precondition (optional)" rows={1} />{planFields}<div style={{ fontSize: 11, fontWeight: 500, color: "#888780", marginTop: 4 }}>STEPS</div>{steps.map((s, i) => (<div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><span style={{ fontSize: 11, color: "#5F5E5A", marginTop: 8, fontFamily: "'SF Mono', monospace", minWidth: 16 }}>{i + 1}.</span><div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}><Input value={s.step} onChange={v => updStep(i, "step", v)} placeholder="What to do" /><Input value={s.expected} onChange={v => updStep(i, "expected", v)} placeholder="Expected result" /></div>{steps.length > 1 && <button onClick={() => setSteps(steps.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", marginTop: 6 }}>✕</button>}</div>))}<button onClick={addStep} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#5F5E5A", cursor: "pointer", padding: 6, borderRadius: 6, fontSize: 12, width: "100%" }}>+ Add step</button></>}
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}><Btn onClick={onClose}>Cancel</Btn><Btn primary onClick={submit} style={{ opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : isEdit ? "Save" : "Create"}</Btn></div>
@@ -3820,7 +3820,7 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
 
 function LinkModal({ lm, issues, tests, links, lnk, onClose }) {
   const [err, setErr] = useState(null); const [saving, setSaving] = useState(false);
-  const isI = !!lm.issueId; const title = isI ? "Link a test case" : "Link an issue";
+  const isI = !!lm.issueId; const title = isI ? "Link a test case" : "Link a task";
   let items = [];
   if (isI) { const a = links.filter(l => l.issue_id === lm.issueId).map(l => l.test_case_id); items = tests.filter(t => !a.includes(t.id)).map(t => ({ id: t.id, l: t.title, s: t.status, ic: "▷", c: TC[t.status] })); }
   else { const a = links.filter(l => l.test_case_id === lm.testId).map(l => l.issue_id); items = issues.filter(i => !a.includes(i.id)).map(i => ({ id: i.id, l: i.title, s: i.type, ic: i.type === "bug" ? "◉" : "○", c: i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" } })); }
