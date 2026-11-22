@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Replan and Just Start</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #111110; --side: #161615; --raise: #1A1A18; --line: #2C2C2A; --line-2: #222220;
+    --dim: #444441; --muted: #5F5E5A; --sub: #888780; --soft: #B4B2A9; --text: #F1EFE8; --title: #D3D1C7;
+    --red: #E24B4A; --green: #5DCAA5; --blue: #85B7EB; --amber: #FAC775; --purple: #AFA9EC; --pink: #F09595;
+    --mono: "DM Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B0B0A; color: var(--text); font-family: "DM Sans", system-ui, sans-serif; font-size: 13px; padding: 44px 24px 56px; }
+  header { max-width: 1240px; margin: 0 auto 28px; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header p { color: var(--sub); font-size: 13px; margin-top: 6px; max-width: 840px; line-height: 1.55; }
+  .grid { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 28px 26px; }
+  .frame { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .cap { font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  .cap b { color: var(--soft); font-weight: 500; letter-spacing: .04em; }
+  .note { font-size: 11.5px; color: var(--sub); line-height: 1.5; }
+  .screen { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 18px; position: relative; min-height: 420px; }
+  .card { background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .it { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line-2); font-size: 12px; }
+  .it:last-child { border-bottom: none; }
+  .it .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--title); }
+  .pn { font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .play { width: 22px; height: 22px; border-radius: 5px; border: 1px solid var(--line); color: var(--sub); font-size: 9px; display: grid; place-items: center; flex-shrink: 0; }
+  .soft-chip { font-size: 10px; color: var(--sub); white-space: nowrap; }
+  .btn { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; border: 1px solid var(--dim); color: var(--soft); white-space: nowrap; display: inline-block; }
+  .btn.pri { background: #D3D1C7; color: var(--raise); border-color: #D3D1C7; }
+  .btn.sm { padding: 3px 9px; font-size: 11.5px; }
+  .link { color: var(--blue); font-size: 11.5px; }
+  .toast { position: absolute; left: 50%; transform: translateX(-50%); bottom: 14px; display: flex; gap: 12px; align-items: center; background: #262624; border: 1px solid var(--dim); border-radius: 8px; padding: 8px 12px 8px 14px; font-size: 12px; white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+
+  /* 1. Replan */
+  .carry { border-color: #3A3420; background: #1B1A15; }
+  .carry .lbl { color: #B9A36A; }
+  .opts { display: flex; gap: 4px; }
+  .opts span { font-size: 10.5px; padding: 2px 7px; border-radius: 5px; border: 1px solid var(--line); color: var(--sub); }
+  .opts span.on { border-color: var(--dim); color: var(--text); background: var(--line); }
+  .opts span.go { color: var(--muted); }
+  .sheet { position: absolute; right: 18px; top: 66px; width: 300px; background: var(--side); border: 1px solid var(--dim); border-radius: 10px; padding: 12px; box-shadow: 0 14px 36px rgba(0,0,0,.5); }
+  .sheet h4 { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .sheet p { font-size: 11.5px; color: var(--sub); margin-bottom: 10px; line-height: 1.45; }
+  .sheet .row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line-2); font-size: 12px; color: var(--title); }
+  .sheet .row .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+
+  /* 2. Wording */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 500; padding: 0 8px 8px 0; }
+  td { padding: 8px 8px 8px 0; border-top: 1px solid var(--line-2); vertical-align: top; line-height: 1.45; }
+  td.where { color: var(--muted); font-size: 11px; width: 26%; }
+  td.old { color: var(--sub); text-decoration: line-through; text-decoration-color: var(--dim); width: 30%; }
+  td.new { color: var(--text); }
+
+  /* 3. Just start */
+  .now { display: flex; align-items: center; gap: 14px; }
+  .ring { width: 58px; height: 58px; border-radius: 50%; border: 4px solid var(--line); display: grid; place-items: center; font-family: var(--mono); font-size: 12px; color: var(--muted); flex-shrink: 0; }
+  .ring.go { border-color: var(--line); border-top-color: var(--green); color: var(--green); }
+  .ring.done { border-color: var(--green); color: var(--green); }
+  .t { flex: 1; min-width: 0; }
+  .t .big { font-size: 14px; margin-top: 3px; }
+  .t .hint { font-size: 11.5px; color: var(--sub); margin-top: 3px; }
+  .stack { display: flex; flex-direction: column; gap: 12px; }
+  .pill { font-size: 10px; padding: 1px 7px; border-radius: 10px; background: #0E2119; color: var(--green); border: 1px solid #16402F; }
+
+  /* 4. Steps */
+  .panel { background: var(--side); border: 1px solid var(--dim); border-radius: 10px; overflow: hidden; }
+  .ph { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .ph .meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+  .ph .meta i { width: 8px; height: 8px; border-radius: 50%; background: var(--purple); display: inline-block; }
+  .ph .title { font-size: 15px; font-weight: 500; margin-top: 6px; }
+  .pb { padding: 12px 14px; }
+  .ck { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 4px 0; color: var(--title); }
+  .box { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--dim); flex-shrink: 0; }
+  .ck.new { color: var(--text); }
+  .ck.new .box { border-color: var(--purple); border-style: dashed; }
+  .ck .min { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+  .suggest { border: 1px dashed #3B3666; background: #17162A; border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+  .suggest .lbl { color: var(--purple); }
+  .chat { margin-top: 12px; background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.5; }
+  .chat .you { color: var(--soft); }
+  .chat .ai { color: var(--title); margin-top: 6px; }
+  .chat code { font-family: var(--mono); font-size: 11px; color: var(--purple); }
+
+  .notes { max-width: 1240px; margin: 30px auto 0; font-size: 12px; color: var(--sub); line-height: 1.6; }
+  .notes b { color: var(--title); font-weight: 500; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Borrowed from Yoodoo, made QTrack's</h1>
+  <p>Four small changes from the competitor review: replan a day that slipped, calmer words, a 5-minute "just start", and splitting a task into steps. Same dark, minimal style as Today.</p>
+</header>
+
+<div class="grid">
+  <!-- 1. Replan -->
+  <section class="frame">
+    <div class="cap"><b>1 · Replan</b> · leftovers from yesterday, one tap each</div>
+    <div class="screen">
+      <div class="card carry">
+        <div class="lbl"><span>From yesterday · 3</span><span class="btn sm">Replan</span></div>
+        <div class="it"><span class="play">▶</span><span class="tt">ALY6145 Report 5: R Shiny</span><span class="pn">Academic</span></div>
+        <div class="it"><span class="play">▶</span><span class="tt">Pay gas bill</span><span class="pn">Personal</span></div>
+        <div class="it"><span class="play">▶</span><span class="tt">Reply to recruiter</span><span class="pn">Jobs</span></div>
+      </div>
+      <div class="card" style="margin-top:12px;opacity:.5">
+        <div class="lbl"><span>Up next</span><span>4</span></div>
+        <div class="it"><span class="play">▶</span><span class="tt">Draft capstone test plan</span></div>
+        <div class="it"><span class="play">▶</span><span class="tt">Cache never expires when offline</span></div>
+      </div>
+
+      <div class="sheet">
+        <h4>Replan 3 tasks</h4>
+        <p>Pick where each one goes. Nothing moves until you press Done.</p>
+        <div class="row"><span class="tt">Report 5: R Shiny</span><span class="opts"><span class="on">Today</span><span>Tmrw</span><span>Later</span><span class="go">Let go</span></span></div>
+        <div class="row"><span class="tt">Pay gas bill</span><span class="opts"><span>Today</span><span class="on">Tmrw</span><span>Later</span><span class="go">Let go</span></span></div>
+        <div class="row"><span class="tt">Reply to recruiter</span><span class="opts"><span>Today</span><span>Tmrw</span><span>Later</span><span class="go on">Let go</span></span></div>
+        <div class="foot"><span class="link">All to tomorrow</span><span class="btn pri sm">Done</span></div>
+      </div>
+      <div class="toast">1 today · 1 tomorrow · 1 let go <span class="link">Undo</span></div>
+    </div>
+    <div class="note"><b>From yesterday</b> replaces red "overdue" counts on Today. <b>Today</b> keeps it due today and puts it in Up next; <b>Tmrw</b> sets tomorrow's date; <b>Later</b> clears the date (it stays in Tasks); <b>Let go</b> marks it Skipped. Claude can do the same with a new <code style="font-family:var(--mono);color:var(--purple)">replan_day</code> tool.</div>
+  </section>
+
+  <!-- 2. Wording -->
+  <section class="frame">
+    <div class="cap"><b>2 · Calmer words</b> · no shame, no red alarms</div>
+    <div class="screen" style="min-height:0">
+      <table>
+        <tr><th>Where</th><th>Now</th><th>Proposed</th></tr>
+        <tr><td class="where">Due chip</td><td class="old">1d over · 3 days overdue</td><td class="new">from yesterday · from Thu</td></tr>
+        <tr><td class="where">Today section</td><td class="old">Due today &amp; overdue</td><td class="new">Due today · From earlier</td></tr>
+        <tr><td class="where">Empty Up next</td><td class="old">Queue is empty. Add tasks to it from Tasks…</td><td class="new">Nothing lined up. Pick one small thing, or Just start.</td></tr>
+        <tr><td class="where">Empty chart</td><td class="old">No focus yet today.</td><td class="new">No focus yet. Five minutes counts.</td></tr>
+        <tr><td class="where">Skip toast</td><td class="old">Skipped: task</td><td class="new">Let go of "task". That's allowed.</td></tr>
+        <tr><td class="where">Done toast</td><td class="old">Marked done: task</td><td class="new">Done: "task". Nice.</td></tr>
+        <tr><td class="where">Pause reason</td><td class="old">interrupted</td><td class="new">pulled away</td></tr>
+        <tr><td class="where">Session ended early</td><td class="old">(nothing)</td><td class="new">12 min logged. Stopping is fine.</td></tr>
+      </table>
+    </div>
+    <div class="note">Colors follow the words: amber stays for "due today"; red is kept for the running timer only. One short sentence, never a lecture.</div>
+  </section>
+
+  <!-- 3. Just start -->
+  <section class="frame">
+    <div class="cap"><b>3 · Just start</b> · a 5-minute way in</div>
+    <div class="screen stack" style="min-height:0">
+      <div class="card now">
+        <div class="ring">25:00</div>
+        <div class="t"><div class="lbl" style="margin:0">Now</div><div class="hint">Nothing running. Can't face a full pomodoro?</div></div>
+        <span class="btn pri">Just start · 5 min</span>
+      </div>
+      <div class="card now">
+        <div class="ring go">3:12</div>
+        <div class="t"><div class="lbl" style="margin:0"><span>Now · just starting <span class="pill">5 min</span></span></div><div class="big">ALY6145 Report 5: R Shiny</div></div>
+        <span class="btn">Pause</span>
+      </div>
+      <div class="card now">
+        <div class="ring done">5:00</div>
+        <div class="t"><div class="lbl" style="margin:0">5 minutes done</div><div class="big">Keep going?</div><div class="hint">You're already in it. Or stop here, 5 min logged.</div></div>
+        <span style="display:flex;gap:6px"><span class="btn pri">+20 min</span><span class="btn">Stop</span></span>
+      </div>
+    </div>
+    <div class="note">Also in the task details panel next to ▶ Focus. "+20" turns it into a full pomodoro (25 total). The 5 minutes count as focus time, not a pomodoro.</div>
+  </section>
+
+  <!-- 4. Steps -->
+  <section class="frame">
+    <div class="cap"><b>4 · Split into steps</b> · in the details panel, or by asking Claude</div>
+    <div class="screen" style="min-height:0">
+      <div class="panel">
+        <div class="ph">
+          <div class="meta"><i></i>Academic · todo · due today</div>
+          <div class="title">ALY6145 Report 5: Data Visualization with R Shiny</div>
+        </div>
+        <div class="pb">
+          <div class="lbl"><span>Checklist</span><span class="link" style="text-transform:none;letter-spacing:0">✦ Split into steps</span></div>
+          <div class="suggest">
+            <div class="lbl"><span>Suggested steps · about 2h</span></div>
+            <div class="ck new"><span class="box"></span>Open the dataset and pick 2 charts<span class="min">15m</span></div>
+            <div class="ck new"><span class="box"></span>Sketch the app layout (sidebar + 2 tabs)<span class="min">10m</span></div>
+            <div class="ck new"><span class="box"></span>Build the first chart in Shiny<span class="min">35m</span></div>
+            <div class="ck new"><span class="box"></span>Add the filter input<span class="min">25m</span></div>
+            <div class="ck new"><span class="box"></span>Write the 1-page report<span class="min">30m</span></div>
+            <div style="display:flex;gap:6px;margin-top:8px"><span class="btn pri sm">Looks right</span><span class="btn sm">Edit</span><span class="btn sm">Try again</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="chat">
+        <div class="you">You: break the Shiny report into small steps</div>
+        <div class="ai">Claude: Added 5 steps to "ALY6145 Report 5", first one is 15 min. <code>break_down_task</code> · Undo available</div>
+      </div>
+    </div>
+    <div class="note">Steps land in the existing checklist, so Focus and the details panel show them. In the app, steps are only added after "Looks right". The in-app button uses the same step writer as the MCP tool.</div>
+  </section>
+</div>
+
+<div class="notes"><b>Build order suggestion:</b> 2 (words, small) → 3 (Just start) → 1 (Replan + <code style="font-family:var(--mono)">replan_day</code>) → 4 (<code style="font-family:var(--mono)">break_down_task</code> MCP tool first; the in-app "Split into steps" button needs an AI call from the app, which QTrack doesn't make today).</div>
+</body>
+</html>

@@ -37,10 +37,10 @@ export default function Auth() {
   const S = {
     page: {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minHeight: '100vh', background: '#111110', fontFamily: "'DM Sans', sans-serif"
+      minHeight: '100vh', background: 'var(--bg)', fontFamily: "'DM Sans', sans-serif"
     },
     card: {
-      background: '#1A1A18', border: '1px solid #2C2C2A', borderRadius: 12,
+      background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12,
       padding: '32px', width: 360
     },
     logo: {
@@ -48,42 +48,42 @@ export default function Auth() {
       marginBottom: 24, justifyContent: 'center'
     },
     logoIcon: {
-      background: '#D3D1C7', color: '#111110', width: 28, height: 28,
+      background: 'var(--title)', color: 'var(--bg)', width: 28, height: 28,
       borderRadius: 6, display: 'inline-flex', alignItems: 'center',
       justifyContent: 'center', fontSize: 14, fontWeight: 700
     },
-    logoText: { fontSize: 18, fontWeight: 500, color: '#F1EFE8' },
+    logoText: { fontSize: 18, fontWeight: 500, color: 'var(--text)' },
     input: {
       width: '100%', padding: '8px 12px', borderRadius: 6, fontSize: 14,
-      background: '#111110', color: '#F1EFE8', border: '1px solid #2C2C2A',
+      background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--line)',
       outline: 'none', boxSizing: 'border-box', marginBottom: 10
     },
     btn: {
       width: '100%', padding: '10px', borderRadius: 6, fontSize: 14,
       fontWeight: 500, border: 'none', cursor: 'pointer',
-      background: '#D3D1C7', color: '#111110', marginBottom: 8
+      background: 'var(--title)', color: 'var(--bg)', marginBottom: 8
     },
     oauthBtn: {
       width: '100%', padding: '10px', borderRadius: 6, fontSize: 13,
-      border: '1px solid #2C2C2A', cursor: 'pointer',
-      background: 'transparent', color: '#B4B2A9', marginBottom: 6,
+      border: '1px solid var(--line)', cursor: 'pointer',
+      background: 'transparent', color: 'var(--soft)', marginBottom: 6,
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
     },
     divider: {
       display: 'flex', alignItems: 'center', gap: 12,
-      margin: '16px 0', color: '#5F5E5A', fontSize: 12
+      margin: '16px 0', color: 'var(--muted)', fontSize: 12
     },
-    line: { flex: 1, height: 0.5, background: '#2C2C2A' },
+    line: { flex: 1, height: 0.5, background: 'var(--line)' },
     toggle: {
-      background: 'none', border: 'none', color: '#85B7EB',
+      background: 'none', border: 'none', color: 'var(--blue)',
       cursor: 'pointer', fontSize: 13, padding: 0
     },
     error: {
-      background: '#2D0A0A', color: '#F09595', padding: '8px 12px',
+      background: 'var(--tint-red-bg)', color: 'var(--pink)', padding: '8px 12px',
       borderRadius: 6, fontSize: 12, marginBottom: 10
     },
     message: {
-      background: '#081F12', color: '#5DCAA5', padding: '8px 12px',
+      background: 'var(--tint-green-bg)', color: 'var(--green)', padding: '8px 12px',
       borderRadius: 6, fontSize: 12, marginBottom: 10
     }
   }
@@ -96,7 +96,7 @@ export default function Auth() {
           <span style={S.logoText}>QTrack</span>
         </div>
 
-        <p style={{ textAlign: 'center', color: '#888780', fontSize: 13, margin: '0 0 20px' }}>
+        <p style={{ textAlign: 'center', color: 'var(--sub)', fontSize: 13, margin: '0 0 20px' }}>
           {isSignUp ? 'Create your account' : 'Sign in to your account'}
         </p>
 
@@ -143,11 +143,11 @@ export default function Auth() {
           Continue with Google
         </button>
 
-        <a href="/demo" style={{ ...S.oauthBtn, textDecoration: 'none', boxSizing: 'border-box', color: '#AFA9EC', borderColor: '#26215C' }}>
+        <a href="/demo" style={{ ...S.oauthBtn, textDecoration: 'none', boxSizing: 'border-box', color: 'var(--purple)', borderColor: 'var(--tint-purple-bd)' }}>
           Try the demo — no sign-up
         </a>
 
-        <p style={{ textAlign: 'center', fontSize: 13, color: '#888780', marginTop: 16 }}>
+        <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--sub)', marginTop: 16 }}>
           {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
           <button
             style={S.toggle}

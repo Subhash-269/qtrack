@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QTrack Themes</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B0B0A; color: #F1EFE8; font-family: "DM Sans", system-ui, sans-serif; font-size: 13px; padding: 40px 24px 56px; }
+  header { max-width: 1320px; margin: 0 auto 24px; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header p { color: #888780; margin-top: 6px; max-width: 860px; line-height: 1.55; }
+  .grid { max-width: 1320px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .cap { font-size: 11px; color: #888780; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .cap b { color: #D3D1C7; font-weight: 500; letter-spacing: .04em; }
+  .cap em { font-style: normal; text-transform: none; letter-spacing: 0; color: #5F5E5A; }
+
+  /* ---- themes as role tokens ---- */
+  .t-current { --bg:#111110; --surface:#1A1A18; --border:#2C2C2A; --border-strong:#2C2C2A; --text:#F1EFE8; --title:#D3D1C7; --sub:#888780; --muted:#5F5E5A; --info:#85B7EB; --success:#5DCAA5; --warning:#FAC775; --danger:#E24B4A; --bug-bg:#2D0A0A; --bug:#F09595; --chip-bg:#1A1A18; --btn:#D3D1C7; --btn-text:#1A1A18; }
+  .t-calm { --bg:#1B1B19; --surface:#222220; --border:#34342F; --border-strong:#6E6D66; --text:#E6E4DC; --title:#DAD8CF; --sub:#9C9A92; --muted:#9C9A92; --info:#8FB8D6; --success:#7FBFA0; --warning:#E0B872; --danger:#D98880; --bug-bg:#33221F; --bug:#E3A49B; --chip-bg:#2A2A27; --btn:#DAD8CF; --btn-text:#1B1B19; }
+  .t-soft { --bg:#202320; --surface:#282B27; --border:#363A35; --border-strong:#747873; --text:#D8D6CC; --title:#CFCDC3; --sub:#96958B; --muted:#96958B; --info:#9AB4C8; --success:#8DB59A; --warning:#CFAE7A; --danger:#C98A7B; --bug-bg:#33302A; --bug:#D2A496; --chip-bg:#30332F; --btn:#C9C7BD; --btn-text:#202320; }
+  .t-high { --bg:#000000; --surface:#111111; --border:#3A3A37; --border-strong:#6B6B66; --text:#FFFFFF; --title:#FFFFFF; --sub:#C8C8C2; --muted:#C8C8C2; --info:#7CC4FF; --success:#5FE0B0; --warning:#FFD166; --danger:#FF7A70; --bug-bg:#2A0E0C; --bug:#FF9D95; --chip-bg:#1C1C1C; --btn:#FFFFFF; --btn-text:#000000; }
+  .t-light { --bg:#F7F6F2; --surface:#FFFFFF; --border:#E4E2DA; --border-strong:#8C8A82; --text:#1F1E1C; --title:#2B2A27; --sub:#6B6A64; --muted:#6B6A64; --info:#1F5F9E; --success:#2E7D5B; --warning:#8A5A00; --danger:#B3261E; --bug-bg:#FBE9E7; --bug:#B3261E; --chip-bg:#F1EFE8; --btn:#1F1E1C; --btn-text:#FFFFFF; }
+  .t-blush { --bg:#FFF4F6; --surface:#FFFFFF; --border:#F6DDE4; --border-strong:#B07F8F; --text:#3B2530; --title:#4A2E3B; --sub:#86606F; --muted:#86606F; --info:#2F63B0; --success:#2E7D5B; --warning:#8A5A00; --danger:#C0365F; --bug-bg:#FDE8EE; --bug:#B0284F; --chip-bg:#FCEEF2; --btn:#C2477A; --btn-text:#FFFFFF; }
+  .t-hero { --bg:#0E1322; --surface:#151C31; --border:#232C47; --border-strong:#636F90; --text:#EEF1F8; --title:#DCE2F0; --sub:#9AA5C0; --muted:#9AA5C0; --info:#5B9BFF; --success:#4FD1A5; --warning:#F2C14E; --danger:#FF4D57; --bug-bg:#3A1420; --bug:#FF8A92; --chip-bg:#1C2540; --btn:#C8303C; --btn-text:#FFFFFF; }
+  .t-gold { --bg:#0D0C0A; --surface:#17150F; --border:#2A261C; --border-strong:#6E6450; --text:#F2EBDC; --title:#E6DCC6; --sub:#A89B7C; --muted:#A89B7C; --info:#C9B27A; --success:#9CC78A; --warning:#E7C35A; --danger:#E07A62; --bug-bg:#2E1A12; --bug:#EBA08C; --chip-bg:#201D15; --btn:#D4AF37; --btn-text:#111110; }
+  .t-iron { --bg:#190E0D; --surface:#231413; --border:#3A2421; --border-strong:#86665C; --text:#F6E9E2; --title:#EAD9CF; --sub:#B39689; --muted:#B39689; --info:#E8B64C; --success:#8FCB9B; --warning:#F0C35C; --danger:#FF5A4E; --bug-bg:#3F1916; --bug:#FF9A90; --chip-bg:#2D1A18; --btn:#C8372D; --btn-text:#FFFFFF; }
+  .t-hero { --p1:#5B9BFF; --p2:#FF6B74; --p3:#4FD1A5; --p4:#F2C14E; --p5:#B79CFF; }
+  .t-gold { --p1:#D4AF37; --p2:#C9B27A; --p3:#9CC78A; --p4:#E8A87C; --p5:#B9A3D9; }
+  .t-iron { --p1:#E8B64C; --p2:#FF6A5E; --p3:#8FCB9B; --p4:#F2D08A; --p5:#9FB7E8; }
+  .t-blush { --p1:#C2477A; --p2:#2F63B0; --p3:#1E8A6A; --p4:#9A6A00; --p5:#7B4FC2; }
+  .t-blush.app { border-color: #3A3A37; }
+  .t-blush .toast b { color: #F4A9C4; }
+  .t-hero .toast b, .t-gold .toast b, .t-iron .toast b { color: #1F5F9E; }
+  /* project colors: dark set vs light set */
+  .t-current, .t-calm, .t-soft, .t-high { --p1:#AFA9EC; --p2:#85B7EB; --p3:#5DCAA5; --p4:#FAC775; --p5:#ED93B1; }
+  .t-light { --p1:#6A5ACD; --p2:#1F6FB2; --p3:#1E8A6A; --p4:#9A6A00; --p5:#B8457A; }
+
+  /* ---- mini Today, drawn with tokens ---- */
+  .app { background: var(--bg); color: var(--text); border: 1px solid #2C2C2A; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .t-light.app { border-color: #3A3A37; }
+  .top { display: flex; align-items: baseline; justify-content: space-between; }
+  .top h2 { font-size: 16px; font-weight: 500; }
+  .top span { font-size: 11px; color: var(--sub); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; display: flex; justify-content: space-between; align-items: center; }
+  .now { display: flex; align-items: center; gap: 12px; }
+  .ring { width: 46px; height: 46px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--danger); border-right-color: var(--danger); display: grid; place-items: center; font-family: "DM Mono", monospace; font-size: 10.5px; color: var(--danger); flex-shrink: 0; }
+  .now .t { flex: 1; min-width: 0; }
+  .now .name { font-size: 13px; color: var(--text); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn { padding: 5px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--border-strong); color: var(--title); white-space: nowrap; }
+  .btn.pri { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+  .fc-head { display: flex; align-items: baseline; gap: 8px; }
+  .total { font-family: "DM Mono", monospace; font-size: 16px; font-weight: 500; }
+  .seg { margin-left: auto; display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+  .seg span { padding: 2px 7px; font-size: 10.5px; color: var(--sub); }
+  .seg span.on { background: var(--border); color: var(--text); }
+  .bars { height: 62px; display: flex; align-items: flex-end; gap: 3px; margin-top: 8px; border-bottom: 1px solid var(--border); }
+  .bars div { flex: 1; display: flex; flex-direction: column-reverse; align-items: center; height: 100%; }
+  .bars i { display: block; width: 100%; max-width: 9px; }
+  .bars i:last-child { border-radius: 2px 2px 0 0; }
+  .legend { display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+  .legend span { font-size: 10.5px; color: var(--sub); display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 7px; height: 7px; border-radius: 2px; }
+  .it { display: flex; align-items: center; gap: 7px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .it:last-child { border-bottom: none; }
+  .play { width: 20px; height: 20px; border-radius: 5px; border: 1px solid var(--border-strong); color: var(--sub); font-size: 8px; display: grid; place-items: center; flex-shrink: 0; }
+  .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--title); }
+  .pn { font-size: 10px; color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+  .pn i { width: 6px; height: 6px; border-radius: 50%; }
+  .chip { font-size: 9.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--chip-bg); color: var(--sub); }
+  .chip.bug { background: var(--bug-bg); color: var(--bug); border-color: transparent; }
+  .due { font-size: 10px; color: var(--warning); white-space: nowrap; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .status { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .status span { font-size: 10.5px; display: inline-flex; align-items: center; gap: 4px; }
+  .input { margin-top: 6px; border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 8px; font-size: 11.5px; color: var(--muted); background: transparent; }
+  .toast { align-self: center; background: var(--text); color: var(--bg); border-radius: 7px; padding: 6px 10px; font-size: 11px; display: inline-flex; gap: 10px; }
+  .toast b { color: var(--info); font-weight: 500; filter: brightness(1.0); }
+  .t-light .toast b { color: #9CC7F0; }
+  .t-current .toast b, .t-calm .toast b, .t-soft .toast b, .t-high .toast b { color: #1F5F9E; }
+
+  .side { display: flex; flex-direction: column; gap: 14px; font-size: 12px; color: #B4B2A9; line-height: 1.55; }
+  .side h3 { font-size: 12px; color: #D3D1C7; font-weight: 600; margin-bottom: 4px; }
+  .side table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+  .side td { padding: 4px 6px 4px 0; border-top: 1px solid #222220; }
+  .side td:first-child { color: #888780; }
+  .ok { color: #5DCAA5; } .bad { color: #F09595; }
+</style>
+</head>
+<body>
+<header>
+  <h1>QTrack themes, side by side</h1>
+  <p>The same Today screen in each theme: Now card with a running timer, the focus chart with project colors, Up next with chips, a due item, statuses, an input and buttons. Numbers are WCAG contrast ratios measured for each theme's small labels and control borders.</p>
+</header>
+
+<div class="grid" id="grid"></div>
+
+<template id="today">
+  <div class="top"><h2>Today</h2><span>Sun, Nov 22 · all projects</span></div>
+  <div class="card now">
+    <div class="ring">14:32</div>
+    <div class="t"><div class="lbl">Now · Focus 2 of 4</div><div class="name">Report 5: R Shiny</div></div>
+    <span class="btn pri">Pause</span><span class="btn">✓ Done</span>
+  </div>
+  <div class="card">
+    <div class="fc-head"><span class="lbl">Focus</span><span class="total">3h 20m</span><span class="seg"><span class="on">Today</span><span>Week</span><span>Month</span></span></div>
+    <div class="bars">
+      <div><i style="height:30%;background:var(--p1)"></i></div><div><i style="height:62%;background:var(--p1)"></i><i style="height:18%;background:var(--p2)"></i></div>
+      <div><i style="height:40%;background:var(--p1)"></i><i style="height:38%;background:var(--p2)"></i></div><div><i style="height:20%;background:var(--p2)"></i><i style="height:20%;background:var(--p4)"></i></div>
+      <div><i style="height:42%;background:var(--p3)"></i></div><div><i style="height:15%;background:var(--p1)"></i></div><div><i style="height:33%;background:var(--p5)"></i></div>
+      <div></div><div></div><div></div><div></div><div></div>
+    </div>
+    <div class="legend"><span><i style="background:var(--p1)"></i>Academic</span><span><i style="background:var(--p2)"></i>Q Track</span><span><i style="background:var(--p3)"></i>Jobs</span><span><i style="background:var(--p4)"></i>Personal</span><span><i style="background:var(--p5)"></i>Trading</span></div>
+  </div>
+  <div class="card">
+    <div class="lbl" style="margin-bottom:2px"><span>Up next</span><span>3</span></div>
+    <div class="it"><span class="play">▶</span><span class="tt">Hourly forecast shows UTC</span><span class="pn"><i style="background:var(--p2)"></i>Q Track</span><span class="chip bug">bug</span></div>
+    <div class="it"><span class="play">▶</span><span class="tt">Draft capstone test plan</span><span class="pn"><i style="background:var(--p1)"></i>Academic</span><span class="chip">todo</span></div>
+    <div class="it"><span class="play">▶</span><span class="tt">Pay gas bill</span><span class="pn"><i style="background:var(--p4)"></i>Personal</span><span class="due">from yesterday</span></div>
+  </div>
+  <div class="row2">
+    <div class="card"><div class="lbl">Statuses</div>
+      <div class="status"><span style="color:var(--sub)">○ To do</span><span style="color:var(--info)">→ In progress</span><span style="color:var(--success)">✓ Done</span><span style="color:var(--muted)">— Skipped</span></div>
+    </div>
+    <div class="card"><div class="lbl">Scribbles</div><div class="input">Jot something…</div></div>
+  </div>
+  <div class="toast">Done: "Pay gas bill". Nice. <b>Undo</b></div>
+</template>
+
+<script>
+  const themes = [
+    ['t-current', 'Current', 'as shipped today', 'labels 2.7 ✗ · borders 1.2 ✗'],
+    ['t-calm', 'Calm', 'proposed default', 'labels 5.7 ✓ · borders 3.1 ✓'],
+    ['t-soft', 'Soft', 'lower contrast', 'labels 4.8 ✓ · borders 3.2 ✓'],
+    ['t-high', 'High contrast', 'max legibility', 'labels 11.2 ✓ · borders 3.5 ✓'],
+    ['t-light', 'Light', 'warm off-white', 'labels 5.4 ✓ · borders 3.5 ✓'],
+    ['t-blush', 'Blush', 'soft baby pink, light', 'labels 5.4 ✓ · borders 3.3 ✓'],
+    ['t-hero', 'Hero', 'red and blue on navy', 'labels 6.9 ✓ · borders 3.4 ✓'],
+    ['t-gold', 'Black & Gold', 'gold on near-black', 'labels 6.6 ✓ · borders 3.1 ✓'],
+    ['t-iron', 'Red & Gold', 'deep red with gold', 'labels 6.5 ✓ · borders 3.5 ✓'],
+  ];
+  const grid = document.getElementById('grid'), tpl = document.getElementById('today');
+  for (const [cls, name, sub, score] of themes) {
+    const wrap = document.createElement('section');
+    wrap.innerHTML = `<div class="cap"><span><b>${name}</b> · ${sub}</span><em class="${score.includes('✗') ? 'bad' : 'ok'}">${score}</em></div>`;
+    const app = document.createElement('div'); app.className = 'app ' + cls; app.appendChild(tpl.content.cloneNode(true));
+    wrap.appendChild(app); grid.appendChild(wrap);
+  }
+  const side = document.createElement('section'); side.className = 'side';
+  side.innerHTML = `<div><h3>How to choose</h3>Pick a <b>default</b> (the one new users see) and which others go in the <b>Theme</b> menu. "System" follows the device and switches between your dark default and Light.</div>
+  <div><h3>What changes vs current</h3><table>
+  <tr><td>Small labels</td><td>#5F5E5A → readable grey in every theme</td></tr>
+  <tr><td>Input / button borders</td><td>new <i>border-strong</i> token, 3 : 1</td></tr>
+  <tr><td>Red</td><td>only the running timer</td></tr>
+  <tr><td>Project colors</td><td>same 5 pastels on dark; darker twins on Light</td></tr></table></div>
+  <div><h3>Not decided by this mock</h3>Fonts, spacing and layout stay as they are. Only colors change.</div>`;
+  grid.appendChild(side);
+</script>
+</body>
+</html>

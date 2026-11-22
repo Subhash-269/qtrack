@@ -1,3 +1,4 @@
+import { THEMES, swatch } from "../theme";
 import { useState, useEffect, useRef } from "react";
 import * as db from "../storage";
 import { PROJECT_COLORS, projectColor, projectInitials } from "./projectColors";
@@ -8,7 +9,7 @@ import { PROJECT_COLORS, projectColor, projectInitials } from "./projectColors";
 //   3. One account menu (show/hide views, Assistant access, tutorial, sign out)
 // Collapsed, the same three parts fold into an icon rail.
 
-const C = { side: "#161615", raise: "#1A1A18", pop: "#1E1E1C", menu: "#242422", line: "#2C2C2A", dim: "#444441", muted: "#5F5E5A", sub: "#888780", soft: "#B4B2A9", text: "#F1EFE8", red: "#E24B4A", amber: "#FAC775", green: "#5DCAA5", danger: "#F09595" };
+const C = { side: "var(--side)", raise: "var(--surface)", pop: "var(--line2)", menu: "var(--raise2)", line: "var(--line)", dim: "var(--dim)", muted: "var(--muted)", sub: "var(--sub)", soft: "var(--soft)", text: "var(--text)", red: "var(--red)", amber: "var(--amber)", green: "var(--green)", danger: "var(--pink)" };
 const GLOBAL = ["today", "focus"];
 const RECENT_KEY = "qtrack_recent_projects";
 const FMT = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -64,12 +65,12 @@ export function ProjectList({ projects, activeProjectId, onSelect, onRename, onR
         <Dot color={projectColor(p)} />
         <input autoFocus value={renameText} onChange={e => setRenameText(e.target.value)} onBlur={() => finishRename(p)}
           onKeyDown={e => { if (e.key === "Enter") finishRename(p); if (e.key === "Escape") setRenaming(null); }}
-          style={{ flex: 1, minWidth: 0, padding: "4px 6px", borderRadius: 5, fontSize: fs, background: "#111110", color: C.text, border: `1px solid ${C.dim}`, outline: "none" }} />
+          style={{ flex: 1, minWidth: 0, padding: "4px 6px", borderRadius: 5, fontSize: fs, background: "var(--bg)", color: C.text, border: `1px solid ${C.dim}`, outline: "none" }} />
       </div>
     );
     return (
       <div key={p.id} style={{ position: "relative" }} onMouseEnter={() => setHover(p.id)} onMouseLeave={() => setHover(h => (h === p.id ? null : h))}>
-        <div style={{ ...rowBase, padding: big ? "10px 8px" : "6px 8px", background: cur ? C.line : hover === p.id || open ? "#262624" : "transparent", color: isArch ? C.muted : cur ? C.text : C.soft, fontStyle: isArch ? "italic" : "normal", cursor: "default" }}>
+        <div style={{ ...rowBase, padding: big ? "10px 8px" : "6px 8px", background: cur ? C.line : hover === p.id || open ? "var(--raise2)" : "transparent", color: isArch ? C.muted : cur ? C.text : C.soft, fontStyle: isArch ? "italic" : "normal", cursor: "default" }}>
           <button onClick={() => onSelect(p.id)} onDoubleClick={() => startRename(p)} title={isArch ? "Open (stays archived)" : undefined}
             style={{ ...rowBase, flex: 1, minWidth: 0, padding: 0, color: "inherit", fontStyle: "inherit", fontSize: fs }}>
             <Dot color={projectColor(p)} />
@@ -101,7 +102,7 @@ export function ProjectList({ projects, activeProjectId, onSelect, onRename, onR
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, background: "#111110", border: `1px solid ${C.line}`, borderRadius: 7, padding: "6px 9px", marginBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, background: "var(--bg)", border: `1px solid ${C.line}`, borderRadius: 7, padding: "6px 9px", marginBottom: 4 }}>
         <span style={{ color: C.muted, fontSize: 12 }}>⌕</span>
         <input autoFocus={autoFocus} value={q} onChange={e => setQ(e.target.value)} placeholder="Find a project…"
           onKeyDown={e => { if (e.key === "Enter" && found?.length) onSelect(found[0].id); }}
@@ -126,10 +127,30 @@ export function ProjectList({ projects, activeProjectId, onSelect, onRename, onR
   );
 }
 
+// Theme choice: a compact list with a 3-color swatch per theme. Used in the account menu and the phone sheet.
+export function ThemePicker({ value, onChange, big }) {
+  return (<div role="radiogroup" aria-label="Theme" style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+    {THEMES.map(t => {
+      const on = value === t.id, [a, b, c] = swatch(t.id);
+      return (<button key={t.id} role="radio" aria-checked={on} onClick={() => onChange(t.id)}
+        style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: big ? "8px 6px" : "5px 6px", borderRadius: 5, border: "none", background: on ? "var(--line)" : "transparent", color: on ? "var(--text)" : "var(--sub)", cursor: "pointer", fontSize: big ? 13 : 12, textAlign: "left", fontFamily: "inherit" }}>
+        <span style={{ display: "inline-flex", borderRadius: 4, overflow: "hidden", border: "1px solid var(--dim)", flexShrink: 0 }}>
+          {t.id === "system"
+            ? <><i style={{ width: 9, height: 14, background: "#222220" }} /><i style={{ width: 9, height: 14, background: "#F7F6F2" }} /></>
+            : [a, b, c].map((x, i) => <i key={i} style={{ width: 6, height: 14, background: x }} />)}
+        </span>
+        <span style={{ flex: 1 }}>{t.label}</span>
+        {t.note && <span style={{ fontSize: 10.5, color: "var(--muted)" }}>{t.note}</span>}
+        {on && <span style={{ fontSize: 11 }}>✓</span>}
+      </button>);
+    })}
+  </div>);
+}
+
 function MenuItem({ icon, children, onClick, danger }) {
   return (
     <button onClick={onClick} style={{ ...rowBase, gap: 8, padding: "6px 8px", fontSize: 12, color: danger ? C.danger : C.sub }}
-      onMouseEnter={e => { e.currentTarget.style.background = "#2E2E2B"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+      onMouseEnter={e => { e.currentTarget.style.background = "var(--raise2)"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
       <span style={{ width: 14, textAlign: "center", opacity: 0.8 }}>{icon}</span><span>{children}</span>
     </button>
   );
@@ -157,12 +178,12 @@ export function DeleteProjectDialog({ project, canDelete, onCancel, onArchive, o
         {canDelete && <>
           <div style={{ fontSize: 11, color: C.muted, marginBottom: 5 }}>Type <b style={{ color: C.soft }}>{project.name}</b> to confirm</div>
           <input autoFocus value={typed} onChange={e => setTyped(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && ok) { setBusy(true); onConfirm(); } }}
-            style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 7, fontSize: 13, background: "#111110", color: C.text, border: `1px solid ${C.line}`, outline: "none", marginBottom: 14, fontFamily: "'SF Mono', monospace" }} />
+            style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 7, fontSize: 13, background: "var(--bg)", color: C.text, border: `1px solid ${C.line}`, outline: "none", marginBottom: 14, fontFamily: "'SF Mono', monospace" }} />
         </>}
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: 9, borderRadius: 7, fontSize: 12, fontWeight: 600, background: "transparent", border: `1px solid ${C.dim}`, color: C.soft, cursor: "pointer" }}>Cancel</button>
           {!project.archived_at && canDelete && <button onClick={onArchive} style={{ flex: 1, padding: 9, borderRadius: 7, fontSize: 12, fontWeight: 600, background: "transparent", border: `1px solid ${C.dim}`, color: C.soft, cursor: "pointer" }}>Archive instead</button>}
-          {canDelete && <button disabled={!ok} onClick={() => { setBusy(true); onConfirm(); }} style={{ flex: 1, padding: 9, borderRadius: 7, fontSize: 12, fontWeight: 600, background: ok ? "#3A1414" : "transparent", border: `1px solid ${ok ? "#6B2222" : C.line}`, color: ok ? C.danger : C.dim, cursor: ok ? "pointer" : "not-allowed" }}>Delete</button>}
+          {canDelete && <button disabled={!ok} onClick={() => { setBusy(true); onConfirm(); }} style={{ flex: 1, padding: 9, borderRadius: 7, fontSize: 12, fontWeight: 600, background: ok ? "var(--tint-red-bg)" : "transparent", border: `1px solid ${ok ? "var(--tint-red-bd)" : C.line}`, color: ok ? C.danger : C.dim, cursor: ok ? "pointer" : "not-allowed" }}>Delete</button>}
         </div>
       </div>
     </div>
@@ -172,10 +193,11 @@ export function DeleteProjectDialog({ project, canDelete, onCancel, onArchive, o
 // ---------- sidebar ----------
 
 export default function Sidebar(props) {
-  const { sb, onToggle, nav, hideableNav, hiddenTabs, onToggleTab, view, onNav, tmr, taskName, projects, activeProjectId, onSelectProject, onRename, onRecolor, onArchive, onDelete, onNewProject, onAssistant, onTutorial, onSignOut, email, isDemo } = props;
+  const { sb, onToggle, nav, hideableNav, hiddenTabs, onToggleTab, view, onNav, tmr, taskName, projects, activeProjectId, onSelectProject, onRename, onRecolor, onArchive, onDelete, onNewProject, onAssistant, onTutorial, onSignOut, email, isDemo, theme, onTheme } = props;
   const [switcher, setSwitcher] = useState(null);   // anchor rect while the project switcher is open
   const [account, setAccount] = useState(null);     // anchor rect while the account menu is open
   const [showViews, setShowViews] = useState(false);
+  const [showThemes, setShowThemes] = useState(false);
   const projBtn = useRef(null);
 
   const active = projects.find(p => p.id === activeProjectId);
@@ -223,7 +245,7 @@ export default function Sidebar(props) {
       {/* Brand */}
       <div style={{ padding: sb ? "14px 16px" : "14px 0", borderBottom: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: sb ? "space-between" : "center" }}>
         <button onClick={sb ? undefined : onToggle} title={sb ? undefined : "Expand sidebar"} style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: 0, cursor: sb ? "default" : "pointer", color: C.text, fontSize: 15, fontWeight: 500, letterSpacing: -0.4 }}>
-          <span style={{ background: "#D3D1C7", color: "#111110", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>{sb && "QTrack"}
+          <span style={{ background: "var(--title)", color: "var(--bg)", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>{sb && "QTrack"}
         </button>
         {sb && <button onClick={onToggle} title="Collapse sidebar" aria-label="Collapse sidebar" style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 13, padding: 2 }}>◂</button>}
       </div>
@@ -245,7 +267,7 @@ export default function Sidebar(props) {
           ) : (
             <button ref={projBtn} onClick={openSwitcher} title={active?.name || "Choose a project"} aria-haspopup="menu"
               style={{ ...rowBase, justifyContent: "center", padding: "6px 0", marginBottom: 4 }}>
-              <span style={{ width: 26, height: 26, borderRadius: 6, background: projectColor(active), color: "#111110", fontSize: 10, fontWeight: 700, display: "grid", placeItems: "center" }}>{projectInitials(active?.name)}</span>
+              <span style={{ width: 26, height: 26, borderRadius: 6, background: projectColor(active), color: "var(--bg)", fontSize: 10, fontWeight: 700, display: "grid", placeItems: "center" }}>{projectInitials(active?.name)}</span>
             </button>
           )}
           <div style={{ paddingLeft: sb ? 4 : 0 }}>{scoped.map(navBtn)}</div>
@@ -256,7 +278,7 @@ export default function Sidebar(props) {
       <div style={{ borderTop: `1px solid ${C.line}`, padding: sb ? 10 : "10px 6px" }}>
         <button onClick={(e) => { setShowViews(false); setAccount(account ? null : e.currentTarget.getBoundingClientRect()); }} title={sb ? undefined : email} aria-haspopup="menu"
           style={{ ...rowBase, padding: sb ? "7px 8px" : "6px 0", justifyContent: sb ? "flex-start" : "center", background: account ? C.line : "transparent", color: C.soft }}>
-          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#2E2950", color: "#AFA9EC", fontSize: 11, fontWeight: 600, display: "grid", placeItems: "center", flexShrink: 0 }}>{(name[0] || "?").toUpperCase()}</span>
+          <span style={{ width: 22, height: 22, borderRadius: "50%", background: "var(--tint-purple-bd)", color: "var(--purple)", fontSize: 11, fontWeight: 600, display: "grid", placeItems: "center", flexShrink: 0 }}>{(name[0] || "?").toUpperCase()}</span>
           {sb && <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{isDemo ? "Demo" : name}</span>}
           {sb && <span style={{ color: C.muted, letterSpacing: 1 }}>⋯</span>}
         </button>
@@ -286,6 +308,8 @@ export default function Sidebar(props) {
               </label>
             ))}
           </div>}
+          <MenuItem icon="◐" onClick={() => setShowThemes(!showThemes)}>Theme · {THEMES.find(t => t.id === theme)?.label} {showThemes ? "▾" : "▸"}</MenuItem>
+          {showThemes && <div style={{ padding: "2px 4px 6px 22px" }}><ThemePicker value={theme} onChange={onTheme} /></div>}
           <MenuItem icon="✦" onClick={() => { setAccount(null); onAssistant(); }}>Assistant access</MenuItem>
           <MenuItem icon="?" onClick={() => { setAccount(null); onTutorial(); }}>Replay tutorial</MenuItem>
           <Sep />

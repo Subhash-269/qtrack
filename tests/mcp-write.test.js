@@ -344,6 +344,28 @@ describe('log_focus', () => {
   })
 })
 
+describe('replan_day', () => {
+  beforeEach(allowWrites)
+
+  it('moves leftovers to today (queued), tomorrow, later, or lets them go; undo restores all', async () => {
+    const [a, b, c, d] = (await rows('issues')).filter(i => !['done', 'skipped'].includes(i.status)).slice(0, 4)
+    await client.from('task_queue').delete().eq('item_id', a.id)
+    const today = new Date().toISOString().slice(0, 10)
+    const { data, summary } = await call('replan_day', { moves: [{ task_id: a.id, to: 'today' }, { task_id: b.id, to: 'tomorrow' }, { task_id: c.id, to: 'later' }, { task_id: d.id, to: 'let_go' }] })
+    expect(summary).toMatch(/^Replanned 4: 1 today, 1 tomorrow, 1 later, 1 let go\.$/)
+    const after = Object.fromEntries((await rows('issues')).map(i => [i.id, i]))
+    expect(after[a.id].due_date).toBe(today)
+    expect((await rows('task_queue')).some(q => q.item_id === a.id)).toBe(true)
+    expect(after[b.id].due_date > today).toBe(true)
+    expect(after[c.id].due_date).toBeNull()
+    expect(after[d.id].status).toBe('skipped')
+    await call('undo', { undo_id: data.undo_id })
+    const back = Object.fromEntries((await rows('issues')).map(i => [i.id, i]))
+    expect([back[a.id].due_date, back[b.id].due_date, back[c.id].due_date, back[d.id].status]).toEqual([a.due_date, b.due_date, c.due_date, d.status])
+    expect((await rows('task_queue')).some(q => q.item_id === a.id)).toBe(false)
+  })
+})
+
 describe('undo', () => {
   beforeEach(allowWrites)
 

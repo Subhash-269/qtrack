@@ -5,7 +5,7 @@
 import { dayBounds, getToday, searchTasks, getFocusStats } from '../_shared/today.js'
 import {
   UserError, WRITE_LIMIT_PER_HOUR, getTimer, startFocus, pauseFocus, resumeFocus, stopFocus,
-  addTask, addToQueue, captureNote, deleteTask, updateTask, logFocus, undoCall, writesAllowed, writesInLastHour,
+  addTask, addToQueue, captureNote, deleteTask, updateTask, logFocus, replanDay, undoCall, writesAllowed, writesInLastHour,
   listProjects, setProjectArchived,
 } from '../_shared/actions.js'
 
@@ -196,6 +196,20 @@ export const TOOLS = {
       type: z.enum(['todo', 'bug']).optional(),
     }),
     run: ({ client, userId }, args) => updateTask(client, userId, args),
+  },
+
+  replan_day: {
+    scope: 'write',
+    title: 'Replan the day',
+    description: 'Move leftover tasks or test cases (e.g. overdue ones from get_today) in one go. For each, "today" keeps it due today and adds it to Up next, "tomorrow" sets the next day as the date, "later" clears the date (it stays in its list), "let_go" marks a task Skipped. Say what you will do and confirm with the user first. Undo puts everything back.',
+    input: (z) => ({
+      moves: z.array(z.object({
+        task_id: z.string().describe('Id from get_today or search_tasks'),
+        to: z.enum(['today', 'tomorrow', 'later', 'let_go']),
+      })).min(1).max(50),
+      timezone: tzField(z),
+    }),
+    run: ({ client, userId }, { moves, timezone }) => replanDay(client, userId, { moves }, dayBounds(validTz(timezone || 'UTC')).date),
   },
 
   log_focus: {

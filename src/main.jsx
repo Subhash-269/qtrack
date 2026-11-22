@@ -2,6 +2,9 @@ import { StrictMode, useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { supabase } from './supabaseClient'
 import App from './App.jsx'
+import { initTheme } from './theme'
+
+initTheme()
 import Auth from './Auth.jsx'
 import OAuthConsent from './OAuthConsent.jsx'
 
@@ -42,7 +45,7 @@ function Root() {
 
   if (loading) return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center',
-      height:'100vh', background:'#111110', color:'#888780' }}>
+      height:'100vh', background:'var(--bg)', color:'var(--sub)' }}>
       Loading...
     </div>
   )
