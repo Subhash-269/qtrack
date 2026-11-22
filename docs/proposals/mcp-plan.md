@@ -36,7 +36,7 @@ Gaps to close along the way:
 | 0.2 | Move the new screen into `src/views/TodayView.jsx`, out of `App.jsx` (already 3.6k lines) | new file |
 | 0.3 | **Now** card: ring, task, Pause/Done, and the paused state with its reason. Reuse the existing `tmr`, `pauseTmr`, `resumeTmr` and `markDone`. | `TodayView.jsx` |
 | 0.4 | **Up next:** render `queue` with ▶ calling the existing `focusOn` | `TodayView.jsx` |
-| 0.5 | **Due today and overdue:** open tasks, tests and topics with `due_date <= today`, overdue first with a "Nd over" chip | `TodayView.jsx` |
+| 0.5 | **Due today and overdue:** open tasks and tests with `due_date <= today`, overdue first with a "Nd over" chip (study topics have no due date, so they only appear via the queue) | `TodayView.jsx` |
 | 0.6 | **Meetings today:** today's meetings that aren't cancelled. ◎ opens the existing `MeetingFocusView`. | `TodayView.jsx` |
 | 0.7 | **Scribbles:** one-line input, Enter calls `createNote({category:"scratch"})`, and today's scratch notes are listed below it | `TodayView.jsx` |
 | 0.8 | Seed demo data so `/demo` opens on a populated Today | `src/demo/seed.js` |

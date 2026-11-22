@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import { supabase, isDemo } from "./supabaseClient";
 import * as db from "./storage";
+import TodayView from "./views/TodayView";
 
 const SHORT_DATE = (d) => { if (!d) return "—"; const dt = new Date(d); const diff = Date.now() - dt.getTime(); if (diff < 60000) return "just now"; if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`; if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`; return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
 const FMT = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -81,6 +82,9 @@ function Ring({ size, stroke, timeLeft, totalTime, color }) {
   return (<svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#2C2C2A" strokeWidth={stroke} /><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={c} strokeDashoffset={c * (1 - p)} strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s linear" }} /></svg>);
 }
 
+// Tabs that can't be hidden from the sidebar
+const ALWAYS_TABS = ["today", "dashboard"];
+
 // Phone-width layout switch. Below this width the sidebar becomes a bottom tab bar.
 const MOBILE_QUERY = "(max-width: 640px)";
 function useIsMobile() {
@@ -93,7 +97,7 @@ const MOBILE_CSS = `.qt-mobile [style*="grid-template-columns: 1fr 1fr"], .qt-mo
 
 export default function App({ session }) {
   const [projects, setProjects] = useState([]); const [files, setFiles] = useState([]); const [issues, setIssues] = useState([]); const [testCases, setTestCases] = useState([]); const [links, setLinks] = useState([]); const [activeProjectId, setActiveProjectId] = useState(null);
-  const [view, setView] = useState("dashboard"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null); const [sb, setSb] = useState(() => { try { return localStorage.getItem("qtrack_sb") !== "0"; } catch { return true; } });
+  const [view, setView] = useState("today"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null); const [sb, setSb] = useState(() => { try { return localStorage.getItem("qtrack_sb") !== "0"; } catch { return true; } });
   const [hiddenTabsMap, setHiddenTabsMap] = useState(() => { try { return JSON.parse(localStorage.getItem("qtrack_hidden_tabs_v2") || "{}"); } catch { return {}; } });
   const [showNavSettings, setShowNavSettings] = useState(false);
   const hiddenTabs = hiddenTabsMap[activeProjectId] || [];
@@ -182,11 +186,11 @@ export default function App({ session }) {
   const finishSession = async (p) => {
     try { if (Notification.permission === "granted") new Notification(p.type === "work" ? "Focus done!" : "Break over!", { body: p.type === "work" ? "Time for a break." : "Ready to focus?" }); } catch {}
     try { const ctx = new AudioContext(); const o = ctx.createOscillator(); const g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.value = 800; g.gain.value = 0.3; o.start(); setTimeout(() => { o.frequency.value = 1000; }, 150); setTimeout(() => { o.stop(); ctx.close(); }, 400); } catch {}
-    if (p.type === "work") { try { await db.saveFocusSession(activeProjectId, p.tType === "issue" ? p.tId : null, p.tType === "test" ? p.tId : null, p.type, p.total, p.tType === "study" ? "study" : "focus", p.studyTopic || ""); loadToday(); } catch (e) { console.error(e); } }
+    if (p.type === "work") { try { await db.saveFocusSession(p.pid || activeProjectId, p.tType === "issue" ? p.tId : null, p.tType === "test" ? p.tId : null, p.type, p.total, p.tType === "study" ? "study" : "focus", p.studyTopic || ""); loadToday(); } catch (e) { console.error(e); } }
     const nd = p.type === "work" ? p.done + 1 : p.done;
     let nt, nc;
     if (p.type === "work") { nt = nd >= 4 ? "long_break" : "short_break"; nc = nd >= 4 ? 0 : nd; } else { nt = "work"; nc = p.type === "long_break" ? 0 : nd; }
-    setTmr({ st: "idle", left: DUR[nt], total: DUR[nt], type: nt, done: nc, tType: p.tType, tId: p.tId, studyTopic: p.studyTopic, startedAt: null });
+    setTmr({ st: "idle", left: DUR[nt], total: DUR[nt], type: nt, done: nc, tType: p.tType, tId: p.tId, pid: p.pid, studyTopic: p.studyTopic, startedAt: null });
   };
 
   const startTmr = (tt, ti) => { if (Notification.permission === "default") Notification.requestPermission(); setTmr(p => ({ ...p, st: "running", tType: tt || p.tType, tId: ti || p.tId, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null })); };
@@ -197,7 +201,7 @@ export default function App({ session }) {
     if (tmr.pauseReason && tmr.pausedAt) {
       const pauseDur = Math.round((Date.now() - new Date(tmr.pausedAt).getTime()) / 1000);
       if (pauseDur >= 10) {
-        try { await db.saveFocusSession(activeProjectId, tmr.tType === "issue" ? tmr.tId : null, tmr.tType === "test" ? tmr.tId : null, "work", pauseDur, tmr.pauseReason); loadToday(); } catch (e) { console.error(e); }
+        try { await db.saveFocusSession(tmr.pid || activeProjectId, tmr.tType === "issue" ? tmr.tId : null, tmr.tType === "test" ? tmr.tId : null, "work", pauseDur, tmr.pauseReason); loadToday(); } catch (e) { console.error(e); }
       }
     }
     setTmr(p => ({ ...p, st: "running", startedAt: new Date(Date.now() - (p.total - p.left) * 1000).toISOString(), pauseReason: null, pausedAt: null }));
@@ -207,7 +211,7 @@ export default function App({ session }) {
     if (t.type !== "work" || t.st === "idle") return;
     const elapsed = (t.total - t.left) - (t.taskOffset || 0);
     if (elapsed < 10) return;
-    try { await db.saveFocusSession(activeProjectId, t.tType === "issue" ? t.tId : null, t.tType === "test" ? t.tId : null, "work", elapsed, t.tType === "study" ? "study" : "focus", t.studyTopic || ""); loadToday(); } catch (e) { console.error(e); }
+    try { await db.saveFocusSession(t.pid || activeProjectId, t.tType === "issue" ? t.tId : null, t.tType === "test" ? t.tId : null, "work", elapsed, t.tType === "study" ? "study" : "focus", t.studyTopic || ""); loadToday(); } catch (e) { console.error(e); }
   };
 
   const logManual = async (taskType, taskId, startTime, endTime) => {
@@ -215,28 +219,28 @@ export default function App({ session }) {
   };
 
   const resetTmr = async () => { if (tmr.st !== "idle" && !confirm("Stop the current timer?")) return; await savePartial(tmr); setTmr({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: null, tId: null, startedAt: null, pauseReason: null, pausedAt: null }); };
-  const focusOn = async (type, id) => {
+  const focusOn = async (type, id, pid = activeProjectId) => {
     // If timer is running, save partial time on current task and switch — keep timer ticking
     if (tmr.st !== "idle" && tmr.type === "work") {
       // Calculate elapsed for the current task only (since task switch or session start)
       const taskElapsed = tmr.total - tmr.left - (tmr.taskOffset || 0);
       if (taskElapsed >= 10 && tmr.tId) {
-        try { await db.saveFocusSession(activeProjectId, tmr.tType === "issue" ? tmr.tId : null, tmr.tType === "test" ? tmr.tId : null, "work", taskElapsed); loadToday(); } catch (e) { console.error(e); }
+        try { await db.saveFocusSession(tmr.pid || activeProjectId, tmr.tType === "issue" ? tmr.tId : null, tmr.tType === "test" ? tmr.tId : null, "work", taskElapsed); loadToday(); } catch (e) { console.error(e); }
       }
       // Update offset so future savePartial only counts time on new task; DON'T change startedAt
-      setTmr({ ...tmr, tType: type, tId: id, taskOffset: tmr.total - tmr.left });
+      setTmr({ ...tmr, tType: type, tId: id, pid, taskOffset: tmr.total - tmr.left });
       setView("focus");
       return;
     }
     // Idle or on break — start a fresh timer
-    setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null, taskOffset: 0 });
+    setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: type, tId: id, pid, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null, taskOffset: 0 });
     setView("focus");
     if (Notification.permission === "default") Notification.requestPermission();
   };
 
   const startStudy = async (topic, navigate = true) => {
     if (tmr.st !== "idle" && tmr.type === "work") { await savePartial(tmr); }
-    setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: "study", tId: null, studyTopic: topic, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null, taskOffset: 0 });
+    setTmr({ st: "running", left: DUR.work, total: DUR.work, type: "work", done: 0, tType: "study", tId: null, pid: activeProjectId, studyTopic: topic, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null, taskOffset: 0 });
     if (navigate) setView("focus");
     if (Notification.permission === "default") Notification.requestPermission();
   };
@@ -273,6 +277,7 @@ export default function App({ session }) {
   const isPremium = userTier === "premium" || userTier === "founder";
 
   const nav = (isWorkshop ? [
+    { id: "today", l: "Today", ic: "☀" },
     { id: "dashboard", l: "Dashboard", ic: "⊞" },
     { id: "calendar", l: "Sessions", ic: "▦", cnt: meetings.filter(m => !m.attended && !m.cancelled).length || 0 },
     { id: "notes", l: "Notes", ic: "≡", cnt: notes.length || 0 },
@@ -280,9 +285,10 @@ export default function App({ session }) {
     { id: "news", l: "News", ic: "☰", cnt: 0 },
     { id: "board", l: "Board", ic: "⊟", cnt: cards.length || 0 },
   ] : [
+    { id: "today", l: "Today", ic: "☀" },
     { id: "dashboard", l: "Dashboard", ic: "⊞" },
     { id: "focus", l: "Focus", ic: "◎", cnt: tmr.st !== "idle" ? "●" : 0 },
-    { id: "issues", l: "Issues", ic: "⚑", cnt: stats.ob + stats.ot },
+    { id: "issues", l: "Tasks", ic: "⚑", cnt: stats.ob + stats.ot },
     { id: "tests", l: "Test cases", ic: "✓", cnt: stats.tt },
     { id: "files", l: "Files", ic: "◇", cnt: stats.fc },
     { id: "calendar", l: "Calendar", ic: "▦", cnt: meetings.filter(m => !m.attended && !m.cancelled).length || 0 },
@@ -311,6 +317,12 @@ export default function App({ session }) {
   const lnk = async (iid, tid) => { await db.linkIssueToTest(iid, tid); await reload(); };
   const ulnk = async (iid, tid) => { await db.unlinkIssueFromTest(iid, tid); await reload(); };
 
+  const markDone = async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } };
+  // Today rows can come from any project: switch to it first so the timer, task name and session log line up
+  const switchTo = (pid) => { if (pid && pid !== activeProjectId) setActiveProjectId(pid); };
+  const startFromToday = (kind, item) => { switchTo(item.project_id); focusOn(kind, item.id, item.project_id); };
+  const focusMeetingFromToday = (m) => { switchTo(m.project_id); setMeetingFocus(m); };
+
   const taskName = tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId)?.title : tmr.tType === "test" ? testCases.find(t => t.id === tmr.tId)?.title : tmr.tType === "study" ? `📚 ${tmr.studyTopic}` : null;
 
   return (
@@ -323,14 +335,14 @@ export default function App({ session }) {
           <button onClick={() => { const v = !sb; setSb(v); try { localStorage.setItem("qtrack_sb", v ? "1" : "0"); } catch {} }} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px", display: sb ? "block" : "none" }}>{sb ? "◂" : "▸"}</button>
         </div>
         <div style={{ padding: sb ? "12px 10px" : "12px 4px", flex: 1 }}>
-          {nav.filter(n => n.id === "dashboard" || !hiddenTabs.includes(n.id)).map(n => (<button key={n.id} onClick={() => { setView(n.id); setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all"); if (!sb) setSb(false); }} title={sb ? undefined : n.l} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: sb ? "8px 10px" : "8px 0", borderRadius: 6, border: "none", background: view === n.id ? "#2C2C2A" : "transparent", color: view === n.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 13, textAlign: "left", marginBottom: 2, justifyContent: sb ? "flex-start" : "center" }}><span style={{ fontSize: 14, width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span>{sb && <span style={{ flex: 1 }}>{n.l}</span>}{sb && n.cnt ? <span style={{ fontSize: 10, background: n.id === "focus" ? "#2D0A0A" : "#2C2C2A", padding: "1px 6px", borderRadius: 4, color: n.id === "focus" ? "#F09595" : "#888780" }}>{n.cnt}</span> : null}</button>))}
+          {nav.filter(n => ALWAYS_TABS.includes(n.id) || !hiddenTabs.includes(n.id)).map(n => (<button key={n.id} onClick={() => { setView(n.id); setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all"); if (!sb) setSb(false); }} title={sb ? undefined : n.l} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: sb ? "8px 10px" : "8px 0", borderRadius: 6, border: "none", background: view === n.id ? "#2C2C2A" : "transparent", color: view === n.id ? "#F1EFE8" : "#888780", cursor: "pointer", fontSize: 13, textAlign: "left", marginBottom: 2, justifyContent: sb ? "flex-start" : "center" }}><span style={{ fontSize: 14, width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span>{sb && <span style={{ flex: 1 }}>{n.l}</span>}{sb && n.cnt ? <span style={{ fontSize: 10, background: n.id === "focus" ? "#2D0A0A" : "#2C2C2A", padding: "1px 6px", borderRadius: 4, color: n.id === "focus" ? "#F09595" : "#888780" }}>{n.cnt}</span> : null}</button>))}
           {/* Settings gear */}
           <div style={{ marginTop: "auto", borderTop: "1px solid #1A1A18", paddingTop: 6, position: "relative" }}>
             <button onClick={() => setShowNavSettings(!showNavSettings)} title="Show/hide tabs" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: sb ? "8px 10px" : "8px 0", borderRadius: 6, border: "none", background: showNavSettings ? "#2C2C2A" : "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 13, justifyContent: sb ? "flex-start" : "center" }}><span style={{ fontSize: 14, width: 20, textAlign: "center" }}>⚙</span>{sb && <span>Settings</span>}</button>
             {showNavSettings && (
               <div style={{ position: "absolute", bottom: 40, left: sb ? 10 : 54, background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", width: 180, zIndex: 60, boxShadow: "0 4px 12px rgba(0,0,0,0.4)" }}>
                 <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Show in sidebar</div>
-                {nav.filter(n => n.id !== "dashboard").map(n => (
+                {nav.filter(n => !ALWAYS_TABS.includes(n.id)).map(n => (
                   <label key={n.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12, color: hiddenTabs.includes(n.id) ? "#444441" : "#D3D1C7", cursor: "pointer" }}>
                     <input type="checkbox" checked={!hiddenTabs.includes(n.id)} onChange={() => toggleTab(n.id)} style={{ cursor: "pointer" }} />
                     <span style={{ opacity: 0.7 }}>{n.ic}</span>
@@ -362,15 +374,16 @@ export default function App({ session }) {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {(view === "issues" || view === "tests") && <Input value={searchQ} onChange={setSearchQ} placeholder="Search..." style={{ width: mobile ? 120 : 180, fontSize: 12 }} />}
-            {view === "issues" && <Btn primary onClick={() => setModal({ type: "issue" })}>+ Issue</Btn>}
+            {view === "issues" && <Btn primary onClick={() => setModal({ type: "issue" })}>+ Task</Btn>}
             {view === "tests" && <Btn primary onClick={() => setModal({ type: "test" })}>+ Test case</Btn>}
             {view === "files" && <Btn primary onClick={() => setModal({ type: "file" })}>+ File</Btn>}
           </div>
         </div>
         <div style={{ flex: 1, padding: mobile ? "16px 16px 24px" : "24px 28px", overflowY: "auto", minWidth: 0 }}>
+          {view === "today" && <TodayView projects={projects} activeProjectId={activeProjectId} tmr={tmr} taskName={taskName} onStart={startFromToday} onPause={pauseTmr} onResume={resumeTmr} onDone={markDone} onOpenFocus={() => setView("focus")} onFocusMeeting={focusMeetingFromToday} onAddScribble={async (text) => { await db.createNote(activeProjectId, { content: text, category: "scratch" }); await reload(); }} refreshOn={[projects, issues, testCases, queue, notes, meetings, tmr.st, tmr.tId]} />}
           {view === "dashboard" && !isWorkshop && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} todaySessions={todaySessions} projectId={activeProjectId} />}
           {view === "dashboard" && isWorkshop && <WorkshopDashboard meetings={meetings} notes={notes} people={people} onNav={setView} />}
-          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} mobile={mobile} markDone={async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } }} />}
+          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} mobile={mobile} markDone={markDone} />}
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
@@ -390,14 +403,14 @@ export default function App({ session }) {
       {/* Mobile: running-timer chip + bottom tabs + "More" sheet */}
       {mobile && !meetingFocus && (() => {
         const tabs = isWorkshop
-          ? [{ id: "dashboard", l: "Home", ic: "⊞" }, { id: "calendar", l: "Sessions", ic: "▦" }, { id: "notes", l: "Notes", ic: "≡" }]
-          : [{ id: "focus", l: "Focus", ic: "◎" }, { id: "log", l: "Log", ic: "◷" }, { id: "issues", l: "Tasks", ic: "⚑" }, { id: "notes", l: "Notes", ic: "≡" }];
+          ? [{ id: "today", l: "Today", ic: "☀" }, { id: "dashboard", l: "Home", ic: "⊞" }, { id: "calendar", l: "Sessions", ic: "▦" }, { id: "notes", l: "Notes", ic: "≡" }]
+          : [{ id: "today", l: "Today", ic: "☀" }, { id: "focus", l: "Focus", ic: "◎" }, { id: "log", l: "Log", ic: "◷" }, { id: "issues", l: "Tasks", ic: "⚑" }];
         const go = (id) => { setView(id); setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all"); setMoreOpen(false); };
         const inTabs = tabs.some(t => t.id === view);
-        const rest = nav.filter(n => !tabs.some(t => t.id === n.id) && (n.id === "dashboard" || !hiddenTabs.includes(n.id)));
+        const rest = nav.filter(n => !tabs.some(t => t.id === n.id) && (ALWAYS_TABS.includes(n.id) || !hiddenTabs.includes(n.id)));
         const rowBtn = { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "11px 4px", border: "none", background: "transparent", fontSize: 14, textAlign: "left", cursor: "pointer" };
         return (<>
-          {tmr.st !== "idle" && view !== "focus" && (
+          {tmr.st !== "idle" && view !== "focus" && view !== "today" && (
             <div onClick={() => go("focus")} style={{ position: "fixed", left: 16, right: 16, bottom: 72, zIndex: 55, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, cursor: "pointer" }}>
               <Ring size={26} stroke={3} timeLeft={tmr.left} totalTime={tmr.total} color={SC[tmr.type]} />
               <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "#B4B2A9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{taskName || (tmr.type === "work" ? "Focusing" : "Break")}{tmr.st === "paused" ? " · paused" : ""}</span>
