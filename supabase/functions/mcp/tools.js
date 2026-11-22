@@ -6,6 +6,7 @@ import { dayBounds, getToday, searchTasks, getFocusStats } from '../_shared/toda
 import {
   UserError, WRITE_LIMIT_PER_HOUR, getTimer, startFocus, pauseFocus, resumeFocus, stopFocus,
   addTask, addToQueue, captureNote, deleteTask, undoCall, writesAllowed, writesInLastHour,
+  listProjects, setProjectArchived,
 } from '../_shared/actions.js'
 
 const tzField = (z) => z.string().optional().describe('IANA timezone of the user, e.g. "America/New_York". Defaults to UTC. Decides what "today" means.')
@@ -83,6 +84,30 @@ export const TOOLS = {
     description: "What the focus timer is doing right now on all of the user's devices: idle, running (task, minutes left) or paused (with the reason).",
     input: () => ({}),
     run: ({ client, userId }) => getTimer(client, userId),
+  },
+
+  list_projects: {
+    scope: 'read',
+    title: 'List projects',
+    description: "The user's projects with their ids. Archived projects are hidden from Today and search; pass include_archived to see them too.",
+    input: (z) => ({ include_archived: z.boolean().optional().describe('Also list archived projects') }),
+    run: ({ client, userId }, args) => listProjects(client, userId, args),
+  },
+
+  archive_project: {
+    scope: 'write',
+    title: 'Archive project',
+    description: "Archive a project by name. Nothing is deleted: its tasks, notes and focus history are kept, but it leaves the sidebar, Today, search and the default project for new tasks. The last active project can't be archived. Undo, or restore_project, brings it back.",
+    input: (z) => ({ project: z.string().min(1).describe('Project name (or a unique part of it)') }),
+    run: ({ client, userId }, args) => setProjectArchived(client, userId, args, true),
+  },
+
+  restore_project: {
+    scope: 'write',
+    title: 'Restore project',
+    description: 'Bring an archived project back to the active list, by name.',
+    input: (z) => ({ project: z.string().min(1).describe('Name of the archived project') }),
+    run: ({ client, userId }, args) => setProjectArchived(client, userId, args, false),
   },
 
   start_focus: {

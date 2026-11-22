@@ -36,7 +36,7 @@ export async function resolveProject(client, userId, name) {
   if (name) {
     const n = name.trim().toLowerCase()
     const archived = (await projects(client, userId, { includeArchived: true })).find(p => p.archived_at && p.name.toLowerCase() === n)
-    if (archived && !list.some(p => p.name.toLowerCase() === n)) throw new UserError(`"${archived.name}" is archived. Unarchive it in QTrack first.`)
+    if (archived && !list.some(p => p.name.toLowerCase() === n)) throw new UserError(`"${archived.name}" is archived. Restore it first (restore_project, or in QTrack).`)
     const exact = list.filter(p => p.name.toLowerCase() === n)
     const partial = exact.length ? exact : list.filter(p => p.name.toLowerCase().includes(n))
     if (partial.length === 1) return partial[0]
@@ -45,6 +45,45 @@ export async function resolveProject(client, userId, name) {
   }
   const last = many(await client.from('focus_sessions').select('project_id, completed_at').eq('user_id', userId).order('completed_at', { ascending: false }).limit(1))[0]
   return list.find(p => p.id === last?.project_id) || list[list.length - 1]
+}
+
+// ---------- projects ----------
+
+export async function listProjects(client, userId, { include_archived } = {}) {
+  const all = await projects(client, userId, { includeArchived: true })
+  const shown = include_archived ? all : all.filter(p => !p.archived_at)
+  const active = all.filter(p => !p.archived_at).length
+  return {
+    summary: `${active} active project${active === 1 ? '' : 's'}${all.length > active ? `, ${all.length - active} archived` : ''}.`,
+    data: { projects: shown.map(p => ({ id: p.id, name: p.name, type: p.type || 'project', archived: !!p.archived_at, archived_at: p.archived_at || null })) },
+  }
+}
+
+// Find a project by name among all of them (archived included), exact match first.
+async function findProjectAny(client, userId, name) {
+  const all = await projects(client, userId, { includeArchived: true })
+  const n = String(name || '').trim().toLowerCase()
+  if (!n) throw new UserError('Say which project, by name.')
+  const exact = all.filter(p => p.name.toLowerCase() === n)
+  const matches = exact.length ? exact : all.filter(p => p.name.toLowerCase().includes(n))
+  if (matches.length === 1) return { project: matches[0], all }
+  if (!matches.length) throw new UserError(`No project matches "${name}". Projects: ${all.map(p => p.name + (p.archived_at ? ' (archived)' : '')).join(', ')}.`)
+  throw new UserError(`"${name}" matches several projects: ${matches.map(p => p.name).join(', ')}. Use the full name.`)
+}
+
+// Archive (hide from the sidebar, Today and the assistant's defaults; data kept) or restore.
+export async function setProjectArchived(client, userId, { project }, archive, now = Date.now()) {
+  const { project: p, all } = await findProjectAny(client, userId, project)
+  if (archive && p.archived_at) return { summary: `"${p.name}" is already archived.`, data: { project: p.name, archived: true }, undo: null }
+  if (!archive && !p.archived_at) return { summary: `"${p.name}" isn't archived.`, data: { project: p.name, archived: false }, undo: null }
+  if (archive && all.filter(x => !x.archived_at).length <= 1) throw new UserError(`"${p.name}" is the only active project, so it can't be archived.`)
+  const archived_at = archive ? iso(now) : null
+  one(await client.from('projects').update({ archived_at }).eq('id', p.id).eq('user_id', userId).select().single())
+  return {
+    summary: archive ? `Archived "${p.name}". Its tasks and history are kept; it's hidden from the sidebar and Today.` : `Restored "${p.name}".`,
+    data: { project: p.name, project_id: p.id, archived: archive },
+    undo: [{ op: 'update', table: 'projects', id: p.id, values: { archived_at: p.archived_at || null } }],
+  }
 }
 
 // A task or test case by id, tagged with its kind ('issue' | 'test').

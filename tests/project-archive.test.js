@@ -51,4 +51,38 @@ describe('archived projects', () => {
     await client.from('projects').update({ archived_at: null }).eq('id', p.id)
     await expect(callTool('add_task', ctx, { title: 'Back again', project: 'Weather App' })).resolves.toBeTruthy()
   })
+
+  describe('assistant tools', () => {
+    beforeEach(() => client.from('mcp_settings').insert({ user_id: userId, allow_writes: true }))
+
+    it('archive_project and restore_project, with undo', async () => {
+      const { data, summary } = await callTool('archive_project', ctx, { project: 'devconf' })
+      expect(summary).toMatch(/^Archived "DevConf Boston"/)
+      expect((await project('DevConf')).archived_at).toBeTruthy()
+      expect((await callTool('list_projects', ctx, {})).data.projects.map(p => p.name)).not.toContain('DevConf Boston')
+      expect((await callTool('list_projects', ctx, { include_archived: true })).data.projects.find(p => p.name === 'DevConf Boston')).toMatchObject({ archived: true })
+
+      await callTool('undo', ctx, { undo_id: data.undo_id })
+      expect((await project('DevConf')).archived_at).toBeNull()
+
+      await callTool('archive_project', ctx, { project: 'DevConf Boston' })
+      const r = await callTool('restore_project', ctx, { project: 'devconf' })
+      expect(r.summary).toBe('Restored "DevConf Boston".')
+      expect((await project('DevConf')).archived_at).toBeNull()
+    })
+
+    it('says so when nothing changes, and keeps one active project', async () => {
+      expect((await callTool('restore_project', ctx, { project: 'Weather App' })).summary).toMatch(/isn't archived/)
+      await callTool('archive_project', ctx, { project: 'Weather App' })
+      expect((await callTool('archive_project', ctx, { project: 'Weather App' })).summary).toMatch(/already archived/)
+      await callTool('archive_project', ctx, { project: 'DevConf' })
+      await expect(callTool('archive_project', ctx, { project: 'CS 5800' })).rejects.toThrow(/only active project/)
+    })
+
+    it('needs changes turned on', async () => {
+      await client.from('mcp_settings').update({ allow_writes: false }).eq('user_id', userId)
+      await expect(callTool('archive_project', ctx, { project: 'DevConf' })).rejects.toThrow(/turned off/)
+      expect((await project('DevConf')).archived_at ?? null).toBeNull()
+    })
+  })
 })
