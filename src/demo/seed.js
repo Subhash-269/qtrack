@@ -33,7 +33,7 @@ export function buildSeed() {
     readme: row('files', { project_id: P, name: 'README.md', category: 'other' }),
   }
   const issue = (r) => row('issues', { project_id: P, type: 'bug', priority: 'medium', status: 'open', description: '', estimated_pomodoros: 2, due_date: null, repo_name: 'weather-app', branch_name: 'main', meeting_tag: null, resolved_at: null, scratch_notes: '', scratch_checklist: [], ...r })
-  const i1 = issue({ title: 'Hourly forecast shows UTC instead of local time', file_id: f.api.id, priority: 'critical', status: 'in_progress', branch_name: 'feat/hourly-forecast', due_date: day(1), estimated_pomodoros: 3, meeting_tag: tags('Sprint sync'), description: 'API returns `dt` in UTC seconds. We render it without applying the city timezone offset.', scratch_checklist: [{ text: 'Reproduce with Tokyo', done: true }, { text: 'Use timezone_offset from response', done: false }, { text: 'Add test for DST boundary', done: false }], created_at: at(3) })
+  const i1 = issue({ title: 'Hourly forecast shows UTC instead of local time', file_id: f.api.id, priority: 'critical', status: 'in_progress', branch_name: 'feat/hourly-forecast', due_date: day(-1), estimated_pomodoros: 3, meeting_tag: tags('Sprint sync'), description: 'API returns `dt` in UTC seconds. We render it without applying the city timezone offset.', scratch_checklist: [{ text: 'Reproduce with Tokyo', done: true }, { text: 'Use timezone_offset from response', done: false }, { text: 'Add test for DST boundary', done: false }], created_at: at(3) })
   const i2 = issue({ title: 'Cache never expires when offline', file_id: f.cache.id, priority: 'high', due_date: day(3), created_at: at(4) })
   const i3 = issue({ title: 'Add °C / °F toggle to settings', file_id: f.units.id, type: 'todo', priority: 'medium', branch_name: 'feat/hourly-forecast', due_date: day(5), created_at: at(5) })
   const i4 = issue({ title: 'City search drops results with accents (São Paulo)', file_id: f.picker.id, priority: 'high', created_at: at(6) })
@@ -44,7 +44,7 @@ export function buildSeed() {
   issue({ title: 'Loading spinner flashes on cached data', file_id: f.picker.id, priority: 'low', status: 'fixed', branch_name: 'feat/hourly-forecast', resolved_at: at(0, 9, 30), created_at: at(4) })
 
   const test = (r) => row('test_cases', { project_id: P, precondition: '', estimated_pomodoros: 1, due_date: null, repo_name: 'weather-app', branch_name: 'main', meeting_tag: null, status: 'not_run', last_run: null, scratch_notes: '', scratch_checklist: [], ...r })
-  const t1 = test({ title: 'Hourly forecast renders in city local time', file_id: f.api.id, branch_name: 'feat/hourly-forecast', precondition: 'Device timezone set to America/New_York', status: 'fail', last_run: at(0, 9), steps: [{ step: 'Search for "Tokyo"', expected: 'Tokyo forecast loads' }, { step: 'Open the hourly tab', expected: 'First slot shows the current Tokyo hour' }, { step: 'Compare with timeanddate.com', expected: 'Times match' }] })
+  const t1 = test({ title: 'Hourly forecast renders in city local time', file_id: f.api.id, due_date: day(0), branch_name: 'feat/hourly-forecast', precondition: 'Device timezone set to America/New_York', status: 'fail', last_run: at(0, 9), steps: [{ step: 'Search for "Tokyo"', expected: 'Tokyo forecast loads' }, { step: 'Open the hourly tab', expected: 'First slot shows the current Tokyo hour' }, { step: 'Compare with timeanddate.com', expected: 'Times match' }] })
   const t2 = test({ title: 'Offline mode serves cached forecast', file_id: f.cache.id, precondition: 'Forecast for Boston loaded once', status: 'pass', last_run: at(1, 14), steps: [{ step: 'Disable network in DevTools', expected: 'App stays usable' }, { step: 'Reload the page', expected: 'Boston forecast shows with "offline" badge' }] })
   test({ title: 'Unit toggle converts all values', file_id: f.units.id, status: 'not_run', steps: [{ step: 'Switch to °F', expected: 'Temperatures convert' }, { step: 'Check wind speed', expected: 'Shown in mph' }] })
   test({ title: 'Search handles accented city names', file_id: f.picker.id, status: 'blocked', last_run: at(2, 11), steps: [{ step: 'Type "Sao Paulo"', expected: 'São Paulo appears' }] })
@@ -76,6 +76,8 @@ export function buildSeed() {
   row('meetings', { project_id: P, title: 'Design review', meeting_date: day(-12), start_time: '13:00', end_time: '14:00', attended: true })
 
   const note = (pid, r) => row('notes', { project_id: pid, title: '', content: '', category: 'scratch', linked_issue_id: null, linked_file_id: null, linked_test_id: null, code_lang: '', meeting_tag: null, repo_name: '', is_study: false, tags: [], topic: '', pinned: false, updated_at: at(1), ...r })
+  // Today's scribbles
+  note(P, { content: 'API sends the tz offset in seconds, not hours', linked_issue_id: i1.id, created_at: at(0, 9, 40), updated_at: at(0, 9, 40) })
   note(P, { title: 'Caching strategy for forecast API', category: 'decision', pinned: true, repo_name: 'weather-app', linked_file_id: f.cache.id, updated_at: at(1, 18), content: `Decision: cache forecasts per city for 10 minutes, keyed by lat/lon rounded to 2 decimals.
 
 Why: the free API tier allows 1,000 calls/day, and the weather doesn't change faster than this. When offline, serve the stale entry with an "offline" badge.

@@ -1,6 +1,7 @@
 // storage.js — Supabase-backed data layer for QTrack
 // Replaces the old localStorage polyfill
 import { supabase } from './supabaseClient'
+import { getToday } from '../supabase/functions/_shared/today.js'
 
 const uid = async () => {
   const { data: { user } } = await supabase.auth.getUser()
@@ -783,4 +784,16 @@ export async function toggleBookmark(id, bookmarked) {
 export async function deleteNewsItem(id) {
   const { error } = await supabase.from('news_cache').delete().eq('id', id)
   if (error) throw error
+}
+// ============================================
+// Today (cross-project)
+// ============================================
+
+// Same query the MCP server's get_today tool uses, so the screen and the assistant agree
+export async function getTodayAcrossProjects() {
+  const user_id = await uid()
+  const now = new Date()
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const start = new Date(now); start.setHours(0, 0, 0, 0)
+  return getToday(supabase, user_id, { date, startOfDayISO: start.toISOString() })
 }

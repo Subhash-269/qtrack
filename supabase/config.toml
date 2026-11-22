@@ -1,0 +1,20 @@
+# Supabase CLI config for QTrack. Only the settings this repo relies on are listed;
+# everything else keeps the CLI defaults. Push to the hosted project with `supabase config push`.
+project_id = "qtrack"
+
+[auth]
+# Origin that serves the app (and the /oauth/consent page). Local Vite dev server by default;
+# the hosted project's Site URL is set in the dashboard.
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173"]
+
+[auth.oauth_server]
+# Supabase Auth acts as the OAuth 2.1 server for MCP clients (Claude, Cursor, ...)
+enabled = true
+authorization_url_path = "/oauth/consent"
+allow_dynamic_registration = true
+
+[functions.mcp]
+# The function verifies user tokens itself (withSupabase). The gateway check must be off so the
+# unauthenticated OAuth discovery request can reach withOAuthProtectedResource.
+verify_jwt = false
