@@ -34,6 +34,7 @@ Tools:
 | `add_to_queue` | write | Put a task at the end of its project's queue |
 | `capture_note` | write | Save a scribble, optionally linked to a task |
 | `archive_project` / `restore_project` | write | Archive a project by name (data kept; hidden from the sidebar, Today, search and defaults) or bring it back. The last active project can't be archived |
+| `update_task` | write | Change a task's status ("done", reopen, won't fix), priority, due date, title or type by id. Finishing stamps `resolved_at`; undo restores the old values |
 | `delete_task` | write | Delete a task by id (refused while it's being timed). Its sessions and notes stay, unlinked; undo restores the task and re-links them |
 | `undo` | write | Reverse a change from the last 10 minutes by its `undo_id` |
 

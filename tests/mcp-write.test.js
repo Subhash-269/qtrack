@@ -264,6 +264,59 @@ describe('delete_task', () => {
   })
 })
 
+describe('update_task', () => {
+  beforeEach(allowWrites)
+
+  it('marks a task done with resolved_at, and undo reopens it', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    expect(utc.status).not.toBe('fixed')
+    const { data, summary } = await call('update_task', { task_id: utc.id, status: 'done' })
+    expect(summary).toBe(`"${UTC_BUG}": marked done.`)
+    expect(data).toMatchObject({ status: 'fixed', done: true, changed: ['status'] })
+    const after = await issueByTitle(UTC_BUG)
+    expect(after.status).toBe('fixed')
+    expect(after.resolved_at).toBeTruthy()
+    expect((await call('search_tasks', { query: 'Hourly forecast' })).data.results.map(r => r.id)).not.toContain(utc.id)
+
+    await call('undo', { undo_id: data.undo_id })
+    const back = await issueByTitle(UTC_BUG)
+    expect(back.status).toBe(utc.status)
+    expect(back.resolved_at ?? null).toBe(utc.resolved_at ?? null)
+  })
+
+  it('reopening clears resolved_at', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    await call('update_task', { task_id: utc.id, status: 'done' })
+    await call('update_task', { task_id: utc.id, status: 'open' })
+    expect(await issueByTitle(UTC_BUG)).toMatchObject({ status: 'open', resolved_at: null })
+  })
+
+  it('changes several fields at once and can clear the due date', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    await call('update_task', { task_id: utc.id, due_date: '2030-01-02' })
+    const { data, summary } = await call('update_task', { task_id: utc.id, priority: 'low', due_date: null, title: 'UTC bug', type: 'todo' })
+    expect(data.changed.sort()).toEqual(['due_date', 'priority', 'title', 'type'].filter(k => k !== 'type' || utc.type !== 'todo').sort())
+    expect(summary).toMatch(/^"UTC bug": .*priority low.*no due date/)
+    expect(await issueByTitle('UTC bug')).toMatchObject({ priority: 'low', due_date: null })
+    await call('undo', { undo_id: data.undo_id })
+    expect(await issueByTitle(UTC_BUG)).toMatchObject({ priority: utc.priority, due_date: '2030-01-02' })
+  })
+
+  it('reports no change without logging an undo', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    const { data } = await call('update_task', { task_id: utc.id, priority: utc.priority })
+    expect(data).toMatchObject({ changed: [] })
+    expect(data.undo_id).toBeUndefined()
+  })
+
+  it("only touches the user's own tasks, and needs changes turned on", async () => {
+    await expect(call('update_task', { task_id: 'nope', status: 'done' })).rejects.toThrow(/No task with id/)
+    await client.from('mcp_settings').update({ allow_writes: false }).eq('user_id', userId)
+    const utc = await issueByTitle(UTC_BUG)
+    await expect(call('update_task', { task_id: utc.id, status: 'done' })).rejects.toThrow(/turned off/)
+  })
+})
+
 describe('undo', () => {
   beforeEach(allowWrites)
 

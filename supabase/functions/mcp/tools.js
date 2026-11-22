@@ -5,7 +5,7 @@
 import { dayBounds, getToday, searchTasks, getFocusStats } from '../_shared/today.js'
 import {
   UserError, WRITE_LIMIT_PER_HOUR, getTimer, startFocus, pauseFocus, resumeFocus, stopFocus,
-  addTask, addToQueue, captureNote, deleteTask, undoCall, writesAllowed, writesInLastHour,
+  addTask, addToQueue, captureNote, deleteTask, updateTask, undoCall, writesAllowed, writesInLastHour,
   listProjects, setProjectArchived,
 } from '../_shared/actions.js'
 
@@ -181,6 +181,21 @@ export const TOOLS = {
       project: z.string().optional().describe('Project name, when not linking to a task'),
     }),
     run: ({ client, userId }, args) => captureNote(client, userId, args),
+  },
+
+  update_task: {
+    scope: 'write',
+    title: 'Update task',
+    description: 'Change the status, priority, due date, title or type of a task, by task_id from search_tasks or get_today (use include_done to find finished ones). Status "done" marks it finished (same as "fixed"); "open" reopens it. Pass due_date null to clear it. Only the fields you pass change. Undo puts the old values back.',
+    input: (z) => ({
+      task_id: z.string().describe('Id of the task'),
+      status: z.enum(['done', 'open', 'in_progress', 'fixed', 'verified', 'wont_fix']).optional().describe('"done" = finished; "open" reopens; "wont_fix" closes without doing it'),
+      priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+      due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe('YYYY-MM-DD, or null to clear'),
+      title: z.string().min(1).max(200).optional().describe('New title'),
+      type: z.enum(['todo', 'bug']).optional(),
+    }),
+    run: ({ client, userId }, args) => updateTask(client, userId, args),
   },
 
   delete_task: {

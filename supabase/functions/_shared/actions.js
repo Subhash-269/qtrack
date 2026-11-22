@@ -349,6 +349,47 @@ export async function deleteTask(client, userId, { task_id }, now = Date.now()) 
   }
 }
 
+// Change a task's status, priority, due date, title or type. "done" means "fixed", as in the app.
+// Moving to a finished status stamps resolved_at (the app's reports use it); reopening clears it.
+export const TASK_STATUSES = ['open', 'in_progress', 'fixed', 'verified', 'wont_fix']
+const STATUS_ALIASES = { done: 'fixed' }
+
+export async function updateTask(client, userId, { task_id, status, priority, due_date, title, type }, now = Date.now()) {
+  const task = one(await client.from('issues').select('*').eq('user_id', userId).eq('id', task_id).maybeSingle())
+  if (!task) throw new UserError(`No task with id ${task_id}. Use search_tasks to find its id.`)
+
+  const values = {}
+  if (status !== undefined) {
+    const s = STATUS_ALIASES[status] || status
+    if (!TASK_STATUSES.includes(s)) throw new UserError(`Unknown status "${status}". Use one of: done, ${TASK_STATUSES.join(', ')}.`)
+    if (s !== task.status) {
+      values.status = s
+      const wasDone = TASK_DONE.includes(task.status), isDone = TASK_DONE.includes(s)
+      if (isDone && !wasDone) values.resolved_at = iso(now)
+      else if (!isDone) values.resolved_at = null
+    }
+  }
+  if (priority !== undefined && priority !== task.priority) values.priority = priority
+  if (due_date !== undefined && (due_date || null) !== (task.due_date || null)) values.due_date = due_date || null
+  if (title !== undefined && title.trim() && title.trim() !== task.title) values.title = title.trim()
+  if (type !== undefined && type !== task.type) values.type = type
+
+  const fields = Object.keys(values).filter(k => k !== 'resolved_at')
+  if (!fields.length) return { summary: `"${task.title}" already looks like that; nothing changed.`, data: { task_id: task.id, title: task.title, changed: [] }, undo: null }
+
+  const after = one(await client.from('issues').update(values).eq('id', task.id).eq('user_id', userId).select().single())
+  const before = pick(task, Object.keys(values))
+  const label = (k) => k === 'status' ? (TASK_DONE.includes(after.status) ? `marked ${after.status === 'fixed' ? 'done' : after.status.replace('_', ' ')}` : `status ${after.status.replace('_', ' ')}`)
+    : k === 'due_date' ? (after.due_date ? `due ${after.due_date}` : 'no due date')
+    : k === 'title' ? `renamed from "${task.title}"`
+    : `${k} ${after[k]}`
+  return {
+    summary: `"${after.title}": ${fields.map(label).join(', ')}.`,
+    data: { task_id: after.id, title: after.title, status: after.status, done: TASK_DONE.includes(after.status), priority: after.priority, due_date: after.due_date, type: after.type, changed: fields },
+    undo: [{ op: 'update', table: 'issues', id: task.id, values: before }],
+  }
+}
+
 export async function captureNote(client, userId, { text, project, link_task_id }) {
   let projectId, projectName, linked = null
   if (link_task_id) {
