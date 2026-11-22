@@ -23,16 +23,20 @@ const escapeLike = (s) => String(s).replace(/[%_\\]/g, (c) => '\\' + c)
 
 // ---------- lookups ----------
 
-async function projects(client, userId) {
-  return many(await client.from('projects').select('id, name, created_at').eq('user_id', userId).order('created_at', { ascending: true }))
+// Active (not archived) projects. select('*') so it works before the archive migration too.
+async function projects(client, userId, { includeArchived = false } = {}) {
+  const all = many(await client.from('projects').select('*').eq('user_id', userId).order('created_at', { ascending: true }))
+  return includeArchived ? all : all.filter(p => !p.archived_at)
 }
 
 // A project by (part of) its name, or the one used most recently.
 export async function resolveProject(client, userId, name) {
   const list = await projects(client, userId)
-  if (!list.length) throw new UserError('You have no projects in QTrack yet.')
+  if (!list.length) throw new UserError('You have no active projects in QTrack. Create one, or unarchive one.')
   if (name) {
     const n = name.trim().toLowerCase()
+    const archived = (await projects(client, userId, { includeArchived: true })).find(p => p.archived_at && p.name.toLowerCase() === n)
+    if (archived && !list.some(p => p.name.toLowerCase() === n)) throw new UserError(`"${archived.name}" is archived. Restore it first (restore_project, or in QTrack).`)
     const exact = list.filter(p => p.name.toLowerCase() === n)
     const partial = exact.length ? exact : list.filter(p => p.name.toLowerCase().includes(n))
     if (partial.length === 1) return partial[0]
@@ -41,6 +45,45 @@ export async function resolveProject(client, userId, name) {
   }
   const last = many(await client.from('focus_sessions').select('project_id, completed_at').eq('user_id', userId).order('completed_at', { ascending: false }).limit(1))[0]
   return list.find(p => p.id === last?.project_id) || list[list.length - 1]
+}
+
+// ---------- projects ----------
+
+export async function listProjects(client, userId, { include_archived } = {}) {
+  const all = await projects(client, userId, { includeArchived: true })
+  const shown = include_archived ? all : all.filter(p => !p.archived_at)
+  const active = all.filter(p => !p.archived_at).length
+  return {
+    summary: `${active} active project${active === 1 ? '' : 's'}${all.length > active ? `, ${all.length - active} archived` : ''}.`,
+    data: { projects: shown.map(p => ({ id: p.id, name: p.name, type: p.type || 'project', archived: !!p.archived_at, archived_at: p.archived_at || null })) },
+  }
+}
+
+// Find a project by name among all of them (archived included), exact match first.
+async function findProjectAny(client, userId, name) {
+  const all = await projects(client, userId, { includeArchived: true })
+  const n = String(name || '').trim().toLowerCase()
+  if (!n) throw new UserError('Say which project, by name.')
+  const exact = all.filter(p => p.name.toLowerCase() === n)
+  const matches = exact.length ? exact : all.filter(p => p.name.toLowerCase().includes(n))
+  if (matches.length === 1) return { project: matches[0], all }
+  if (!matches.length) throw new UserError(`No project matches "${name}". Projects: ${all.map(p => p.name + (p.archived_at ? ' (archived)' : '')).join(', ')}.`)
+  throw new UserError(`"${name}" matches several projects: ${matches.map(p => p.name).join(', ')}. Use the full name.`)
+}
+
+// Archive (hide from the sidebar, Today and the assistant's defaults; data kept) or restore.
+export async function setProjectArchived(client, userId, { project }, archive, now = Date.now()) {
+  const { project: p, all } = await findProjectAny(client, userId, project)
+  if (archive && p.archived_at) return { summary: `"${p.name}" is already archived.`, data: { project: p.name, archived: true }, undo: null }
+  if (!archive && !p.archived_at) return { summary: `"${p.name}" isn't archived.`, data: { project: p.name, archived: false }, undo: null }
+  if (archive && all.filter(x => !x.archived_at).length <= 1) throw new UserError(`"${p.name}" is the only active project, so it can't be archived.`)
+  const archived_at = archive ? iso(now) : null
+  one(await client.from('projects').update({ archived_at }).eq('id', p.id).eq('user_id', userId).select().single())
+  return {
+    summary: archive ? `Archived "${p.name}". Its tasks and history are kept; it's hidden from the sidebar and Today.` : `Restored "${p.name}".`,
+    data: { project: p.name, project_id: p.id, archived: archive },
+    undo: [{ op: 'update', table: 'projects', id: p.id, values: { archived_at: p.archived_at || null } }],
+  }
 }
 
 // A task or test case by id, tagged with its kind ('issue' | 'test').
@@ -267,12 +310,51 @@ export async function addToQueue(client, userId, { task_id }) {
   return { summary: `Queued "${item.title}".`, data: { task_id, title: item.title, kind: kindName(item.kind) }, undo: [op] }
 }
 
+// Delete a task. In the database, deleting a task cascades to its issue_test_links and sets
+// focus_sessions.issue_id / notes.linked_issue_id to null; task_queue has no foreign key. So we
+// snapshot all of those first, and undo restores the task with the same id and re-links the rest.
+export async function deleteTask(client, userId, { task_id }, now = Date.now()) {
+  const task = one(await client.from('issues').select('*').eq('user_id', userId).eq('id', task_id).maybeSingle())
+  if (!task) throw new UserError(`No task with id ${task_id}. Use search_tasks to find its id.`)
+  const row = await timerRow(client, userId)
+  if (row?.task_type === 'issue' && row.task_id === task.id && liveTimer(row, now).state !== 'idle') {
+    throw new UserError(`"${task.title}" is being timed right now. Stop the timer first (stop_focus).`)
+  }
+
+  const byUser = (t) => client.from(t).select('*').eq('user_id', userId)
+  const [links, queue, sessions, notes] = (await Promise.all([
+    byUser('issue_test_links').eq('issue_id', task.id),
+    byUser('task_queue').eq('item_type', 'issue').eq('item_id', task.id),
+    byUser('focus_sessions').eq('issue_id', task.id),
+    byUser('notes').eq('linked_issue_id', task.id),
+  ])).map(many)
+
+  for (const q of queue) one(await client.from('task_queue').delete().eq('id', q.id).eq('user_id', userId))
+  one(await client.from('issues').delete().eq('id', task.id).eq('user_id', userId))
+
+  // Undo runs these in reverse: task first, then what hangs off it
+  const undo = []
+  if (notes.length) undo.push({ op: 'relink', table: 'notes', ids: notes.map(n => n.id), values: { linked_issue_id: task.id } })
+  // focus_sessions has no UPDATE policy (sessions never change), so swap the unlinked rows for the originals
+  if (sessions.length) undo.push({ op: 'replace', table: 'focus_sessions', rows: sessions })
+  if (queue.length) undo.push({ op: 'insert', table: 'task_queue', rows: queue })
+  if (links.length) undo.push({ op: 'insert', table: 'issue_test_links', rows: links })
+  undo.push({ op: 'insert', table: 'issues', rows: [task] })
+
+  const kept = [sessions.length && `${sessions.length} focus session${sessions.length === 1 ? '' : 's'}`, notes.length && `${notes.length} note${notes.length === 1 ? '' : 's'}`].filter(Boolean)
+  return {
+    summary: `Deleted task "${task.title}"${kept.length ? ` (its ${kept.join(' and ')} stay, unlinked)` : ''}. Undo within 10 minutes restores it.`,
+    data: { task_id: task.id, title: task.title, removed_from_queue: queue.length > 0, unlinked: { focus_sessions: sessions.length, notes: notes.length, test_links: links.length } },
+    undo,
+  }
+}
+
 export async function captureNote(client, userId, { text, project, link_task_id }) {
   let projectId, projectName, linked = null
   if (link_task_id) {
     linked = await findItem(client, userId, link_task_id)
     projectId = linked.project_id
-    projectName = (await projects(client, userId)).find(p => p.id === projectId)?.name
+    projectName = (await projects(client, userId, { includeArchived: true })).find(p => p.id === projectId)?.name
   } else {
     const p = await resolveProject(client, userId, project); projectId = p.id; projectName = p.name
   }
@@ -295,6 +377,12 @@ export async function applyUndo(client, userId, ops) {
     if (o.op === 'timer') await writeTimer(client, userId, o.row)
     else if (o.op === 'delete') one(await client.from(o.table).delete().eq('id', o.id).eq('user_id', userId))
     else if (o.op === 'update') one(await client.from(o.table).update(o.values).eq('id', o.id).eq('user_id', userId))
+    else if (o.op === 'insert') one(await client.from(o.table).insert(o.rows.map(r => ({ ...r, user_id: userId }))))
+    else if (o.op === 'replace') {
+      one(await client.from(o.table).delete().in('id', o.rows.map(r => r.id)).eq('user_id', userId))
+      one(await client.from(o.table).insert(o.rows.map(r => ({ ...r, user_id: userId }))))
+    }
+    else if (o.op === 'relink') one(await client.from(o.table).update(o.values).in('id', o.ids).eq('user_id', userId))
     else throw new Error(`Unknown undo op: ${o.op}`)
   }
 }

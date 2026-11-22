@@ -210,6 +210,60 @@ describe('tasks, queue and notes', () => {
   })
 })
 
+describe('delete_task', () => {
+  beforeEach(allowWrites)
+
+  // The demo mock has no foreign keys, so apply what Postgres does on delete (see actions.js)
+  const applyDbRules = async (taskId) => {
+    await client.from('issue_test_links').delete().eq('issue_id', taskId)               // ON DELETE CASCADE
+    await client.from('focus_sessions').update({ issue_id: null }).eq('issue_id', taskId) // ON DELETE SET NULL
+    await client.from('notes').update({ linked_issue_id: null }).eq('linked_issue_id', taskId)
+  }
+
+  it('deletes the task and its queue entry; undo restores it with links, sessions and notes', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    const count = async (t, col) => (await rows(t)).filter(r => r[col] === utc.id).length
+    const before = { links: await count('issue_test_links', 'issue_id'), sessions: await count('focus_sessions', 'issue_id'), notes: await count('notes', 'linked_issue_id') }
+    expect(before.links).toBeGreaterThan(0)
+    expect(before.sessions).toBeGreaterThan(0)
+    expect(await count('task_queue', 'item_id')).toBe(1)
+
+    const { data, summary } = await call('delete_task', { task_id: utc.id })
+    expect(summary).toMatch(new RegExp(`^Deleted task "${UTC_BUG}" \\(its ${before.sessions} focus sessions and ${before.notes} note`))
+    expect(await issueByTitle(UTC_BUG)).toBeUndefined()
+    expect(await count('task_queue', 'item_id')).toBe(0)
+    await applyDbRules(utc.id)
+    expect(await count('focus_sessions', 'issue_id')).toBe(0)
+
+    await call('undo', { undo_id: data.undo_id })
+    const back = await issueByTitle(UTC_BUG)
+    expect(back).toMatchObject({ id: utc.id, status: utc.status, priority: utc.priority, project_id: utc.project_id })
+    expect(await count('task_queue', 'item_id')).toBe(1)
+    expect(await count('issue_test_links', 'issue_id')).toBe(before.links)
+    expect(await count('focus_sessions', 'issue_id')).toBe(before.sessions)
+    expect(await count('notes', 'linked_issue_id')).toBe(before.notes)
+  })
+
+  it('refuses while the task is being timed', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    await call('start_focus', { task_id: utc.id })
+    await expect(call('delete_task', { task_id: utc.id })).rejects.toThrow(/being timed/)
+    expect(await issueByTitle(UTC_BUG)).toBeTruthy()
+  })
+
+  it("only deletes the user's own tasks, and needs changes turned on", async () => {
+    const [p] = (await client.from('projects').insert({ user_id: 'other-user', name: 'Theirs' }).select()).data
+    const [t] = (await client.from('issues').insert({ user_id: 'other-user', project_id: p.id, title: 'Their task', status: 'open' }).select()).data
+    await expect(call('delete_task', { task_id: t.id })).rejects.toThrow(/No task with id/)
+    expect((await client.from('issues').select('*').eq('id', t.id)).data).toHaveLength(1)
+
+    await client.from('mcp_settings').update({ allow_writes: false }).eq('user_id', userId)
+    const utc = await issueByTitle(UTC_BUG)
+    await expect(call('delete_task', { task_id: utc.id })).rejects.toThrow(/turned off/)
+    expect(await issueByTitle(UTC_BUG)).toBeTruthy()
+  })
+})
+
 describe('undo', () => {
   beforeEach(allowWrites)
 

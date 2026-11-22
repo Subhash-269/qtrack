@@ -23,6 +23,12 @@ export function dayBounds(timeZone = 'UTC', now = new Date()) {
   }
 }
 
+// Ids of archived projects. select('*') so this still works before the archive migration.
+export async function archivedProjectIds(client, userId) {
+  const rows = unwrap(await client.from('projects').select('*').eq('user_id', userId))
+  return new Set(rows.filter(p => p.archived_at).map(p => p.id))
+}
+
 async function projectNames(client, userId) {
   const rows = unwrap(await client.from('projects').select('id, name').eq('user_id', userId))
   return Object.fromEntries(rows.map(p => [p.id, p.name]))
@@ -31,13 +37,15 @@ async function projectNames(client, userId) {
 // Today across every project: queue, due/overdue tasks and tests, today's meetings, today's scratch notes.
 export async function getToday(client, userId, { date, startOfDayISO }) {
   const q = (t) => client.from(t).select('*').eq('user_id', userId)
+  const archived = await archivedProjectIds(client, userId)
+  const live = (rows) => rows.filter(r => !archived.has(r.project_id))
   const [tasks, tests, meetings, queue, scribbles] = (await Promise.all([
     q('issues').lte('due_date', date).order('due_date', { ascending: true }),
     q('test_cases').lte('due_date', date).order('due_date', { ascending: true }),
     q('meetings').eq('meeting_date', date).order('start_time', { ascending: true }),
     q('task_queue').order('position', { ascending: true }),
     q('notes').eq('category', 'scratch').gte('created_at', startOfDayISO).order('created_at', { ascending: false }),
-  ])).map(unwrap)
+  ])).map(r => live(unwrap(r)))
 
   // Resolve queue entries to their task / test rows
   const ids = (type) => [...new Set(queue.filter(x => x.item_type === type).map(x => x.item_id))]
@@ -65,8 +73,9 @@ export async function getToday(client, userId, { date, startOfDayISO }) {
 export async function searchTasks(client, userId, query, { includeDone = false, limit = 10 } = {}) {
   const pattern = `%${String(query).replace(/[%_\\]/g, (c) => '\\' + c)}%`
   const q = (t, cols) => client.from(t).select(cols).eq('user_id', userId)
-  const [names, tasks, tests, topics] = await Promise.all([
+  const [names, archived, tasks, tests, topics] = await Promise.all([
     projectNames(client, userId),
+    archivedProjectIds(client, userId),
     q('issues', 'id, project_id, title, type, priority, status, due_date, created_at').ilike('title', pattern).then(unwrap),
     q('test_cases', 'id, project_id, title, status, due_date, created_at').ilike('title', pattern).then(unwrap),
     q('notes', 'project_id, topic, is_study').eq('is_study', true).ilike('topic', pattern).then(unwrap),
@@ -74,11 +83,11 @@ export async function searchTasks(client, userId, query, { includeDone = false, 
   const rows = [
     ...tasks.map(r => ({ kind: 'task', id: r.id, title: r.title, type: r.type, priority: r.priority, status: r.status, done: TASK_DONE.includes(r.status), due_date: r.due_date, project_id: r.project_id, created_at: r.created_at })),
     ...tests.map(r => ({ kind: 'test', id: r.id, title: r.title, status: r.status, done: TEST_DONE.includes(r.status), due_date: r.due_date, project_id: r.project_id, created_at: r.created_at })),
-  ].filter(r => includeDone || !r.done)
+  ].filter(r => (includeDone || !r.done) && !archived.has(r.project_id))
   rows.sort((a, b) => (a.done - b.done) || (a.created_at < b.created_at ? 1 : -1))
 
   const seen = new Set()
-  const topicRows = topics.filter(t => t.topic && !seen.has(t.project_id + t.topic) && seen.add(t.project_id + t.topic))
+  const topicRows = topics.filter(t => t.topic && !archived.has(t.project_id) && !seen.has(t.project_id + t.topic) && seen.add(t.project_id + t.topic))
     .map(t => ({ kind: 'topic', title: t.topic, project_id: t.project_id, done: false }))
 
   return [...rows, ...topicRows].slice(0, limit).map(r => { const out = { ...r, project: names[r.project_id] || null }; delete out.created_at; return out })

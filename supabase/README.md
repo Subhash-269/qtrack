@@ -26,12 +26,15 @@ Tools:
 | `search_tasks` | read | Find tasks, test cases and study topics by name (`query`, `include_done?`, `limit?`) |
 | `get_focus_stats` | read | Focus minutes, pomodoros, paused and meeting time, by project and top tasks (`range?`, `timezone?`) |
 | `get_timer` | read | What the shared timer is doing right now |
+| `list_projects` | read | Projects and their ids (`include_archived?`) |
 | `start_focus` | write | Start a Pomodoro on a task (`task_id`, or a `title`; creates the task if nothing matches), or a study topic |
 | `pause_focus` / `resume_focus` | write | Pause with a reason (`waiting`, `interrupted`) and resume |
 | `stop_focus` | write | End the session and log the time; `mark_done` also finishes the task |
 | `add_task` | write | Create a task, optionally queued |
 | `add_to_queue` | write | Put a task at the end of its project's queue |
 | `capture_note` | write | Save a scribble, optionally linked to a task |
+| `archive_project` / `restore_project` | write | Archive a project by name (data kept; hidden from the sidebar, Today, search and defaults) or bring it back. The last active project can't be archived |
+| `delete_task` | write | Delete a task by id (refused while it's being timed). Its sessions and notes stay, unlinked; undo restores the task and re-links them |
 | `undo` | write | Reverse a change from the last 10 minutes by its `undo_id` |
 
 **Write tools are off until the user turns them on** in QTrack under *Settings → Assistant access*. That switch lives in `mcp_settings`, and its RLS only lets a first-party session change it: OAuth tokens carry a `client_id` claim, so an assistant can't turn on its own writes. Writes are limited to 60 an hour per user.

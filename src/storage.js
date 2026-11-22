@@ -38,6 +38,14 @@ export async function deleteProject(id) {
   if (error) throw error
 }
 
+// Archive (archived = true) or restore a project. Its data stays; it just leaves the active list.
+export async function setProjectArchived(id, archived) {
+  const archived_at = archived ? new Date().toISOString() : null
+  const { error } = await supabase.from('projects').update({ archived_at }).eq('id', id)
+  if (error) throw error
+  return archived_at
+}
+
 export async function renameProject(id, name) {
   const { data, error } = await supabase
     .from('projects')

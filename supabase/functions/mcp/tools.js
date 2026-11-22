@@ -5,7 +5,8 @@
 import { dayBounds, getToday, searchTasks, getFocusStats } from '../_shared/today.js'
 import {
   UserError, WRITE_LIMIT_PER_HOUR, getTimer, startFocus, pauseFocus, resumeFocus, stopFocus,
-  addTask, addToQueue, captureNote, undoCall, writesAllowed, writesInLastHour,
+  addTask, addToQueue, captureNote, deleteTask, undoCall, writesAllowed, writesInLastHour,
+  listProjects, setProjectArchived,
 } from '../_shared/actions.js'
 
 const tzField = (z) => z.string().optional().describe('IANA timezone of the user, e.g. "America/New_York". Defaults to UTC. Decides what "today" means.')
@@ -85,6 +86,30 @@ export const TOOLS = {
     run: ({ client, userId }) => getTimer(client, userId),
   },
 
+  list_projects: {
+    scope: 'read',
+    title: 'List projects',
+    description: "The user's projects with their ids. Archived projects are hidden from Today and search; pass include_archived to see them too.",
+    input: (z) => ({ include_archived: z.boolean().optional().describe('Also list archived projects') }),
+    run: ({ client, userId }, args) => listProjects(client, userId, args),
+  },
+
+  archive_project: {
+    scope: 'write',
+    title: 'Archive project',
+    description: "Archive a project by name. Nothing is deleted: its tasks, notes and focus history are kept, but it leaves the sidebar, Today, search and the default project for new tasks. The last active project can't be archived. Undo, or restore_project, brings it back.",
+    input: (z) => ({ project: z.string().min(1).describe('Project name (or a unique part of it)') }),
+    run: ({ client, userId }, args) => setProjectArchived(client, userId, args, true),
+  },
+
+  restore_project: {
+    scope: 'write',
+    title: 'Restore project',
+    description: 'Bring an archived project back to the active list, by name.',
+    input: (z) => ({ project: z.string().min(1).describe('Name of the archived project') }),
+    run: ({ client, userId }, args) => setProjectArchived(client, userId, args, false),
+  },
+
   start_focus: {
     scope: 'write',
     title: 'Start focus',
@@ -158,8 +183,18 @@ export const TOOLS = {
     run: ({ client, userId }, args) => captureNote(client, userId, args),
   },
 
+  delete_task: {
+    scope: 'write',
+    destructive: true,
+    title: 'Delete task',
+    description: 'Permanently delete one task (not a test case). Needs its task_id from search_tasks or get_today; confirm with the user first, naming the task. Its focus sessions and notes are kept but unlinked, and it leaves the queue. Refused while the task is being timed. Can be undone for 10 minutes with the returned undo_id.',
+    input: (z) => ({ task_id: z.string().describe('Id of the task to delete') }),
+    run: ({ client, userId }, args) => deleteTask(client, userId, args),
+  },
+
   undo: {
     scope: 'write',
+    destructive: true,
     title: 'Undo',
     description: 'Reverse a change made in the last 10 minutes, using the undo_id that change returned. Puts things back as they were before it (for the timer, its state before that call).',
     input: (z) => ({ undo_id: z.string().describe('undo_id from an earlier write') }),
