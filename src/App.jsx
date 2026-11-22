@@ -4,7 +4,8 @@ import * as db from "./storage";
 import TodayView from "./views/TodayView";
 import AssistantView from "./views/AssistantView";
 import { TASK_STATUSES, TASK_STATUS_LABEL, isTaskDone, normalizeTaskStatus, taskStatusLabel } from "../supabase/functions/_shared/status.js";
-import Sidebar, { ProjectList, DeleteProjectDialog } from "./components/Sidebar";
+import Sidebar, { ProjectList, DeleteProjectDialog, ThemePicker } from "./components/Sidebar";
+import { getThemePref, setThemePref } from "./theme";
 
 const SHORT_DATE = (d) => { if (!d) return "—"; const dt = new Date(d); const diff = Date.now() - dt.getTime(); if (diff < 60000) return "just now"; if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`; if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`; return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
 const FMT = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -15,9 +16,9 @@ const ISSUE_STATUSES = TASK_STATUSES.map(v => ({ value: v, label: TASK_STATUS_LA
 const ISSUE_TYPES = ["bug", "todo"];
 const DUR = { work: 25 * 60, short_break: 5 * 60, long_break: 15 * 60 };
 // const DUR = { work: 5, short_break: 5 * 60, long_break: 15 * 60 };
-const PC = { critical: { bg: "#2D0A0A", text: "#F09595", border: "#501313" }, high: { bg: "#2A1209", text: "#F0997B", border: "#4A1B0C" }, medium: { bg: "#261A04", text: "#FAC775", border: "#412402" }, low: { bg: "#0E1A08", text: "#C0DD97", border: "#173404" } };
+const PC = { critical: { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" }, high: { bg: "var(--tint-orange-bg)", text: "var(--orange)", border: "var(--tint-orange-bd)" }, medium: { bg: "var(--tint-amber-bg)", text: "var(--amber)", border: "var(--tint-amber-bd)" }, low: { bg: "var(--tint-green-bg)", text: "var(--lime)", border: "var(--tint-green-bd)" } };
 const parseMtags = (v) => { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return v ? [v] : []; } };
-const TC = { not_run: { bg: "#1A1A18", text: "#B4B2A9", border: "#2C2C2A" }, pass: { bg: "#0E1A08", text: "#97C459", border: "#173404" }, fail: { bg: "#2D0A0A", text: "#F09595", border: "#501313" }, blocked: { bg: "#261A04", text: "#FAC775", border: "#412402" } };
+const TC = { not_run: { bg: "var(--surface)", text: "var(--soft)", border: "var(--line)" }, pass: { bg: "var(--tint-green-bg)", text: "var(--lime)", border: "var(--tint-green-bd)" }, fail: { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" }, blocked: { bg: "var(--tint-amber-bg)", text: "var(--amber)", border: "var(--tint-amber-bd)" } };
 const SC = { work: "#E24B4A", short_break: "#5DCAA5", long_break: "#378ADD" };
 
 const BREAK_TIPS = {
@@ -72,17 +73,17 @@ const BREAK_TIPS = {
 };
 
 const Badge = ({ label, colors, small }) => (<span style={{ display: "inline-block", fontSize: small ? 10 : 11, padding: small ? "1px 6px" : "2px 8px", borderRadius: 4, fontWeight: 500, background: colors.bg, color: colors.text, border: `1px solid ${colors.border}`, whiteSpace: "nowrap" }}>{label.replace(/_/g, " ")}</span>);
-const Pill = ({ children, active, onClick }) => (<button onClick={onClick} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: active ? 500 : 400, background: active ? "#2C2C2A" : "transparent", color: active ? "#F1EFE8" : "#888780", border: active ? "1px solid #444441" : "1px solid transparent", cursor: "pointer" }}>{children}</button>);
-const Btn = ({ children, onClick, primary, small, style: s }) => (<button onClick={onClick} style={{ padding: small ? "4px 10px" : "6px 14px", borderRadius: 6, fontSize: small ? 11 : 12, fontWeight: 500, background: primary ? "#D3D1C7" : "transparent", color: primary ? "#1A1A18" : "#B4B2A9", border: primary ? "none" : "1px solid #444441", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, ...s }}>{children}</button>);
-const Input = ({ value, onChange, placeholder, mono, style: s }) => (<input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 13, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", fontFamily: mono ? "'SF Mono', monospace" : "inherit", boxSizing: "border-box", ...s }} />);
-const Select = ({ value, onChange, options, style: s }) => (<select value={value} onChange={(e) => onChange(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", cursor: "pointer", ...s }}>{options.map((o) => <option key={typeof o === "string" ? o : o.value} value={typeof o === "string" ? o : o.value}>{typeof o === "string" ? o.replace(/_/g, " ") : o.label}</option>)}</select>);
-const TextArea = ({ value, onChange, placeholder, rows }) => (<textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={rows || 2} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 13, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, boxSizing: "border-box" }} />);
-const EmptyState = ({ icon, title, sub, action, onAction }) => (<div style={{ textAlign: "center", padding: "48px 24px", color: "#888780" }}><div style={{ fontSize: 32, marginBottom: 12, opacity: 0.4 }}>{icon}</div><div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4, color: "#B4B2A9" }}>{title}</div><div style={{ fontSize: 12, marginBottom: 16, maxWidth: 280, margin: "0 auto 16px" }}>{sub}</div>{action && <Btn primary onClick={onAction}>+ {action}</Btn>}</div>);
-const MetricCard = ({ label, value, sub, color }) => (<div style={{ background: "#1A1A18", borderRadius: 8, padding: "14px 16px", border: "1px solid #2C2C2A" }}><div style={{ fontSize: 11, color: "#888780", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div><div style={{ fontSize: 22, fontWeight: 500, color: color || "#F1EFE8", fontFamily: "'SF Mono', monospace" }}>{value}</div>{sub && <div style={{ fontSize: 11, color: "#5F5E5A", marginTop: 2 }}>{sub}</div>}</div>);
+const Pill = ({ children, active, onClick }) => (<button onClick={onClick} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: active ? 500 : 400, background: active ? "var(--line)" : "transparent", color: active ? "var(--text)" : "var(--sub)", border: active ? "1px solid var(--dim)" : "1px solid transparent", cursor: "pointer" }}>{children}</button>);
+const Btn = ({ children, onClick, primary, small, style: s }) => (<button onClick={onClick} style={{ padding: small ? "4px 10px" : "6px 14px", borderRadius: 6, fontSize: small ? 11 : 12, fontWeight: 500, background: primary ? "var(--title)" : "transparent", color: primary ? "var(--surface)" : "var(--soft)", border: primary ? "none" : "1px solid var(--dim)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, ...s }}>{children}</button>);
+const Input = ({ value, onChange, placeholder, mono, style: s }) => (<input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 13, background: "var(--surface)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", width: "100%", fontFamily: mono ? "'SF Mono', monospace" : "inherit", boxSizing: "border-box", ...s }} />);
+const Select = ({ value, onChange, options, style: s }) => (<select value={value} onChange={(e) => onChange(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "var(--surface)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", cursor: "pointer", ...s }}>{options.map((o) => <option key={typeof o === "string" ? o : o.value} value={typeof o === "string" ? o : o.value}>{typeof o === "string" ? o.replace(/_/g, " ") : o.label}</option>)}</select>);
+const TextArea = ({ value, onChange, placeholder, rows }) => (<textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={rows || 2} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 13, background: "var(--surface)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, boxSizing: "border-box" }} />);
+const EmptyState = ({ icon, title, sub, action, onAction }) => (<div style={{ textAlign: "center", padding: "48px 24px", color: "var(--sub)" }}><div style={{ fontSize: 32, marginBottom: 12, opacity: 0.4 }}>{icon}</div><div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4, color: "var(--soft)" }}>{title}</div><div style={{ fontSize: 12, marginBottom: 16, maxWidth: 280, margin: "0 auto 16px" }}>{sub}</div>{action && <Btn primary onClick={onAction}>+ {action}</Btn>}</div>);
+const MetricCard = ({ label, value, sub, color }) => (<div style={{ background: "var(--surface)", borderRadius: 8, padding: "14px 16px", border: "1px solid var(--line)" }}><div style={{ fontSize: 11, color: "var(--sub)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div><div style={{ fontSize: 22, fontWeight: 500, color: color || "var(--text)", fontFamily: "'SF Mono', monospace" }}>{value}</div>{sub && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{sub}</div>}</div>);
 
 function Ring({ size, stroke, timeLeft, totalTime, color }) {
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, p = totalTime > 0 ? timeLeft / totalTime : 0;
-  return (<svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#2C2C2A" strokeWidth={stroke} /><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={c} strokeDashoffset={c * (1 - p)} strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s linear" }} /></svg>);
+  return (<svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}><circle cx={size/2} cy={size/2} r={r} fill="none" style={{ stroke: "var(--line)" }} strokeWidth={stroke} /><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={c} strokeDashoffset={c * (1 - p)} strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s linear" }} /></svg>);
 }
 
 // Tabs that can't be hidden from the sidebar
@@ -122,6 +123,8 @@ export default function App({ session }) {
   const [userTier, setUserTier] = useState("free");
   const mobile = useIsMobile(); const [moreOpen, setMoreOpen] = useState(false);
   const [deletingProject, setDeletingProject] = useState(null);
+  const [theme, setTheme] = useState(getThemePref); // re-renders everything when the theme changes
+  const changeTheme = (t) => { setThemePref(t); setTheme(t); };
   const openOnMount = useRef(null); // item id the Tasks / Test cases view opens when it mounts
 
   // Show tutorial once per browser
@@ -274,7 +277,7 @@ export default function App({ session }) {
   const fi = useMemo(() => { let r = issues; if (filterType !== "all") r = r.filter(i => i.type === filterType); if (filterFile !== "all") r = r.filter(i => i.file_id === filterFile); if (filterPriority !== "all") r = r.filter(i => i.priority === filterPriority); if (searchQ) r = r.filter(i => i.title.toLowerCase().includes(searchQ.toLowerCase())); return r.sort((a, b) => PRIORITIES.indexOf(a.priority) - PRIORITIES.indexOf(b.priority)); }, [issues, filterType, filterFile, filterPriority, searchQ]);
   const ft = useMemo(() => { let r = testCases; if (filterFile !== "all") r = r.filter(t => t.file_id === filterFile); if (searchQ) r = r.filter(t => t.title.toLowerCase().includes(searchQ.toLowerCase())); return r; }, [testCases, filterFile, searchQ]);
 
-  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#111110", color: "#888780" }}>Loading...</div>;
+  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "var(--bg)", color: "var(--sub)" }}>Loading...</div>;
 
   const stats = { ob: issues.filter(i => i.type === "bug" && !isTaskDone(i.status)).length, ot: issues.filter(i => i.type === "todo" && !isTaskDone(i.status)).length, tp: testCases.filter(t => t.status === "pass").length, tt: testCases.length, fc: files.length, cr: issues.filter(i => i.priority === "critical" && !isTaskDone(i.status)).length };
   const tw = todaySessions.filter(s => s.session_type === "work");
@@ -339,7 +342,7 @@ export default function App({ session }) {
 
   // Count completed pomodoros per task
   const pomCount = (type, id) => allSessions.filter(s => s.session_type === "work" && (type === "issue" ? s.issue_id === id : s.test_case_id === id)).length;
-  const fmtDue = (d) => { if (!d) return null; const dt = new Date(d + "T00:00:00"); const today = new Date(); today.setHours(0,0,0,0); const diff = Math.ceil((dt - today) / 86400000); if (diff < 0) return { text: `${Math.abs(diff)}d overdue`, color: "#F09595" }; if (diff === 0) return { text: "Due today", color: "#FAC775" }; if (diff === 1) return { text: "Tomorrow", color: "#85B7EB" }; return { text: dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }), color: "#5F5E5A" }; };
+  const fmtDue = (d) => { if (!d) return null; const dt = new Date(d + "T00:00:00"); const today = new Date(); today.setHours(0,0,0,0); const diff = Math.ceil((dt - today) / 86400000); if (diff < 0) return { text: `${Math.abs(diff)}d overdue`, color: "var(--pink)" }; if (diff === 0) return { text: "Due today", color: "var(--amber)" }; if (diff === 1) return { text: "Tomorrow", color: "var(--blue)" }; return { text: dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }), color: "var(--muted)" }; };
   const updIS = async (id, s) => { await db.updateIssueStatus(id, s); await reload(); };
   const updTS = async (id, s) => { await db.updateTestStatus(id, s); await reload(); };
   const delI = async (id) => { await db.deleteIssue(id); await reload(); };
@@ -367,7 +370,7 @@ export default function App({ session }) {
   const taskName = tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId)?.title : tmr.tType === "test" ? testCases.find(t => t.id === tmr.tId)?.title : tmr.tType === "study" ? `📚 ${tmr.studyTopic}` : null;
 
   return (
-    <div className={mobile ? "qt-mobile" : undefined} style={{ minHeight: "100vh", background: "#111110", color: "#F1EFE8", fontFamily: "'DM Sans', -apple-system, sans-serif", fontSize: 13 }}>
+    <div className={mobile ? "qt-mobile" : undefined} style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', -apple-system, sans-serif", fontSize: 13 }}>
       {mobile && <style>{MOBILE_CSS}</style>}
       {/* Sidebar — fixed (src/components/Sidebar.jsx) */}
       {!mobile && <Sidebar
@@ -378,14 +381,14 @@ export default function App({ session }) {
         tmr={tmr} taskName={taskName}
         projects={projects} activeProjectId={activeProjectId} onSelectProject={setActiveProjectId}
         onRename={renameProject} onRecolor={recolorProject} onArchive={archiveProject} onDelete={setDeletingProject} onNewProject={() => setModal({ type: "project" })}
-        onAssistant={() => setView("assistant")} onTutorial={() => setShowTutorial(true)} onSignOut={() => supabase.auth.signOut()}
+        onAssistant={() => setView("assistant")} onTutorial={() => setShowTutorial(true)} onSignOut={() => supabase.auth.signOut()} theme={theme} onTheme={changeTheme}
         email={session.user.email} isDemo={isDemo} />}
 
       {/* Main */}
       <div style={{ marginLeft: mobile ? 0 : sb ? 220 : 54, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh", transition: "margin-left 0.2s ease", paddingBottom: mobile ? 64 : 0 }}>
-        <div style={{ padding: mobile ? "12px 16px" : "12px 28px", borderBottom: "1px solid #2C2C2A", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ padding: mobile ? "12px 16px" : "12px 28px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            {!sb && !mobile && <button onClick={() => setSb(true)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 16 }}>☰</button>}
+            {!sb && !mobile && <button onClick={() => setSb(true)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 16 }}>☰</button>}
             <span style={{ fontSize: mobile ? 17 : 16, fontWeight: mobile ? 600 : 500 }}>{view === "log" ? "Focus log" : view === "assistant" ? "Assistant access" : nav.find(n => n.id === view)?.l || ""}</span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -412,7 +415,7 @@ export default function App({ session }) {
           {view === "assistant" && <AssistantView onChanged={reload} />}
         </div>
         {/* Music dock */}
-        {!meetingFocus && !mobile && <div style={{ background: "#161615", borderTop: "1px solid #1A1A18", padding: "4px 20px", flexShrink: 0 }}>
+        {!meetingFocus && !mobile && <div style={{ background: "var(--side)", borderTop: "1px solid var(--surface)", padding: "4px 20px", flexShrink: 0 }}>
           <MediaPlayer />
         </div>}
       </div>
@@ -428,33 +431,35 @@ export default function App({ session }) {
         const rowBtn = { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "11px 4px", border: "none", background: "transparent", fontSize: 14, textAlign: "left", cursor: "pointer" };
         return (<>
           {tmr.st !== "idle" && view !== "focus" && view !== "today" && (
-            <div onClick={() => go("focus")} style={{ position: "fixed", left: 16, right: 16, bottom: 72, zIndex: 55, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, cursor: "pointer" }}>
+            <div onClick={() => go("focus")} style={{ position: "fixed", left: 16, right: 16, bottom: 72, zIndex: 55, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, cursor: "pointer" }}>
               <Ring size={26} stroke={3} timeLeft={tmr.left} totalTime={tmr.total} color={SC[tmr.type]} />
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "#B4B2A9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{taskName || (tmr.type === "work" ? "Focusing" : "Break")}{tmr.st === "paused" ? " · paused" : ""}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--soft)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{taskName || (tmr.type === "work" ? "Focusing" : "Break")}{tmr.st === "paused" ? " · paused" : ""}</span>
               <span style={{ fontFamily: "'SF Mono', monospace", fontSize: 15, color: SC[tmr.type] }}>{FMT(tmr.left)}</span>
             </div>
           )}
-          <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 56, display: "flex", background: "#161615", borderTop: "1px solid #2C2C2A", paddingBottom: "env(safe-area-inset-bottom)" }}>
+          <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 56, display: "flex", background: "var(--side)", borderTop: "1px solid var(--line)", paddingBottom: "env(safe-area-inset-bottom)" }}>
             {[...tabs, { id: "__more", l: "More", ic: "⋯" }].map(t => {
               const on = t.id === "__more" ? (moreOpen || !inTabs) : view === t.id && !moreOpen;
-              return (<button key={t.id} onClick={() => t.id === "__more" ? setMoreOpen(!moreOpen) : go(t.id)} style={{ flex: 1, padding: "8px 0 10px", border: "none", background: "transparent", color: on ? "#F1EFE8" : "#5F5E5A", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 10 }}>
+              return (<button key={t.id} onClick={() => t.id === "__more" ? setMoreOpen(!moreOpen) : go(t.id)} style={{ flex: 1, padding: "8px 0 10px", border: "none", background: "transparent", color: on ? "var(--text)" : "var(--muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 10 }}>
                 <span style={{ fontSize: 16, lineHeight: 1.2 }}>{t.ic}</span>{t.l}
               </button>);
             })}
           </div>
           {moreOpen && (
             <div onClick={() => setMoreOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 54, background: "rgba(0,0,0,0.55)" }}>
-              <div onClick={e => e.stopPropagation()} style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "80vh", overflowY: "auto", background: "#161615", borderTop: "1px solid #2C2C2A", borderRadius: "18px 18px 0 0", padding: "10px 20px 84px" }}>
-                <div style={{ width: 36, height: 4, borderRadius: 2, background: "#2C2C2A", margin: "0 auto 12px" }} />
-                {rest.map(n => (<button key={n.id} onClick={() => go(n.id)} style={{ ...rowBtn, color: view === n.id ? "#F1EFE8" : "#B4B2A9" }}><span style={{ width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span><span style={{ flex: 1 }}>{n.l}</span>{n.cnt ? <span style={{ fontSize: 10, color: "#888780" }}>{n.cnt}</span> : null}</button>))}
-                <button onClick={() => go("assistant")} style={{ ...rowBtn, color: view === "assistant" ? "#F1EFE8" : "#B4B2A9" }}><span style={{ width: 20, textAlign: "center", opacity: 0.7 }}>✦</span><span style={{ flex: 1 }}>Assistant access</span></button>
-                <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, margin: "14px 0 6px" }}>Projects</div>
+              <div onClick={e => e.stopPropagation()} style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "80vh", overflowY: "auto", background: "var(--side)", borderTop: "1px solid var(--line)", borderRadius: "18px 18px 0 0", padding: "10px 20px 84px" }}>
+                <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--line)", margin: "0 auto 12px" }} />
+                {rest.map(n => (<button key={n.id} onClick={() => go(n.id)} style={{ ...rowBtn, color: view === n.id ? "var(--text)" : "var(--soft)" }}><span style={{ width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span><span style={{ flex: 1 }}>{n.l}</span>{n.cnt ? <span style={{ fontSize: 10, color: "var(--sub)" }}>{n.cnt}</span> : null}</button>))}
+                <button onClick={() => go("assistant")} style={{ ...rowBtn, color: view === "assistant" ? "var(--text)" : "var(--soft)" }}><span style={{ width: 20, textAlign: "center", opacity: 0.7 }}>✦</span><span style={{ flex: 1 }}>Assistant access</span></button>
+                <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, margin: "14px 0 6px" }}>Projects</div>
                 <ProjectList big autoFocus={false} projects={projects} activeProjectId={activeProjectId}
                   onSelect={(id) => { setActiveProjectId(id); setMoreOpen(false); }} onRename={renameProject} onRecolor={recolorProject}
                   onArchive={archiveProject} onDelete={(p) => { setMoreOpen(false); setDeletingProject(p); }} onNewProject={() => { setModal({ type: "project" }); setMoreOpen(false); }} />
-                <div style={{ borderTop: "1px solid #2C2C2A", marginTop: 8, paddingTop: 4 }}>
-                  <button onClick={() => { setShowTutorial(true); setMoreOpen(false); }} style={{ ...rowBtn, color: "#5F5E5A", fontSize: 13 }}>? Replay tutorial</button>
-                  <button onClick={() => supabase.auth.signOut()} style={{ ...rowBtn, color: "#5F5E5A", fontSize: 13 }}>{isDemo ? "Exit demo · sign up" : `Sign out (${session.user.email})`}</button>
+                <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, margin: "14px 0 6px" }}>Theme</div>
+                <ThemePicker big value={theme} onChange={changeTheme} />
+                <div style={{ borderTop: "1px solid var(--line)", marginTop: 8, paddingTop: 4 }}>
+                  <button onClick={() => { setShowTutorial(true); setMoreOpen(false); }} style={{ ...rowBtn, color: "var(--muted)", fontSize: 13 }}>? Replay tutorial</button>
+                  <button onClick={() => supabase.auth.signOut()} style={{ ...rowBtn, color: "var(--muted)", fontSize: 13 }}>{isDemo ? "Exit demo · sign up" : `Sign out (${session.user.email})`}</button>
                 </div>
               </div>
             </div>
@@ -472,18 +477,18 @@ export default function App({ session }) {
       {linkModal && <LinkModal lm={linkModal} issues={issues} tests={testCases} links={links} lnk={lnk} onClose={() => setLinkModal(null)} />}
       {viewingNoteId && (() => { const n = notes.find(x => x.id === viewingNoteId); if (!n) return null; const cc = NOTE_CAT_COLORS[n.category] || NOTE_CAT_COLORS.scratch; const li = issues.find(i => i.id === n.linked_issue_id); const lt = testCases.find(t => t.id === n.linked_test_id); const lf = files.find(f => f.id === n.linked_file_id); return (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 110 }} onClick={() => setViewingNoteId(null)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 640, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, padding: "20px 24px", width: 640, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexShrink: 0 }}>
               <Badge label={n.category} colors={cc} />
               {n.title && <span style={{ fontSize: 15, fontWeight: 500, flex: 1 }}>{n.title}</span>}
               {!n.title && <span style={{ flex: 1 }} />}
-              <button onClick={() => setViewingNoteId(null)} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button>
+              <button onClick={() => setViewingNoteId(null)} style={{ background: "none", border: "none", color: "var(--sub)", cursor: "pointer", fontSize: 16 }}>✕</button>
             </div>
             <div style={{ flex: 1, overflowY: "auto" }}><NoteContent content={n.content} /></div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", marginTop: 12, paddingTop: 10, borderTop: "1px solid #2C2C2A", flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--line)", flexShrink: 0 }}>
               <span>{SHORT_DATE(n.updated_at)}</span>
-              {li && <><span>·</span><span style={{ color: "#F09595" }}>◉ {li.title}</span></>}
-              {lt && <><span>·</span><span style={{ color: "#5DCAA5" }}>▷ {lt.title}</span></>}
+              {li && <><span>·</span><span style={{ color: "var(--pink)" }}>◉ {li.title}</span></>}
+              {lt && <><span>·</span><span style={{ color: "var(--green)" }}>▷ {lt.title}</span></>}
               {lf && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace" }}>{lf.name}</span></>}
             </div>
           </div>
@@ -647,65 +652,65 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
     <div style={{ position: "relative" }}>
       {/* Toggle tab */}
       {!drawerOpen && !mobile && (
-        <button onClick={() => setDrawerOpen(true)} style={{ position: "absolute", right: 0, top: 80, background: "#161615", border: "1px solid #1A1A18", borderRight: "none", borderRadius: "6px 0 0 6px", padding: "8px 6px", cursor: "pointer", color: "#5F5E5A", fontSize: 11, writingMode: "vertical-rl" }}>
+        <button onClick={() => setDrawerOpen(true)} style={{ position: "absolute", right: 0, top: 80, background: "var(--side)", border: "1px solid var(--surface)", borderRight: "none", borderRadius: "6px 0 0 6px", padding: "8px 6px", cursor: "pointer", color: "var(--muted)", fontSize: 11, writingMode: "vertical-rl" }}>
           {checkedCount > 0 ? `${checkedCount}/${checklist.length}` : "Notes"} ◂
         </button>
       )}
       {/* Panel */}
       <div style={{ width: mobile ? "100%" : drawerOpen ? 300 : 0, overflow: "hidden", transition: "width 0.25s ease", flexShrink: 0, height: "100%" }}>
-        <div style={{ width: mobile ? "100%" : 300, height: "100%", display: "flex", flexDirection: "column", background: "#161615", borderRadius: 10, border: "1px solid #1A1A18" }}>
+        <div style={{ width: mobile ? "100%" : 300, height: "100%", display: "flex", flexDirection: "column", background: "var(--side)", borderRadius: 10, border: "1px solid var(--surface)" }}>
           {/* Header */}
-          <div style={{ padding: "10px 14px", borderBottom: "1px solid #1A1A18", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--surface)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              {task.repo_name && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{task.repo_name}</span>}
-              <Badge label={task.status} colors={TC[task.status] || { bg: "#2C2C2A", text: "#888780", border: "#444441" }} small />
+              {task.repo_name && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--tint-blue-bg)", color: "var(--blue)", border: "1px solid var(--tint-blue-bd)", fontFamily: "'SF Mono', monospace" }}>{task.repo_name}</span>}
+              <Badge label={task.status} colors={TC[task.status] || { bg: "var(--line)", text: "var(--sub)", border: "var(--dim)" }} small />
             </div>
-            {!mobile && <button onClick={() => setDrawerOpen(false)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 12 }}>▸</button>}
+            {!mobile && <button onClick={() => setDrawerOpen(false)} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 12 }}>▸</button>}
           </div>
 
           {/* Checklist */}
-          <div style={{ padding: "10px 14px", borderBottom: "1px solid #1A1A18", flexShrink: 0 }}>
+          <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--surface)", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-              <span style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>Steps</span>
-              {checklist.length > 0 && <span style={{ fontSize: 9, color: checkedCount === checklist.length && checklist.length > 0 ? "#5DCAA5" : "#5F5E5A" }}>{checkedCount}/{checklist.length}</span>}
+              <span style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Steps</span>
+              {checklist.length > 0 && <span style={{ fontSize: 9, color: checkedCount === checklist.length && checklist.length > 0 ? "var(--green)" : "var(--muted)" }}>{checkedCount}/{checklist.length}</span>}
             </div>
             {checklist.map((c, idx) => (
               <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "3px 0" }}>
                 <input type="checkbox" checked={c.done} onChange={() => { const cl = [...checklist]; cl[idx].done = !cl[idx].done; updateChecklist(cl); }} style={{ cursor: "pointer", marginTop: 2, flexShrink: 0 }} />
-                <input value={c.text} onChange={e => { const cl = [...checklist]; cl[idx].text = e.target.value; updateChecklist(cl); }} style={{ flex: 1, padding: "1px 4px", borderRadius: 3, fontSize: 12, color: c.done ? "#5F5E5A" : "#D3D1C7", textDecoration: c.done ? "line-through" : "none", background: "transparent", border: "1px solid transparent", outline: "none", lineHeight: 1.4 }} onFocus={e => e.target.style.border = "1px solid #2C2C2A"} onBlur={e => e.target.style.border = "1px solid transparent"} />
-                <button onClick={() => updateChecklist(checklist.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9, flexShrink: 0 }}>✕</button>
+                <input value={c.text} onChange={e => { const cl = [...checklist]; cl[idx].text = e.target.value; updateChecklist(cl); }} style={{ flex: 1, padding: "1px 4px", borderRadius: 3, fontSize: 12, color: c.done ? "var(--muted)" : "var(--title)", textDecoration: c.done ? "line-through" : "none", background: "transparent", border: "1px solid transparent", outline: "none", lineHeight: 1.4 }} onFocus={e => e.target.style.border = "1px solid var(--line)"} onBlur={e => e.target.style.border = "1px solid transparent"} />
+                <button onClick={() => updateChecklist(checklist.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", color: "var(--line)", cursor: "pointer", fontSize: 9, flexShrink: 0 }}>✕</button>
               </div>
             ))}
             <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-              <input value={newCheck} onChange={e => setNewCheck(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && newCheck.trim()) { updateChecklist([...checklist, { text: newCheck.trim(), done: false }]); setNewCheck(""); } }} placeholder="+ add step..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#F1EFE8", border: "1px solid #1A1A18", outline: "none" }} />
+              <input value={newCheck} onChange={e => setNewCheck(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && newCheck.trim()) { updateChecklist([...checklist, { text: newCheck.trim(), done: false }]); setNewCheck(""); } }} placeholder="+ add step..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--surface)", outline: "none" }} />
             </div>
           </div>
 
           {/* Scratchpad */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
             <div style={{ padding: "8px 14px 0", display: "flex", justifyContent: "space-between", flexShrink: 0 }}>
-              <span style={{ fontSize: 10, color: activeNoteId ? "#AFA9EC" : "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>{activeNoteId ? "Linked note" : "Scratch"}</span>
-              <span style={{ fontSize: 9, color: savedTick === 3 ? "#F09595" : savedTick === 2 ? "#5DCAA5" : savedTick === 1 ? "#FAC775" : "#2C2C2A" }}>{savedTick === 3 ? `✕ ${saveError?.substring(0, 40)}` : savedTick === 2 ? "✓ saved" : savedTick === 1 ? "saving..." : "auto-save"}</span>
+              <span style={{ fontSize: 10, color: activeNoteId ? "var(--purple)" : "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>{activeNoteId ? "Linked note" : "Scratch"}</span>
+              <span style={{ fontSize: 9, color: savedTick === 3 ? "var(--pink)" : savedTick === 2 ? "var(--green)" : savedTick === 1 ? "var(--amber)" : "var(--line)" }}>{savedTick === 3 ? `✕ ${saveError?.substring(0, 40)}` : savedTick === 2 ? "✓ saved" : savedTick === 1 ? "saving..." : "auto-save"}</span>
             </div>
             <textarea
               value={scratch}
               onChange={e => updateScratch(e.target.value)}
               placeholder={"SQL, errors, notes...\n\n-- paste code here\n-- jot thoughts"}
-              style={{ flex: 1, padding: "8px 14px", fontSize: 12, background: "transparent", color: "#D3D1C7", border: "none", outline: "none", resize: "none", fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, minHeight: 120 }}
+              style={{ flex: 1, padding: "8px 14px", fontSize: 12, background: "transparent", color: "var(--title)", border: "none", outline: "none", resize: "none", fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, minHeight: 120 }}
               onKeyDown={e => { if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; const end = e.target.selectionEnd; updateScratch(scratch.substring(0, s) + "  " + scratch.substring(end)); setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0); } }}
             />
           </div>
 
           {/* Source + promote */}
-          <div style={{ padding: "8px 14px 10px", borderTop: "1px solid #1A1A18", flexShrink: 0 }}>
+          <div style={{ padding: "8px 14px 10px", borderTop: "1px solid var(--surface)", flexShrink: 0 }}>
             { activeNoteId ? (
-              <div style={{ fontSize: 9, color: "#AFA9EC", display: "flex", alignItems: "center", gap: 4 }}>
+              <div style={{ fontSize: 9, color: "var(--purple)", display: "flex", alignItems: "center", gap: 4 }}>
                 <span>☰</span>
                 <span>Editing linked note</span>
-                <span style={{ color: "#444441" }}>· auto-saves</span>
+                <span style={{ color: "var(--dim)" }}>· auto-saves</span>
               </div>
             ) : (
-              <button onClick={promoteToNote} style={{ background: "none", border: "1px dashed #1A1A18", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "4px 8px", borderRadius: 4, width: "100%" }}>↗ Save as note</button>
+              <button onClick={promoteToNote} style={{ background: "none", border: "1px dashed var(--surface)", color: "var(--muted)", cursor: "pointer", fontSize: 10, padding: "4px 8px", borderRadius: 4, width: "100%" }}>↗ Save as note</button>
             )}
           </div>
         </div>
@@ -717,11 +722,11 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   const timerSection = (size) => (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
       <div style={{ position: "relative", width: size, height: size }}>
-        <Ring size={size} stroke={size > 200 ? 6 : 5} timeLeft={tmr.left} totalTime={tmr.total} color={isActive ? color : "#2C2C2A"} />
+        <Ring size={size} stroke={size > 200 ? 6 : 5} timeLeft={tmr.left} totalTime={tmr.total} color={isActive ? color : "var(--line)"} />
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ fontSize: size > 200 ? 56 : 40, fontWeight: 400, fontFamily: "'SF Mono', 'Fira Code', monospace", color: isActive ? color : "#5F5E5A", letterSpacing: -2, lineHeight: 1 }}>{FMT(tmr.left)}</div>
-          <div style={{ fontSize: 10, color: "#5F5E5A", marginTop: 6, letterSpacing: 1, textTransform: "uppercase" }}>{tmr.type === "work" ? "focus" : tmr.type === "short_break" ? "short break" : "long break"}</div>
-          <div style={{ display: "flex", gap: 5, marginTop: 8 }}>{[0,1,2,3].map(i => (<div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: i < tmr.done ? color : "#2C2C2A" }} />))}</div>
+          <div style={{ fontSize: size > 200 ? 56 : 40, fontWeight: 400, fontFamily: "'SF Mono', 'Fira Code', monospace", color: isActive ? color : "var(--muted)", letterSpacing: -2, lineHeight: 1 }}>{FMT(tmr.left)}</div>
+          <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 6, letterSpacing: 1, textTransform: "uppercase" }}>{tmr.type === "work" ? "focus" : tmr.type === "short_break" ? "short break" : "long break"}</div>
+          <div style={{ display: "flex", gap: 5, marginTop: 8 }}>{[0,1,2,3].map(i => (<div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: i < tmr.done ? color : "var(--line)" }} />))}</div>
         </div>
       </div>
       {tmr.type !== "work" && tmr.st !== "idle" && (() => {
@@ -735,8 +740,8 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
               ))}
             </div>
             <div style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color, marginBottom: 6 }}>Break idea</div>
-            <div style={{ fontSize: 13, color: "#B4B2A9", lineHeight: 1.5 }}>{tip}</div>
-            <button onClick={() => setBreakTipBump(b => b + 1)} style={{ marginTop: 8, background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 10 }}>↻ another</button>
+            <div style={{ fontSize: 13, color: "var(--soft)", lineHeight: 1.5 }}>{tip}</div>
+            <button onClick={() => setBreakTipBump(b => b + 1)} style={{ marginTop: 8, background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 10 }}>↻ another</button>
           </div>
         );
       })()}
@@ -747,18 +752,18 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginTop: 16 }}>
       {tmr.st === "idle" && <>
         <Btn primary onClick={() => start()} style={{ padding: "10px 28px", fontSize: 14, borderRadius: 8 }}>Start</Btn>
-        {!taskName && <Btn onClick={() => setPicking(true)} small style={{ color: "#5F5E5A" }}>Pick task</Btn>}
-        {queuedItems.length > 0 && !taskName && <Btn onClick={() => focusOn(queuedItems[0].t, queuedItems[0].id)} small style={{ color: "#E24B4A" }}>▶ {queuedItems[0].l.substring(0, 16)}</Btn>}
+        {!taskName && <Btn onClick={() => setPicking(true)} small style={{ color: "var(--muted)" }}>Pick task</Btn>}
+        {queuedItems.length > 0 && !taskName && <Btn onClick={() => focusOn(queuedItems[0].t, queuedItems[0].id)} small style={{ color: "var(--red)" }}>▶ {queuedItems[0].l.substring(0, 16)}</Btn>}
       </>}
       {tmr.st === "running" && <>
         <Btn onClick={() => pauseWith("waiting")} small style={{ color: "#378ADD", borderColor: "#378ADD33" }}>Waiting</Btn>
         <Btn onClick={() => pauseWith("interrupted")} small style={{ color: "#D85A30", borderColor: "#D85A3033" }}>Interrupted</Btn>
-        <Btn onClick={pause} small style={{ color: "#888780" }}>Pause</Btn>
-        <Btn onClick={reset} small style={{ color: "#444441" }}>Stop</Btn>
+        <Btn onClick={pause} small style={{ color: "var(--sub)" }}>Pause</Btn>
+        <Btn onClick={reset} small style={{ color: "var(--dim)" }}>Stop</Btn>
       </>}
       {tmr.st === "paused" && !tmr.pauseReason && <>
         <Btn primary onClick={resume} style={{ padding: "10px 28px", fontSize: 14, borderRadius: 8 }}>Resume</Btn>
-        <Btn onClick={reset} small style={{ color: "#444441" }}>Stop</Btn>
+        <Btn onClick={reset} small style={{ color: "var(--dim)" }}>Stop</Btn>
       </>}
     </div>
   );
@@ -775,13 +780,13 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           {/* Goal bar */}
           <div style={{ width: "100%", maxWidth: 500, marginBottom: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ fontSize: 10, color: "#5F5E5A" }}>Session {sessionsDone + 1}/{goalSessions} · {pomsInCurrent}/4 pomodoros</span>
-              <span style={{ fontSize: 10, color: focusDone >= goalPoms ? "#5DCAA5" : "#444441" }}>{focusDone >= goalPoms ? "Goal reached ✓" : `${FMTHR(tfm)} / ${FMTHR(goalMin)}`}</span>
+              <span style={{ fontSize: 10, color: "var(--muted)" }}>Session {sessionsDone + 1}/{goalSessions} · {pomsInCurrent}/4 pomodoros</span>
+              <span style={{ fontSize: 10, color: focusDone >= goalPoms ? "var(--green)" : "var(--dim)" }}>{focusDone >= goalPoms ? "Goal reached ✓" : `${FMTHR(tfm)} / ${FMTHR(goalMin)}`}</span>
             </div>
             <div style={{ display: "flex", gap: 2, height: 6 }}>
               {Array.from({ length: goalPoms }).map((_, i) => (<Fragment key={i}>
-                <div style={{ flex: 1, borderRadius: 2, background: i < focusDone ? "#5DCAA5" : (i === focusDone && tmr.st !== "idle" && tmr.type === "work") ? color : "#1A1A18", transition: "background 0.3s" }} />
-                {i < goalPoms - 1 && <div style={{ width: ((i + 1) % 4 === 0) ? 8 : 4, borderRadius: 2, background: i < breakDone ? "#378ADD" : (i === breakDone && tmr.type !== "work" && tmr.st !== "idle") ? "#378ADD" : "#1A1A18" }} />}
+                <div style={{ flex: 1, borderRadius: 2, background: i < focusDone ? "var(--green)" : (i === focusDone && tmr.st !== "idle" && tmr.type === "work") ? color : "var(--surface)", transition: "background 0.3s" }} />
+                {i < goalPoms - 1 && <div style={{ width: ((i + 1) % 4 === 0) ? 8 : 4, borderRadius: 2, background: i < breakDone ? "#378ADD" : (i === breakDone && tmr.type !== "work" && tmr.st !== "idle") ? "#378ADD" : "var(--surface)" }} />}
               </Fragment>))}
             </div>
           </div>
@@ -789,25 +794,25 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           {/* Task info bar — compact by default, expandable */}
           <div style={{ marginBottom: 16, width: "100%", maxWidth: 500 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
-              <Badge label={tmr.tType === "issue" ? task.type : "test"} colors={tmr.tType === "issue" ? (task.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }) : { bg: "#0E1A08", text: "#97C459", border: "#173404" }} small />
+              <Badge label={tmr.tType === "issue" ? task.type : "test"} colors={tmr.tType === "issue" ? (task.type === "bug" ? { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" } : { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" }) : { bg: "var(--tint-green-bg)", text: "var(--lime)", border: "var(--tint-green-bd)" }} small />
               {tmr.tType === "issue" && <Badge label={task.priority} colors={PC[task.priority]} small />}
-              <span style={{ fontSize: 13, color: "#D3D1C7", fontWeight: 500 }}>{taskName}</span>
-              {isDone ? <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "#081F12", color: "#5DCAA5", border: "1px solid #04342C" }}>✓ done</span>
-              : <button onClick={markDone} style={{ fontSize: 10, padding: "3px 10px", borderRadius: 4, background: "none", color: "#5DCAA5", border: "1px solid #04342C", cursor: "pointer", fontWeight: 500 }}>✓ Finish</button>}
-              <button onClick={() => setTaskInfoOpen(!taskInfoOpen)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10 }}>{taskInfoOpen ? "▴" : "▾"}</button>
+              <span style={{ fontSize: 13, color: "var(--title)", fontWeight: 500 }}>{taskName}</span>
+              {isDone ? <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: "var(--tint-green-bg)", color: "var(--green)", border: "1px solid var(--tint-green-bd)" }}>✓ done</span>
+              : <button onClick={markDone} style={{ fontSize: 10, padding: "3px 10px", borderRadius: 4, background: "none", color: "var(--green)", border: "1px solid var(--tint-green-bd)", cursor: "pointer", fontWeight: 500 }}>✓ Finish</button>}
+              <button onClick={() => setTaskInfoOpen(!taskInfoOpen)} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 10 }}>{taskInfoOpen ? "▴" : "▾"}</button>
             </div>
             {taskInfoOpen && (
-              <div style={{ marginTop: 10, background: "#161615", border: "1px solid #1A1A18", borderRadius: 8, padding: "12px 16px" }}>
-                {task.description && <div style={{ fontSize: 12, color: "#888780", lineHeight: 1.6, marginBottom: 10 }}>{task.description}</div>}
+              <div style={{ marginTop: 10, background: "var(--side)", border: "1px solid var(--surface)", borderRadius: 8, padding: "12px 16px" }}>
+                {task.description && <div style={{ fontSize: 12, color: "var(--sub)", lineHeight: 1.6, marginBottom: 10 }}>{task.description}</div>}
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                  <Badge label={task.status} colors={TC[task.status] || { bg: "#2C2C2A", text: "#888780", border: "#444441" }} small />
-                  {task.repo_name && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{task.repo_name}</span>}
-                  {task.branch_name && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", fontFamily: "'SF Mono', monospace" }}>{task.branch_name}</span>}
-                  {task.due_date && <span style={{ fontSize: 10, color: "#5F5E5A" }}>Due {task.due_date}</span>}
-                  {task.estimated_pomodoros > 0 && <span style={{ fontSize: 10, color: "#5F5E5A" }}>{task.estimated_pomodoros} pom</span>}
-                  {parseMtags(task.meeting_tag).length > 0 && parseMtags(task.meeting_tag).map(t => <span key={t} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C" }}>{t}</span>)}
+                  <Badge label={task.status} colors={TC[task.status] || { bg: "var(--line)", text: "var(--sub)", border: "var(--dim)" }} small />
+                  {task.repo_name && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: "var(--tint-blue-bg)", color: "var(--blue)", border: "1px solid var(--tint-blue-bd)", fontFamily: "'SF Mono', monospace" }}>{task.repo_name}</span>}
+                  {task.branch_name && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: "var(--bg)", color: "var(--sub)", border: "1px solid var(--line)", fontFamily: "'SF Mono', monospace" }}>{task.branch_name}</span>}
+                  {task.due_date && <span style={{ fontSize: 10, color: "var(--muted)" }}>Due {task.due_date}</span>}
+                  {task.estimated_pomodoros > 0 && <span style={{ fontSize: 10, color: "var(--muted)" }}>{task.estimated_pomodoros} pom</span>}
+                  {parseMtags(task.meeting_tag).length > 0 && parseMtags(task.meeting_tag).map(t => <span key={t} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--tint-purple-bg)", color: "var(--purple)", border: "1px solid var(--tint-purple-bd)" }}>{t}</span>)}
                 </div>
-                {linkedNotes.length > 0 && <div style={{ marginTop: 8, borderTop: "1px solid #1A1A18", paddingTop: 8 }}>{linkedNotes.map(n => <div key={n.id} style={{ fontSize: 10, color: "#AFA9EC", padding: "2px 0" }}>☰ {n.title || n.content.substring(0, 40)}</div>)}</div>}
+                {linkedNotes.length > 0 && <div style={{ marginTop: 8, borderTop: "1px solid var(--surface)", paddingTop: 8 }}>{linkedNotes.map(n => <div key={n.id} style={{ fontSize: 10, color: "var(--purple)", padding: "2px 0" }}>☰ {n.title || n.content.substring(0, 40)}</div>)}</div>}
               </div>
             )}
           </div>
@@ -817,8 +822,8 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
 
           {/* Pause reason */}
           {tmr.st === "paused" && tmr.pauseReason && (
-            <div style={{ marginTop: 16, padding: "16px 24px", background: "#161615", border: `1px solid ${tmr.pauseReason === "waiting" ? "#378ADD22" : "#D85A3022"}`, borderRadius: 10, textAlign: "center" }}>
-              <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>{tmr.pauseReason === "waiting" ? "waiting for code" : "interrupted"}</div>
+            <div style={{ marginTop: 16, padding: "16px 24px", background: "var(--side)", border: `1px solid ${tmr.pauseReason === "waiting" ? "#378ADD22" : "#D85A3022"}`, borderRadius: 10, textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>{tmr.pauseReason === "waiting" ? "waiting for code" : "interrupted"}</div>
               <div style={{ fontSize: 28, fontFamily: "'SF Mono', monospace", color: tmr.pauseReason === "waiting" ? "#378ADD" : "#D85A30" }}>{FMT(pauseElapsed)}</div>
               <Btn primary onClick={resume} small style={{ marginTop: 10 }}>Resume focus</Btn>
             </div>
@@ -826,22 +831,22 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
 
           {/* Compact stats + queue row */}
           <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", gap: 12, marginTop: 24, width: "100%", maxWidth: 500 }}>
-            <div style={{ flex: 1, background: "#161615", borderRadius: 8, padding: "10px 12px", border: "1px solid #1A1A18", fontSize: 11 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Focus</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{FMTHR(Math.round(focusSec / 60))}</span></div>
-              {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Waiting</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{FMTHR(Math.round(waitSec / 60))}</span></div>}
-              {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Interrupted</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{FMTHR(Math.round(intSec / 60))}</span></div>}
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Sessions</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").length}</span></div>
+            <div style={{ flex: 1, background: "var(--side)", borderRadius: 8, padding: "10px 12px", border: "1px solid var(--surface)", fontSize: 11 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "var(--muted)" }}>Focus</span><span style={{ fontFamily: "'SF Mono', monospace", color: "var(--green)" }}>{FMTHR(Math.round(focusSec / 60))}</span></div>
+              {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "var(--muted)" }}>Waiting</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{FMTHR(Math.round(waitSec / 60))}</span></div>}
+              {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "var(--muted)" }}>Interrupted</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{FMTHR(Math.round(intSec / 60))}</span></div>}
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "var(--muted)" }}>Sessions</span><span style={{ fontFamily: "'SF Mono', monospace", color: "var(--red)" }}>{ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").length}</span></div>
             </div>
-            <div style={{ flex: 1, background: "#161615", borderRadius: 8, padding: "10px 12px", border: "1px solid #1A1A18", fontSize: 10 }}>
-              <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Up next</div>
+            <div style={{ flex: 1, background: "var(--side)", borderRadius: 8, padding: "10px 12px", border: "1px solid var(--surface)", fontSize: 10 }}>
+              <div style={{ fontSize: 10, color: "var(--dim)", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Up next</div>
               {queuedItems.slice(0, 3).map((tk, idx) => (
                 <div key={tk.qid} draggable onDragStart={() => { dragIdx.current = idx; }} onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderTop = "2px solid #7F77DD"; }} onDragLeave={e => { e.currentTarget.style.borderTop = "none"; }} onDrop={e => { e.preventDefault(); e.currentTarget.style.borderTop = "none"; if (dragIdx.current !== null) { reorderQ(dragIdx.current, idx); dragIdx.current = null; } }} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 0", cursor: "grab" }}>
-                  <span style={{ color: "#2C2C2A", fontSize: 9 }}>⠿</span>
-                  <span style={{ color: tk.t === "issue" ? "#F09595" : "#85B7EB", fontSize: 10 }}>{tk.t === "issue" ? "◉" : "▷"}</span>
-                  <span style={{ flex: 1, color: "#5F5E5A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.l}</span>
+                  <span style={{ color: "var(--line)", fontSize: 9 }}>⠿</span>
+                  <span style={{ color: tk.t === "issue" ? "var(--pink)" : "var(--blue)", fontSize: 10 }}>{tk.t === "issue" ? "◉" : "▷"}</span>
+                  <span style={{ flex: 1, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.l}</span>
                 </div>
               ))}
-              {queuedItems.length === 0 && <div style={{ color: "#2C2C2A" }}>Empty</div>}
+              {queuedItems.length === 0 && <div style={{ color: "var(--line)" }}>Empty</div>}
             </div>
           </div>
         </div>
@@ -859,21 +864,21 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
     <div style={{ maxWidth: 720, margin: "0 auto" }}>
       <div style={{ marginBottom: 32 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-          <span style={{ fontSize: 10, color: "#5F5E5A" }}>Session {sessionsDone + 1}/{goalSessions} · {pomsInCurrent}/4 pomodoros</span>
-          <span style={{ fontSize: 10, color: focusDone >= goalPoms ? "#5DCAA5" : "#444441" }}>{focusDone >= goalPoms ? "Goal reached ✓" : `${FMTHR(tfm)} / ${FMTHR(goalMin)}`}</span>
+          <span style={{ fontSize: 10, color: "var(--muted)" }}>Session {sessionsDone + 1}/{goalSessions} · {pomsInCurrent}/4 pomodoros</span>
+          <span style={{ fontSize: 10, color: focusDone >= goalPoms ? "var(--green)" : "var(--dim)" }}>{focusDone >= goalPoms ? "Goal reached ✓" : `${FMTHR(tfm)} / ${FMTHR(goalMin)}`}</span>
         </div>
         <div style={{ display: "flex", gap: 2, height: 6 }}>
           {Array.from({ length: goalPoms }).map((_, i) => (<Fragment key={i}>
-            <div style={{ flex: 1, borderRadius: 2, background: i < focusDone ? "#5DCAA5" : (i === focusDone && tmr.st !== "idle" && tmr.type === "work") ? color : "#1A1A18", transition: "background 0.3s" }} />
-            {i < goalPoms - 1 && <div style={{ width: ((i + 1) % 4 === 0) ? 8 : 4, borderRadius: 2, background: i < breakDone ? "#378ADD" : (i === breakDone && tmr.type !== "work" && tmr.st !== "idle") ? "#378ADD" : "#1A1A18" }} />}
+            <div style={{ flex: 1, borderRadius: 2, background: i < focusDone ? "var(--green)" : (i === focusDone && tmr.st !== "idle" && tmr.type === "work") ? color : "var(--surface)", transition: "background 0.3s" }} />
+            {i < goalPoms - 1 && <div style={{ width: ((i + 1) % 4 === 0) ? 8 : 4, borderRadius: 2, background: i < breakDone ? "#378ADD" : (i === breakDone && tmr.type !== "work" && tmr.st !== "idle") ? "#378ADD" : "var(--surface)" }} />}
           </Fragment>))}
         </div>
       </div>
 
       {tmr.tType === "study" && tmr.studyTopic && (
         <div style={{ textAlign: "center", marginBottom: 16 }}>
-          <span style={{ fontSize: 11, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>Studying</span>
-          <div style={{ fontSize: 20, fontWeight: 500, color: "#CECBF6", marginTop: 2 }}>📚 {tmr.studyTopic}</div>
+          <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Studying</span>
+          <div style={{ fontSize: 20, fontWeight: 500, color: "var(--purple)", marginTop: 2 }}>📚 {tmr.studyTopic}</div>
         </div>
       )}
 
@@ -882,44 +887,44 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
         {controls}
       </div>
 
-      {picking && (<div style={{ maxWidth: 400, margin: "0 auto 24px", background: "#161615", border: "1px solid #2C2C2A", borderRadius: 10, padding: 14, maxHeight: 220, overflowY: "auto" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Pick a task</span><button onClick={() => setPicking(false)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 10 }}>✕</button></div>{openTasks.map(tk => (<div key={tk.id} role="button" onMouseDown={() => { focusOn(tk.t, tk.id); setPicking(false); }} style={{ padding: "7px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, color: "#D3D1C7", marginBottom: 2 }} onMouseEnter={e => e.currentTarget.style.background = "#1A1A18"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{tk.t === "issue" ? "◉" : "▷"} {tk.l}</div>))}</div>)}
+      {picking && (<div style={{ maxWidth: 400, margin: "0 auto 24px", background: "var(--side)", border: "1px solid var(--line)", borderRadius: 10, padding: 14, maxHeight: 220, overflowY: "auto" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 11, color: "var(--muted)" }}>Pick a task</span><button onClick={() => setPicking(false)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 10 }}>✕</button></div>{openTasks.map(tk => (<div key={tk.id} role="button" onMouseDown={() => { focusOn(tk.t, tk.id); setPicking(false); }} style={{ padding: "7px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, color: "var(--title)", marginBottom: 2 }} onMouseEnter={e => e.currentTarget.style.background = "var(--surface)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{tk.t === "issue" ? "◉" : "▷"} {tk.l}</div>))}</div>)}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
-          <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Today</div>
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Focus</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{FMTHR(Math.round(focusSec / 60))}</span></div>
-          {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Waiting</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{FMTHR(Math.round(waitSec / 60))}</span></div>}
-          {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Interrupted</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{FMTHR(Math.round(intSec / 60))}</span></div>}
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>Sessions</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#E24B4A" }}>{ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").length}</span></div>
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "#5F5E5A" }}>This week</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#85B7EB" }}>{daysWithToday}/7</span></div>
-          <div style={{ borderTop: "1px solid #1A1A18", marginTop: 6, paddingTop: 6 }}>
-            <button onClick={() => setShowLog(!showLog)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 10, padding: 0 }}>{showLog ? "Cancel" : "+ Log past work"}</button>
+        <div style={{ background: "var(--side)", borderRadius: 10, padding: "14px 16px", border: "1px solid var(--surface)" }}>
+          <div style={{ fontSize: 10, color: "var(--dim)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Today</div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "var(--muted)" }}>Focus</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "var(--green)" }}>{FMTHR(Math.round(focusSec / 60))}</span></div>
+          {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "var(--muted)" }}>Waiting</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{FMTHR(Math.round(waitSec / 60))}</span></div>}
+          {intSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "var(--muted)" }}>Interrupted</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "#D85A30" }}>{FMTHR(Math.round(intSec / 60))}</span></div>}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "var(--muted)" }}>Sessions</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "var(--red)" }}>{ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").length}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}><span style={{ fontSize: 11, color: "var(--muted)" }}>This week</span><span style={{ fontSize: 14, fontFamily: "'SF Mono', monospace", color: "var(--blue)" }}>{daysWithToday}/7</span></div>
+          <div style={{ borderTop: "1px solid var(--surface)", marginTop: 6, paddingTop: 6 }}>
+            <button onClick={() => setShowLog(!showLog)} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 10, padding: 0 }}>{showLog ? "Cancel" : "+ Log past work"}</button>
           </div>
           {showLog && (<div style={{ marginTop: 8 }}>
-            {logError && <div style={{ fontSize: 10, color: "#F09595", marginBottom: 4 }}>{logError}</div>}
-            <select value={logForm.taskId ? `${logForm.taskType}:${logForm.taskId}` : ""} onChange={e => { if (e.target.value) { const [t, id] = e.target.value.split(":"); setLogForm({ ...logForm, taskType: t, taskId: id }); } }} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none", marginBottom: 4 }}><option value="">Task</option>{openTasks.map(t => <option key={t.id} value={`${t.t}:${t.id}`}>{t.l}</option>)}</select>
-            <input type="date" value={logForm.date} onChange={e => setLogForm({ ...logForm, date: e.target.value })} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none", marginBottom: 4, boxSizing: "border-box" }} />
+            {logError && <div style={{ fontSize: 10, color: "var(--pink)", marginBottom: 4 }}>{logError}</div>}
+            <select value={logForm.taskId ? `${logForm.taskType}:${logForm.taskId}` : ""} onChange={e => { if (e.target.value) { const [t, id] = e.target.value.split(":"); setLogForm({ ...logForm, taskType: t, taskId: id }); } }} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "var(--bg)", color: "var(--sub)", border: "1px solid var(--line)", outline: "none", marginBottom: 4 }}><option value="">Task</option>{openTasks.map(t => <option key={t.id} value={`${t.t}:${t.id}`}>{t.l}</option>)}</select>
+            <input type="date" value={logForm.date} onChange={e => setLogForm({ ...logForm, date: e.target.value })} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "var(--bg)", color: "var(--sub)", border: "1px solid var(--line)", outline: "none", marginBottom: 4, boxSizing: "border-box" }} />
             <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
-              <input type="time" value={logForm.startTime} onChange={e => setLogForm({ ...logForm, startTime: e.target.value })} style={{ flex: 1, padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none" }} />
-              <input type="time" value={logForm.endTime} onChange={e => setLogForm({ ...logForm, endTime: e.target.value })} style={{ flex: 1, padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none" }} />
+              <input type="time" value={logForm.startTime} onChange={e => setLogForm({ ...logForm, startTime: e.target.value })} style={{ flex: 1, padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "var(--bg)", color: "var(--sub)", border: "1px solid var(--line)", outline: "none" }} />
+              <input type="time" value={logForm.endTime} onChange={e => setLogForm({ ...logForm, endTime: e.target.value })} style={{ flex: 1, padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "var(--bg)", color: "var(--sub)", border: "1px solid var(--line)", outline: "none" }} />
             </div>
             <Btn small primary onClick={submitLog} style={{ width: "100%", justifyContent: "center", fontSize: 10 }}>Save</Btn>
           </div>)}
         </div>
 
-        <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
-          <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Up next</div>
-          {queuedItems.length === 0 && <div style={{ fontSize: 11, color: "#2C2C2A", padding: "8px 0" }}>Queue empty</div>}
+        <div style={{ background: "var(--side)", borderRadius: 10, padding: "14px 16px", border: "1px solid var(--surface)" }}>
+          <div style={{ fontSize: 10, color: "var(--dim)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Up next</div>
+          {queuedItems.length === 0 && <div style={{ fontSize: 11, color: "var(--line)", padding: "8px 0" }}>Queue empty</div>}
           {queuedItems.map((tk, idx) => (
-            <div key={tk.qid} draggable onDragStart={() => { dragIdx.current = idx; }} onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderTop = "2px solid #7F77DD"; }} onDragLeave={e => { e.currentTarget.style.borderTop = "none"; }} onDrop={e => { e.preventDefault(); e.currentTarget.style.borderTop = "none"; if (dragIdx.current !== null) { reorderQ(dragIdx.current, idx); dragIdx.current = null; } }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: idx < queuedItems.length - 1 ? "1px solid #1A1A18" : "none", cursor: "grab" }}>
-              <span style={{ fontSize: 10, color: "#2C2C2A", cursor: "grab" }}>⠿</span>
-              <span style={{ color: tk.t === "issue" ? "#F09595" : "#85B7EB", fontSize: 11 }}>{tk.t === "issue" ? "◉" : "▷"}</span>
-              <span style={{ flex: 1, fontSize: 11, color: idx === 0 ? "#D3D1C7" : "#5F5E5A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.l}</span>
-              <button onClick={() => removeQ(tk.qid)} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9 }}>✕</button>
+            <div key={tk.qid} draggable onDragStart={() => { dragIdx.current = idx; }} onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderTop = "2px solid #7F77DD"; }} onDragLeave={e => { e.currentTarget.style.borderTop = "none"; }} onDrop={e => { e.preventDefault(); e.currentTarget.style.borderTop = "none"; if (dragIdx.current !== null) { reorderQ(dragIdx.current, idx); dragIdx.current = null; } }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: idx < queuedItems.length - 1 ? "1px solid var(--surface)" : "none", cursor: "grab" }}>
+              <span style={{ fontSize: 10, color: "var(--line)", cursor: "grab" }}>⠿</span>
+              <span style={{ color: tk.t === "issue" ? "var(--pink)" : "var(--blue)", fontSize: 11 }}>{tk.t === "issue" ? "◉" : "▷"}</span>
+              <span style={{ flex: 1, fontSize: 11, color: idx === 0 ? "var(--title)" : "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tk.l}</span>
+              <button onClick={() => removeQ(tk.qid)} style={{ background: "none", border: "none", color: "var(--line)", cursor: "pointer", fontSize: 9 }}>✕</button>
             </div>
           ))}
           {queuedItems.length < 5 && notQueued.length > 0 && (
-            <select onChange={e => { if (e.target.value) { const t = openTasks.find(x => x.id === e.target.value); if (t) addQ(t); e.target.value = ""; } }} defaultValue="" style={{ marginTop: 6, width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "transparent", color: "#444441", border: "1px dashed #1A1A18", outline: "none", cursor: "pointer" }}>
+            <select onChange={e => { if (e.target.value) { const t = openTasks.find(x => x.id === e.target.value); if (t) addQ(t); e.target.value = ""; } }} defaultValue="" style={{ marginTop: 6, width: "100%", padding: "3px 6px", borderRadius: 4, fontSize: 10, background: "transparent", color: "var(--dim)", border: "1px dashed var(--surface)", outline: "none", cursor: "pointer" }}>
               <option value="">+ Add...</option>
               {notQueued.map(t => <option key={t.id} value={t.id}>{t.l}</option>)}
             </select>
@@ -957,10 +962,10 @@ function FocusLogView({ allSessions, issues, tests, logManual }) {
 
   const label = (s) => {
     if (s.subtype === "meeting") return { name: s.study_topic || "Meeting", kind: "meeting", color: "#7F77DD" };
-    if (s.issue_id) { const i = issues.find(x => x.id === s.issue_id); return { name: i?.title || "Task", kind: i?.type || "issue", color: i?.type === "todo" ? "#85B7EB" : "#E24B4A" }; }
-    if (s.test_case_id) return { name: tests.find(x => x.id === s.test_case_id)?.title || "Test case", kind: "test", color: "#5DCAA5" };
-    if (s.study_topic) return { name: s.study_topic, kind: "study", color: "#AFA9EC" };
-    return { name: "Focus", kind: "focus", color: "#888780" };
+    if (s.issue_id) { const i = issues.find(x => x.id === s.issue_id); return { name: i?.title || "Task", kind: i?.type || "issue", color: i?.type === "todo" ? "var(--blue)" : "var(--red)" }; }
+    if (s.test_case_id) return { name: tests.find(x => x.id === s.test_case_id)?.title || "Test case", kind: "test", color: "var(--green)" };
+    if (s.study_topic) return { name: s.study_topic, kind: "study", color: "var(--purple)" };
+    return { name: "Focus", kind: "focus", color: "var(--sub)" };
   };
   const hm = (d) => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 
@@ -973,29 +978,29 @@ function FocusLogView({ allSessions, issues, tests, logManual }) {
     const [t, id] = form.task ? form.task.split(":") : ["", ""];
     try { await logManual(t, id, start.toISOString(), end.toISOString()); setSheet(false); } catch (e) { setErr(e.message); }
   };
-  const field = { width: "100%", padding: "10px 12px", borderRadius: 9, fontSize: 13, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", boxSizing: "border-box" };
-  const lbl = { fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 };
+  const field = { width: "100%", padding: "10px 12px", borderRadius: 9, fontSize: 13, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", boxSizing: "border-box" };
+  const lbl = { fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 };
 
   return (
     <div style={{ maxWidth: 560, margin: "0 auto" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <div style={{ flex: 1, display: "flex", background: "#161615", border: "1px solid #1A1A18", borderRadius: 10, padding: 3 }}>
-          {["today", "week", "month"].map(r => (<button key={r} onClick={() => setRange(r)} style={{ flex: 1, padding: "6px 0", borderRadius: 7, border: "none", fontSize: 12, cursor: "pointer", background: range === r ? "#2C2C2A" : "transparent", color: range === r ? "#F1EFE8" : "#5F5E5A", textTransform: "capitalize" }}>{r}</button>))}
+        <div style={{ flex: 1, display: "flex", background: "var(--side)", border: "1px solid var(--surface)", borderRadius: 10, padding: 3 }}>
+          {["today", "week", "month"].map(r => (<button key={r} onClick={() => setRange(r)} style={{ flex: 1, padding: "6px 0", borderRadius: 7, border: "none", fontSize: 12, cursor: "pointer", background: range === r ? "var(--line)" : "transparent", color: range === r ? "var(--text)" : "var(--muted)", textTransform: "capitalize" }}>{r}</button>))}
         </div>
-        <Btn onClick={() => setSheet(true)} style={{ color: "#F1EFE8" }}>+ Log</Btn>
+        <Btn onClick={() => setSheet(true)} style={{ color: "var(--text)" }}>+ Log</Btn>
       </div>
 
-      <div style={{ marginTop: 22, fontSize: 34, fontFamily: "'SF Mono', monospace", color: "#5DCAA5", letterSpacing: -1 }}>{FMTHR(Math.round(focusSec / 60))}</div>
-      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#888780", marginTop: 4 }}>
-        <span><b style={{ color: "#F1EFE8", fontWeight: 500 }}>{work.filter(isFocus).length}</b> sessions</span>
-        <span><b style={{ color: "#F1EFE8", fontWeight: 500 }}>{FMTHR(Math.round(pauseSec / 60))}</b> paused</span>
-        <span><b style={{ color: "#F1EFE8", fontWeight: 500 }}>{taskKeys.size}</b> tasks</span>
+      <div style={{ marginTop: 22, fontSize: 34, fontFamily: "'SF Mono', monospace", color: "var(--green)", letterSpacing: -1 }}>{FMTHR(Math.round(focusSec / 60))}</div>
+      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--sub)", marginTop: 4 }}>
+        <span><b style={{ color: "var(--text)", fontWeight: 500 }}>{work.filter(isFocus).length}</b> sessions</span>
+        <span><b style={{ color: "var(--text)", fontWeight: 500 }}>{FMTHR(Math.round(pauseSec / 60))}</b> paused</span>
+        <span><b style={{ color: "var(--text)", fontWeight: 500 }}>{taskKeys.size}</b> tasks</span>
       </div>
 
       <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 80, margin: "22px 0 6px" }}>
         {week.map((d, i) => (<div key={i} style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", gap: 5 }}>
-          <div title={`${Math.round(d.min)}m`} style={{ width: "100%", height: `${Math.max(4, (d.min / maxMin) * 100)}%`, borderRadius: 4, background: d.today ? "#5DCAA5" : "#2C2C2A" }} />
-          <span style={{ fontSize: 9, color: "#5F5E5A" }}>{d.label}</span>
+          <div title={`${Math.round(d.min)}m`} style={{ width: "100%", height: `${Math.max(4, (d.min / maxMin) * 100)}%`, borderRadius: 4, background: d.today ? "var(--green)" : "var(--line)" }} />
+          <span style={{ fontSize: 9, color: "var(--muted)" }}>{d.label}</span>
         </div>))}
       </div>
 
@@ -1003,22 +1008,22 @@ function FocusLogView({ allSessions, issues, tests, logManual }) {
         {work.length === 0 && <EmptyState icon="◷" title="Nothing logged yet" sub="Finish a focus session or log past work to see it here." />}
         {work.map(s => {
           const fin = new Date(s.completed_at), beg = s.started_at ? new Date(s.started_at) : new Date(fin - s.duration_seconds * 1000);
-          const l = isPause(s) ? { name: `Paused · ${s.subtype}`, kind: null, color: "#FAC775" } : label(s);
-          return (<div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #1A1A18" }}>
+          const l = isPause(s) ? { name: `Paused · ${s.subtype}`, kind: null, color: "var(--amber)" } : label(s);
+          return (<div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--surface)" }}>
             <div style={{ width: 3, alignSelf: "stretch", borderRadius: 2, background: l.color }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</div>
-              <div style={{ fontSize: 10, color: "#5F5E5A" }}>{range !== "today" && `${fin.toLocaleDateString("en-US", { month: "short", day: "numeric" })} · `}{hm(beg)} – {hm(fin)}{l.kind ? ` · ${l.kind}` : ""}{s.subtype === "manual" ? " · logged" : ""}</div>
+              <div style={{ fontSize: 10, color: "var(--muted)" }}>{range !== "today" && `${fin.toLocaleDateString("en-US", { month: "short", day: "numeric" })} · `}{hm(beg)} – {hm(fin)}{l.kind ? ` · ${l.kind}` : ""}{s.subtype === "manual" ? " · logged" : ""}</div>
             </div>
-            <span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, color: isPause(s) ? "#FAC775" : "#888780" }}>{FMTHR(Math.round(s.duration_seconds / 60))}</span>
+            <span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, color: isPause(s) ? "var(--amber)" : "var(--sub)" }}>{FMTHR(Math.round(s.duration_seconds / 60))}</span>
           </div>);
         })}
       </div>
 
       {sheet && (
         <div onClick={() => setSheet(false)} style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.55)" }}>
-          <div onClick={e => e.stopPropagation()} style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxWidth: 560, margin: "0 auto", background: "#161615", borderTop: "1px solid #2C2C2A", borderRadius: "22px 22px 0 0", padding: "10px 20px calc(26px + env(safe-area-inset-bottom))" }}>
-            <div style={{ width: 36, height: 4, borderRadius: 2, background: "#2C2C2A", margin: "0 auto 16px" }} />
+          <div onClick={e => e.stopPropagation()} style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxWidth: 560, margin: "0 auto", background: "var(--side)", borderTop: "1px solid var(--line)", borderRadius: "22px 22px 0 0", padding: "10px 20px calc(26px + env(safe-area-inset-bottom))" }}>
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--line)", margin: "0 auto 16px" }} />
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Log past work</div>
             <div style={{ marginBottom: 12 }}><div style={lbl}>Task</div>
               <select value={form.task} onChange={e => setForm({ ...form, task: e.target.value })} style={field}><option value="">No task</option>{openTasks.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}</select></div>
@@ -1028,8 +1033,8 @@ function FocusLogView({ allSessions, issues, tests, logManual }) {
               <div style={{ flex: 1 }}><div style={lbl}>Start</div><input type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} style={field} /></div>
               <div style={{ flex: 1 }}><div style={lbl}>End</div><input type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} style={field} /></div>
             </div>
-            <div style={{ fontSize: 11, color: err ? "#F09595" : "#5F5E5A", margin: "2px 0 14px" }}>{err || (previewMin > 0 ? <>Adds <b style={{ color: "#5DCAA5", fontWeight: 500 }}>{FMTHR(previewMin)}</b> of focus · about {Math.max(1, Math.round(previewMin / 25))} pomodoro{Math.round(previewMin / 25) > 1 ? "s" : ""}</> : "End must be after start")}</div>
-            <button onClick={save} style={{ width: "100%", padding: 12, borderRadius: 11, border: "none", background: "#F1EFE8", color: "#111110", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Save session</button>
+            <div style={{ fontSize: 11, color: err ? "var(--pink)" : "var(--muted)", margin: "2px 0 14px" }}>{err || (previewMin > 0 ? <>Adds <b style={{ color: "var(--green)", fontWeight: 500 }}>{FMTHR(previewMin)}</b> of focus · about {Math.max(1, Math.round(previewMin / 25))} pomodoro{Math.round(previewMin / 25) > 1 ? "s" : ""}</> : "End must be after start")}</div>
+            <button onClick={save} style={{ width: "100%", padding: 12, borderRadius: 11, border: "none", background: "var(--text)", color: "var(--bg)", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Save session</button>
           </div>
         </div>
       )}
@@ -1123,8 +1128,8 @@ function MediaPlayer() {
       <div>
         {naming && (
           <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "6px 0" }}>
-            <span style={{ fontSize: 11, color: "#5F5E5A" }}>Name:</span>
-            <input autoFocus value={nameVal} onChange={e => setNameVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); }} placeholder="e.g. Lo-fi beats..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>Name:</span>
+            <input autoFocus value={nameVal} onChange={e => setNameVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); }} placeholder="e.g. Lo-fi beats..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none" }} />
             <Btn small onClick={saveName}>Save</Btn>
           </div>
         )}
@@ -1136,31 +1141,31 @@ function MediaPlayer() {
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
           {/* Title */}
           <div style={{ flex: "0 0 180px", minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: "#F1EFE8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ytTitle || currentName()}</div>
-            <div style={{ fontSize: 9, color: "#5F5E5A" }}>YouTube</div>
+            <div style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ytTitle || currentName()}</div>
+            <div style={{ fontSize: 9, color: "var(--muted)" }}>YouTube</div>
           </div>
           {/* Controls */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button onClick={() => { if (ytRef.current) ytRef.current.seekTo(Math.max(0, ytRef.current.getCurrentTime() - 10)); }} title="Back 10s" style={{ background: "none", border: "none", color: "#B4B2A9", cursor: "pointer", fontSize: 14 }}>⏮</button>
-            <button onClick={() => { if (ytRef.current) { ytPlaying ? ytRef.current.pauseVideo() : ytRef.current.playVideo(); } }} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "#F1EFE8", color: "#111110", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{ytPlaying ? "⏸" : "▶"}</button>
-            <button onClick={() => { if (ytRef.current) ytRef.current.seekTo(Math.min(ytDuration, ytRef.current.getCurrentTime() + 10)); }} title="Forward 10s" style={{ background: "none", border: "none", color: "#B4B2A9", cursor: "pointer", fontSize: 14 }}>⏭</button>
+            <button onClick={() => { if (ytRef.current) ytRef.current.seekTo(Math.max(0, ytRef.current.getCurrentTime() - 10)); }} title="Back 10s" style={{ background: "none", border: "none", color: "var(--soft)", cursor: "pointer", fontSize: 14 }}>⏮</button>
+            <button onClick={() => { if (ytRef.current) { ytPlaying ? ytRef.current.pauseVideo() : ytRef.current.playVideo(); } }} style={{ width: 32, height: 32, borderRadius: "50%", border: "none", background: "var(--text)", color: "var(--bg)", cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>{ytPlaying ? "⏸" : "▶"}</button>
+            <button onClick={() => { if (ytRef.current) ytRef.current.seekTo(Math.min(ytDuration, ytRef.current.getCurrentTime() + 10)); }} title="Forward 10s" style={{ background: "none", border: "none", color: "var(--soft)", cursor: "pointer", fontSize: 14 }}>⏭</button>
           </div>
           {/* Progress */}
           <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 9, color: "#5F5E5A", fontFamily: "'SF Mono', monospace", minWidth: 32 }}>{fmtTime(ytTime)}</span>
-            <div style={{ flex: 1, height: 4, background: "#2C2C2A", borderRadius: 2, cursor: "pointer", position: "relative" }} onClick={e => { if (ytRef.current && ytDuration) { const rect = e.currentTarget.getBoundingClientRect(); const pct = (e.clientX - rect.left) / rect.width; ytRef.current.seekTo(pct * ytDuration); } }}>
-              <div style={{ height: "100%", width: `${ytDuration ? (ytTime / ytDuration) * 100 : 0}%`, background: "#E24B4A", borderRadius: 2, transition: "width 0.3s linear" }} />
+            <span style={{ fontSize: 9, color: "var(--muted)", fontFamily: "'SF Mono', monospace", minWidth: 32 }}>{fmtTime(ytTime)}</span>
+            <div style={{ flex: 1, height: 4, background: "var(--line)", borderRadius: 2, cursor: "pointer", position: "relative" }} onClick={e => { if (ytRef.current && ytDuration) { const rect = e.currentTarget.getBoundingClientRect(); const pct = (e.clientX - rect.left) / rect.width; ytRef.current.seekTo(pct * ytDuration); } }}>
+              <div style={{ height: "100%", width: `${ytDuration ? (ytTime / ytDuration) * 100 : 0}%`, background: "var(--red)", borderRadius: 2, transition: "width 0.3s linear" }} />
             </div>
-            <span style={{ fontSize: 9, color: "#5F5E5A", fontFamily: "'SF Mono', monospace", minWidth: 32 }}>{fmtTime(ytDuration)}</span>
+            <span style={{ fontSize: 9, color: "var(--muted)", fontFamily: "'SF Mono', monospace", minWidth: 32 }}>{fmtTime(ytDuration)}</span>
           </div>
           {/* Volume */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, flex: "0 0 100px" }}>
-            <span style={{ fontSize: 11, color: "#5F5E5A" }}>{ytVol === 0 ? "🔇" : "🔊"}</span>
-            <input type="range" min="0" max="100" value={ytVol} onChange={e => { const v = Number(e.target.value); setYtVol(v); if (ytRef.current) ytRef.current.setVolume(v); }} style={{ flex: 1, height: 3, accentColor: "#E24B4A" }} />
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>{ytVol === 0 ? "🔇" : "🔊"}</span>
+            <input type="range" min="0" max="100" value={ytVol} onChange={e => { const v = Number(e.target.value); setYtVol(v); if (ytRef.current) ytRef.current.setVolume(v); }} style={{ flex: 1, height: 3, accentColor: "var(--red)" }} />
           </div>
           {/* Mode buttons */}
-          <button onClick={() => setShowVid(!showVid)} title={showVid ? "Hide video" : "Show video"} style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: showVid ? "#2C2C2A" : "transparent", color: showVid ? "#F1EFE8" : "#5F5E5A", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>◻</button>
-          <button onClick={clearMedia} title="Stop" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: "transparent", color: "#444441", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          <button onClick={() => setShowVid(!showVid)} title={showVid ? "Hide video" : "Show video"} style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: showVid ? "var(--line)" : "transparent", color: showVid ? "var(--text)" : "var(--muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>◻</button>
+          <button onClick={clearMedia} title="Stop" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: "transparent", color: "var(--dim)", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
         </div>
       </div>
     );
@@ -1173,8 +1178,8 @@ function MediaPlayer() {
       <div>
         {naming && (
           <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "6px 0" }}>
-            <span style={{ fontSize: 11, color: "#5F5E5A" }}>Name:</span>
-            <input autoFocus value={nameVal} onChange={e => setNameVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); }} placeholder="e.g. Lo-fi beats..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>Name:</span>
+            <input autoFocus value={nameVal} onChange={e => setNameVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") saveName(); }} placeholder="e.g. Lo-fi beats..." style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none" }} />
             <Btn small onClick={saveName}>Save</Btn>
           </div>
         )}
@@ -1183,10 +1188,10 @@ function MediaPlayer() {
             <iframe src={embedUrl} width="100%" height={Math.max(iframeH, 80)} frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" allowFullScreen style={{ borderRadius: 6, display: "block" }} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 3, flexShrink: 0, paddingBottom: 28 }}>
-            <button onClick={() => setMode("mini")} title="Mini" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: mode === "mini" ? "#2C2C2A" : "transparent", color: mode === "mini" ? "#F1EFE8" : "#5F5E5A", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>▬</button>
-            <button onClick={() => setMode("full")} title="Expand" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: mode === "full" ? "#2C2C2A" : "transparent", color: mode === "full" ? "#F1EFE8" : "#5F5E5A", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>◻</button>
-            {isPlaylist && <button onClick={() => setMode("tracks")} title="Tracks" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: mode === "tracks" ? "#2C2C2A" : "transparent", color: mode === "tracks" ? "#F1EFE8" : "#5F5E5A", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>≡</button>}
-            <button onClick={clearMedia} title="Stop" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: "transparent", color: "#444441", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+            <button onClick={() => setMode("mini")} title="Mini" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: mode === "mini" ? "var(--line)" : "transparent", color: mode === "mini" ? "var(--text)" : "var(--muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>▬</button>
+            <button onClick={() => setMode("full")} title="Expand" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: mode === "full" ? "var(--line)" : "transparent", color: mode === "full" ? "var(--text)" : "var(--muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>◻</button>
+            {isPlaylist && <button onClick={() => setMode("tracks")} title="Tracks" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: mode === "tracks" ? "var(--line)" : "transparent", color: mode === "tracks" ? "var(--text)" : "var(--muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>≡</button>}
+            <button onClick={clearMedia} title="Stop" style={{ width: 26, height: 26, borderRadius: 4, border: "none", background: "transparent", color: "var(--dim)", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
           </div>
         </div>
       </div>
@@ -1197,18 +1202,18 @@ function MediaPlayer() {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <div style={{ display: "flex", gap: 6, alignItems: "center", flex: 1 }}>
-        <span style={{ fontSize: 12, color: "#2C2C2A" }}>♪</span>
-        <input value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") playUrl(inputVal); }} placeholder="Paste Spotify or YouTube URL..." style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 11, background: "transparent", color: "#5F5E5A", border: "1px solid #1A1A18", outline: "none", fontFamily: "'SF Mono', monospace" }} />
+        <span style={{ fontSize: 12, color: "var(--line)" }}>♪</span>
+        <input value={inputVal} onChange={e => setInputVal(e.target.value)} onKeyDown={e => { if (e.key === "Enter") playUrl(inputVal); }} placeholder="Paste Spotify or YouTube URL..." style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 11, background: "transparent", color: "var(--muted)", border: "1px solid var(--surface)", outline: "none", fontFamily: "'SF Mono', monospace" }} />
       </div>
       {history.length > 0 && (
         <div style={{ display: "flex", gap: 3, flexWrap: "wrap", alignItems: "center" }}>
           {history.slice(0, 4).map((hi, idx) => (
-            <div key={idx} style={{ display: "inline-flex", alignItems: "center", background: "#161615", border: "1px solid #1A1A18", borderRadius: 4, overflow: "hidden" }}>
-              <button onClick={() => playFromHistory(hi)} style={{ padding: "3px 8px", fontSize: 9, cursor: "pointer", border: "none", background: "transparent", color: "#B4B2A9" }}>{hi.type === "spotify" ? "♫" : "▶"} {hi.name || defaultName(hi.type, hi.sub)}</button>
-              <button onClick={() => removeHistory(hi.embed)} title="Remove" style={{ padding: "3px 4px", border: "none", borderLeft: "1px solid #1A1A18", background: "transparent", color: "#2C2C2A", cursor: "pointer", fontSize: 8 }} onMouseEnter={e => e.currentTarget.style.color = "#F09595"} onMouseLeave={e => e.currentTarget.style.color = "#2C2C2A"}>✕</button>
+            <div key={idx} style={{ display: "inline-flex", alignItems: "center", background: "var(--side)", border: "1px solid var(--surface)", borderRadius: 4, overflow: "hidden" }}>
+              <button onClick={() => playFromHistory(hi)} style={{ padding: "3px 8px", fontSize: 9, cursor: "pointer", border: "none", background: "transparent", color: "var(--soft)" }}>{hi.type === "spotify" ? "♫" : "▶"} {hi.name || defaultName(hi.type, hi.sub)}</button>
+              <button onClick={() => removeHistory(hi.embed)} title="Remove" style={{ padding: "3px 4px", border: "none", borderLeft: "1px solid var(--surface)", background: "transparent", color: "var(--line)", cursor: "pointer", fontSize: 8 }} onMouseEnter={e => e.currentTarget.style.color = "var(--pink)"} onMouseLeave={e => e.currentTarget.style.color = "var(--line)"}>✕</button>
             </div>
           ))}
-          {history.length > 4 && <span style={{ fontSize: 9, color: "#2C2C2A" }}>+{history.length - 4}</span>}
+          {history.length > 4 && <span style={{ fontSize: 9, color: "var(--line)" }}>+{history.length - 4}</span>}
         </div>
       )}
     </div>
@@ -1217,7 +1222,7 @@ function MediaPlayer() {
 
 function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork, allSessions, notes, todaySessions, projectId }) {
   const pr = stats.tt > 0 ? Math.round((stats.tp / stats.tt) * 100) : 0;
-  const branchColors = ["#E24B4A", "#378ADD", "#5DCAA5", "#D85A30", "#7F77DD", "#D4537E", "#BA7517", "#639922"];
+  const branchColors = ["var(--red)", "#378ADD", "var(--green)", "#D85A30", "#7F77DD", "#D4537E", "#BA7517", "#639922"];
 
   // Meeting + total time
   const meetMin = Math.round((todaySessions || []).filter(s => s.subtype === "meeting").reduce((a, s) => a + s.duration_seconds, 0) / 60);
@@ -1273,12 +1278,12 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
       {/* Settings toggle */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
         <div style={{ position: "relative" }}>
-          <button onClick={() => setShowDashSettings(!showDashSettings)} style={{ background: showDashSettings ? "#2C2C2A" : "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "4px 8px", borderRadius: 4 }}>⚙ Customize</button>
+          <button onClick={() => setShowDashSettings(!showDashSettings)} style={{ background: showDashSettings ? "var(--line)" : "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11, padding: "4px 8px", borderRadius: 4 }}>⚙ Customize</button>
           {showDashSettings && (
-            <div style={{ position: "absolute", top: 30, right: 0, background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", width: 180, zIndex: 60, boxShadow: "0 4px 12px rgba(0,0,0,0.4)" }}>
-              <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Show sections</div>
+            <div style={{ position: "absolute", top: 30, right: 0, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", width: 180, zIndex: 60, boxShadow: "0 4px 12px rgba(0,0,0,0.4)" }}>
+              <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Show sections</div>
               {SECTIONS.map(s => (
-                <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12, color: isVisible(s.key) ? "#D3D1C7" : "#444441", cursor: "pointer" }}>
+                <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", fontSize: 12, color: isVisible(s.key) ? "var(--title)" : "var(--dim)", cursor: "pointer" }}>
                   <input type="checkbox" checked={isVisible(s.key)} onChange={() => toggleSection(s.key)} style={{ cursor: "pointer" }} />
                   {s.label}
                 </label>
@@ -1291,19 +1296,19 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
       {/* Top metrics */}
       {isVisible("metrics") && (
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginBottom: 24 }}>
-        <MetricCard label="Today's focus" value={FMTHR(tfm)} color="#E24B4A" sub={`${focusWork.length} sessions`} />
+        <MetricCard label="Today's focus" value={FMTHR(tfm)} color="var(--red)" sub={`${focusWork.length} sessions`} />
         <MetricCard label="Meetings" value={FMTHR(meetMin)} color="#7F77DD" sub="today" />
-        <MetricCard label="Total time" value={FMTHR(totalMin)} color="#5DCAA5" sub="focus + meetings" />
-        <MetricCard label="Open bugs" value={stats.ob} color={stats.ob > 0 ? "#F09595" : "#97C459"} sub={stats.cr > 0 ? `${stats.cr} critical` : ""} />
-        <MetricCard label="Open to-dos" value={stats.ot} color="#85B7EB" />
-        <MetricCard label="Test pass" value={stats.tt > 0 ? `${pr}%` : "—"} color={pr >= 80 ? "#97C459" : pr >= 50 ? "#FAC775" : "#F09595"} sub={`${stats.tp}/${stats.tt}`} />
+        <MetricCard label="Total time" value={FMTHR(totalMin)} color="var(--green)" sub="focus + meetings" />
+        <MetricCard label="Open bugs" value={stats.ob} color={stats.ob > 0 ? "var(--pink)" : "var(--lime)"} sub={stats.cr > 0 ? `${stats.cr} critical` : ""} />
+        <MetricCard label="Open to-dos" value={stats.ot} color="var(--blue)" />
+        <MetricCard label="Test pass" value={stats.tt > 0 ? `${pr}%` : "—"} color={pr >= 80 ? "var(--lime)" : pr >= 50 ? "var(--amber)" : "var(--pink)"} sub={`${stats.tp}/${stats.tt}`} />
       </div>
       )}
 
       {/* Repo+branch sections */}
       {isVisible("repos") && (sortedKeys.length > 1 || (sortedKeys.length === 1 && sortedKeys[0] !== "")) ? (
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12, color: "#B4B2A9" }}>Tasks by repo & branch</div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12, color: "var(--soft)" }}>Tasks by repo & branch</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {sortedKeys.map(key => {
               const gi = groups[key];
@@ -1322,39 +1327,39 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
               const recent = [...gi].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 3);
 
               return (
-                <div key={key || "__none"} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px", borderLeft: key ? `3px solid ${color}` : "3px solid #444441", borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
+                <div key={key || "__none"} style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "14px 16px", borderLeft: key ? `3px solid ${color}` : "3px solid var(--dim)", borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }}>
                   {/* Header */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, fontWeight: 500, color: key ? color : "#5F5E5A" }}>{key || "No repo/branch"}</span>
+                      <span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, fontWeight: 500, color: key ? color : "var(--muted)" }}>{key || "No repo/branch"}</span>
                     </div>
                     <div style={{ display: "flex", gap: 6 }}>
-                      {bugs > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "#2D0A0A", color: "#F09595" }}>{bugs} bug{bugs !== 1 ? "s" : ""}</span>}
-                      {todos > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "#0A1929", color: "#85B7EB" }}>{todos} todo{todos !== 1 ? "s" : ""}</span>}
-                      {fixed > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "#081F12", color: "#5DCAA5" }}>{fixed} done</span>}
+                      {bugs > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--tint-red-bg)", color: "var(--pink)" }}>{bugs} bug{bugs !== 1 ? "s" : ""}</span>}
+                      {todos > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--tint-blue-bg)", color: "var(--blue)" }}>{todos} todo{todos !== 1 ? "s" : ""}</span>}
+                      {fixed > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--tint-green-bg)", color: "var(--green)" }}>{fixed} done</span>}
                     </div>
                   </div>
 
                   {/* Hot files */}
                   {hot.length > 0 && (
                     <div style={{ marginBottom: 8 }}>
-                      <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Hot files</div>
+                      <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Hot files</div>
                       {hot.map(([fid, c]) => (
                         <div key={fid} onClick={() => onNav("issues", fid)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0", cursor: "pointer", fontSize: 11 }}>
-                          <span style={{ fontFamily: "'SF Mono', monospace", flex: 1, color: "#D3D1C7" }}>{fm[fid]?.name || "?"}</span>
+                          <span style={{ fontFamily: "'SF Mono', monospace", flex: 1, color: "var(--title)" }}>{fm[fid]?.name || "?"}</span>
                           <div style={{ display: "flex", gap: 1 }}>{Array.from({ length: Math.min(c, 5) }).map((_, j) => (<div key={j} style={{ width: 4, height: 12, borderRadius: 1, background: color, opacity: 0.4 + (j / c) * 0.6 }} />))}</div>
-                          <span style={{ color: "#888780", minWidth: 12, textAlign: "right" }}>{c}</span>
+                          <span style={{ color: "var(--sub)", minWidth: 12, textAlign: "right" }}>{c}</span>
                         </div>
                       ))}
                     </div>
                   )}
 
                   {/* Recent issues */}
-                  <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Recent</div>
+                  <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 4 }}>Recent</div>
                   {recent.map(i => (
                     <div key={i.id} onClick={() => onNav("issues", i.file_id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0", cursor: "pointer", fontSize: 11 }}>
-                      <span style={{ color: i.type === "bug" ? "#F09595" : "#85B7EB" }}>{i.type === "bug" ? "◉" : "○"}</span>
-                      <span style={{ flex: 1, color: "#D3D1C7", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.title}</span>
+                      <span style={{ color: i.type === "bug" ? "var(--pink)" : "var(--blue)" }}>{i.type === "bug" ? "◉" : "○"}</span>
+                      <span style={{ flex: 1, color: "var(--title)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.title}</span>
                       <span style={{ fontSize: 10, color: PC[i.priority]?.text }}>{i.priority}</span>
                     </div>
                   ))}
@@ -1367,22 +1372,22 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
         /* Fallback if no repo/branch data - show simple recent + hot */
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Recent tasks</div>
-            {issues.length === 0 && <div style={{ fontSize: 12, color: "#5F5E5A", padding: 16 }}>No tasks yet</div>}
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "var(--soft)" }}>Recent tasks</div>
+            {issues.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", padding: 16 }}>No tasks yet</div>}
             {[...issues].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5).map(i => (
-              <div key={i.id} onClick={() => onNav("issues", i.file_id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 6, marginBottom: 2, cursor: "pointer", background: "#161615", border: "1px solid #1A1A18" }} onMouseEnter={e => e.currentTarget.style.background = "#1A1A18"} onMouseLeave={e => e.currentTarget.style.background = "#161615"}>
-                <Badge label={i.type} colors={i.type === "bug" ? PC.critical : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small />
+              <div key={i.id} onClick={() => onNav("issues", i.file_id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 6, marginBottom: 2, cursor: "pointer", background: "var(--side)", border: "1px solid var(--surface)" }} onMouseEnter={e => e.currentTarget.style.background = "var(--surface)"} onMouseLeave={e => e.currentTarget.style.background = "var(--side)"}>
+                <Badge label={i.type} colors={i.type === "bug" ? PC.critical : { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" }} small />
                 <span style={{ flex: 1, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.title}</span>
                 <Badge label={i.priority} colors={PC[i.priority]} small />
               </div>
             ))}
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Hot files</div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "var(--soft)" }}>Hot files</div>
             {(() => { const fic = {}; issues.filter(i => !isTaskDone(i.status)).forEach(i => { fic[i.file_id] = (fic[i.file_id] || 0) + 1; }); return Object.entries(fic).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([fid, c]) => (
-              <div key={fid} onClick={() => onNav("issues", fid)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 6, marginBottom: 2, cursor: "pointer", background: "#161615", border: "1px solid #1A1A18" }}>
-                <span style={{ fontSize: 12, fontFamily: "'SF Mono', monospace", flex: 1, color: "#D3D1C7" }}>{fm[fid]?.name || "?"}</span>
-                <span style={{ fontSize: 11, color: "#888780" }}>{c}</span>
+              <div key={fid} onClick={() => onNav("issues", fid)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 6, marginBottom: 2, cursor: "pointer", background: "var(--side)", border: "1px solid var(--surface)" }}>
+                <span style={{ fontSize: 12, fontFamily: "'SF Mono', monospace", flex: 1, color: "var(--title)" }}>{fm[fid]?.name || "?"}</span>
+                <span style={{ fontSize: 11, color: "var(--sub)" }}>{c}</span>
               </div>
             )); })()}
           </div>
@@ -1395,17 +1400,17 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
         if (resolved.length === 0) return null;
         return (<div style={{ marginBottom: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#5DCAA5" }}>Recently closed</span>
-            <span style={{ fontSize: 11, color: "#5F5E5A" }}>({resolved.length})</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--green)" }}>Recently closed</span>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>({resolved.length})</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {resolved.map(i => (
-              <div key={i.id} onClick={() => onNav("issues", i.file_id)} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", cursor: "pointer", borderLeft: "3px solid #5DCAA5", borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }} onMouseEnter={e => e.currentTarget.style.background = "#1A1A18"} onMouseLeave={e => e.currentTarget.style.background = "#161615"}>
+              <div key={i.id} onClick={() => onNav("issues", i.file_id)} style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", cursor: "pointer", borderLeft: "3px solid var(--green)", borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }} onMouseEnter={e => e.currentTarget.style.background = "var(--surface)"} onMouseLeave={e => e.currentTarget.style.background = "var(--side)"}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 500, color: "#888780", textDecoration: "line-through" }}>{i.title}</span>
+                  <span style={{ fontSize: 12, fontWeight: 500, color: "var(--sub)", textDecoration: "line-through" }}>{i.title}</span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#5F5E5A" }}>
-                  <span style={{ color: "#5DCAA5" }}>{taskStatusLabel(i.status)}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--muted)" }}>
+                  <span style={{ color: "var(--green)" }}>{taskStatusLabel(i.status)}</span>
                   <span>·</span>
                   <span style={{ fontFamily: "'SF Mono', monospace" }}>{fm[i.file_id]?.name?.split(".")[0] || "—"}</span>
                   {i.branch_name && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace" }}>{i.branch_name}</span></>}
@@ -1417,9 +1422,9 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
       })()}
 
       {/* Test summary */}
-      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Test summary</div>
+      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "var(--soft)" }}>Test summary</div>
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 24 }}>
-        {tests.length === 0 && <div style={{ fontSize: 12, color: "#5F5E5A" }}>No test cases yet</div>}
+        {tests.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>No test cases yet</div>}
         {tests.map(t => (<div key={t.id} title={t.title} style={{ width: 28, height: 28, borderRadius: 4, background: TC[t.status].bg, border: `1px solid ${TC[t.status].border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: TC[t.status].text }}>{t.status === "pass" ? "✓" : t.status === "fail" ? "✗" : "·"}</div>))}
       </div>
 
@@ -1430,15 +1435,15 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
           {/* Controls */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <button onClick={() => { setChartWeekOff((chartWeekOff || 0) - 1); setChartStart(""); setChartEnd(""); }} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>◂</button>
-              <span style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", minWidth: 80, textAlign: "center" }}>{useCustomRange ? "Custom range" : (() => { const now = new Date(); const dow = now.getDay(); const mon = new Date(now); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) + (chartWeekOff || 0) * 7); const sun = new Date(mon); sun.setDate(mon.getDate() + 6); return (chartWeekOff || 0) === 0 ? "This week" : `${mon.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${sun.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`; })()}</span>
-              <button onClick={() => { setChartWeekOff((chartWeekOff || 0) + 1); setChartStart(""); setChartEnd(""); }} disabled={!useCustomRange && (chartWeekOff || 0) >= 0} style={{ background: "none", border: "1px solid #2C2C2A", color: (!useCustomRange && (chartWeekOff || 0) >= 0) ? "#1A1A18" : "#5F5E5A", cursor: (!useCustomRange && (chartWeekOff || 0) >= 0) ? "default" : "pointer", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>▸</button>
-              {((chartWeekOff || 0) !== 0 || useCustomRange) && <button onClick={() => { setChartWeekOff(0); setChartStart(""); setChartEnd(""); }} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>Today</button>}
+              <button onClick={() => { setChartWeekOff((chartWeekOff || 0) - 1); setChartStart(""); setChartEnd(""); }} style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", cursor: "pointer", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>◂</button>
+              <span style={{ fontSize: 12, fontWeight: 500, color: "var(--soft)", minWidth: 80, textAlign: "center" }}>{useCustomRange ? "Custom range" : (() => { const now = new Date(); const dow = now.getDay(); const mon = new Date(now); mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) + (chartWeekOff || 0) * 7); const sun = new Date(mon); sun.setDate(mon.getDate() + 6); return (chartWeekOff || 0) === 0 ? "This week" : `${mon.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${sun.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`; })()}</span>
+              <button onClick={() => { setChartWeekOff((chartWeekOff || 0) + 1); setChartStart(""); setChartEnd(""); }} disabled={!useCustomRange && (chartWeekOff || 0) >= 0} style={{ background: "none", border: "1px solid var(--line)", color: (!useCustomRange && (chartWeekOff || 0) >= 0) ? "var(--surface)" : "var(--muted)", cursor: (!useCustomRange && (chartWeekOff || 0) >= 0) ? "default" : "pointer", fontSize: 11, padding: "2px 8px", borderRadius: 4 }}>▸</button>
+              {((chartWeekOff || 0) !== 0 || useCustomRange) && <button onClick={() => { setChartWeekOff(0); setChartStart(""); setChartEnd(""); }} style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 4 }}>Today</button>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <input type="date" value={chartStart} onChange={e => setChartStart(e.target.value)} style={{ padding: "2px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none" }} />
-              <span style={{ fontSize: 10, color: "#444441" }}>→</span>
-              <input type="date" value={chartEnd} onChange={e => setChartEnd(e.target.value)} style={{ padding: "2px 6px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none" }} />
+              <input type="date" value={chartStart} onChange={e => setChartStart(e.target.value)} style={{ padding: "2px 6px", borderRadius: 4, fontSize: 10, background: "var(--bg)", color: "var(--sub)", border: "1px solid var(--line)", outline: "none" }} />
+              <span style={{ fontSize: 10, color: "var(--dim)" }}>→</span>
+              <input type="date" value={chartEnd} onChange={e => setChartEnd(e.target.value)} style={{ padding: "2px 6px", borderRadius: 4, fontSize: 10, background: "var(--bg)", color: "var(--sub)", border: "1px solid var(--line)", outline: "none" }} />
             </div>
           </div>
 
@@ -1480,7 +1485,7 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
 
             return (
               <div style={{ display: "flex", gap: 12 }}>
-                <div style={{ flex: 1, background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
+                <div style={{ flex: 1, background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "14px 16px" }}>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: compact ? 2 : 4, height: 100, overflowX: days.length > 31 ? "auto" : "visible" }}>
                     {days.map((d, idx) => {
                       const dd = dayData[idx];
@@ -1488,36 +1493,36 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
                       const meetH = Math.max(0, (dd.meet / maxMin) * 70);
                       return (
                         <div key={idx} style={{ flex: days.length > 31 ? "0 0 12px" : 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }} title={`${d.toLocaleDateString()}: Focus ${FMTHR(dd.focus)}, Meetings ${FMTHR(dd.meet)}`}>
-                          {!compact && <span style={{ fontSize: 9, fontFamily: "'SF Mono', monospace", color: dd.total > 0 ? "#D3D1C7" : "#5F5E5A" }}>{dd.total > 0 ? (dd.total < 60 ? `${dd.total}` : `${Math.floor(dd.total/60)}h`) : ""}</span>}
+                          {!compact && <span style={{ fontSize: 9, fontFamily: "'SF Mono', monospace", color: dd.total > 0 ? "var(--title)" : "var(--muted)" }}>{dd.total > 0 ? (dd.total < 60 ? `${dd.total}` : `${Math.floor(dd.total/60)}h`) : ""}</span>}
                           <div style={{ width: "100%", display: "flex", flexDirection: "column-reverse", borderRadius: 2, overflow: "hidden" }}>
-                            <div style={{ width: "100%", height: focusH || (dd.total === 0 ? 0 : 2), background: dd.focus > 0 ? "#378ADD" : "#2C2C2A", transition: "height 0.3s" }} />
+                            <div style={{ width: "100%", height: focusH || (dd.total === 0 ? 0 : 2), background: dd.focus > 0 ? "#378ADD" : "var(--line)", transition: "height 0.3s" }} />
                             {dd.meet > 0 && <div style={{ width: "100%", height: meetH, background: "#7F77DD", transition: "height 0.3s" }} />}
                           </div>
-                          <span style={{ fontSize: compact ? 7 : 9, color: isToday(d) ? "#5DCAA5" : "#5F5E5A", fontWeight: isToday(d) ? 600 : 400 }}>{dayLabel(d)}{isToday(d) ? " •" : ""}</span>
+                          <span style={{ fontSize: compact ? 7 : 9, color: isToday(d) ? "var(--green)" : "var(--muted)", fontWeight: isToday(d) ? 600 : 400 }}>{dayLabel(d)}{isToday(d) ? " •" : ""}</span>
                         </div>
                       );
                     })}
                   </div>
-                  <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 8, fontSize: 9, color: "#5F5E5A" }}>
+                  <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 8, fontSize: 9, color: "var(--muted)" }}>
                     <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "#378ADD", marginRight: 4, verticalAlign: "middle" }} />Focus</span>
                     <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "#7F77DD", marginRight: 4, verticalAlign: "middle" }} />Meetings</span>
                   </div>
                 </div>
                 {/* Summary */}
                 <div style={{ width: 130, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px" }}>
                     <div style={{ fontSize: 9, color: "#378ADD", textTransform: "uppercase", letterSpacing: 0.3 }}>Focus</div>
                     <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{FMTHR(totalFocus)}</div>
-                    <div style={{ fontSize: 9, color: "#5F5E5A" }}>{sessionCount} sessions</div>
+                    <div style={{ fontSize: 9, color: "var(--muted)" }}>{sessionCount} sessions</div>
                   </div>
-                  <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px" }}>
+                  <div style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px" }}>
                     <div style={{ fontSize: 9, color: "#7F77DD", textTransform: "uppercase", letterSpacing: 0.3 }}>Meetings</div>
                     <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#7F77DD" }}>{FMTHR(totalMeet)}</div>
                   </div>
-                  <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px" }}>
-                    <div style={{ fontSize: 9, color: "#5DCAA5", textTransform: "uppercase", letterSpacing: 0.3 }}>Total</div>
-                    <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{FMTHR(totalAll)}</div>
-                    <div style={{ fontSize: 9, color: "#5F5E5A" }}>{activeDays} active day{activeDays !== 1 ? "s" : ""}</div>
+                  <div style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px" }}>
+                    <div style={{ fontSize: 9, color: "var(--green)", textTransform: "uppercase", letterSpacing: 0.3 }}>Total</div>
+                    <div style={{ fontSize: 18, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: "var(--green)" }}>{FMTHR(totalAll)}</div>
+                    <div style={{ fontSize: 9, color: "var(--muted)" }}>{activeDays} active day{activeDays !== 1 ? "s" : ""}</div>
                   </div>
                 </div>
               </div>
@@ -1527,20 +1532,20 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
 
         {/* End of day summary */}
         {isVisible("resolved") && <div>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Recently shipped</div>
-          <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "var(--soft)" }}>Recently shipped</div>
+          <div style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "14px 16px" }}>
             {(() => {
               const today = new Date(); today.setHours(0,0,0,0);
               const resolvedRecent = issues.filter(i => normalizeTaskStatus(i.status) === "done").slice(-5);
               const passedToday = tests.filter(t => t.status === "pass" && t.last_run && new Date(t.last_run) >= today);
               const notesToday = (notes || []).filter(n => new Date(n.created_at) >= today);
               const hasAnything = resolvedRecent.length || passedToday.length || notesToday.length || focusWork.length;
-              if (!hasAnything) return <div style={{ fontSize: 12, color: "#5F5E5A", textAlign: "center", padding: "16px 0" }}>Day's just getting started.</div>;
+              if (!hasAnything) return <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", padding: "16px 0" }}>Day's just getting started.</div>;
               return (<div style={{ fontSize: 12, lineHeight: 1.8 }}>
-                {focusWork.length > 0 && <div style={{ color: "#E24B4A" }}>{focusWork.length} focus session{focusWork.length !== 1 ? "s" : ""} ({FMTHR(tfm)})</div>}
-                {resolvedRecent.map(i => <div key={i.id} style={{ color: "#5DCAA5" }}>Done: {i.title}</div>)}
-                {passedToday.map(t => <div key={t.id} style={{ color: "#97C459" }}>Passed: {t.title}</div>)}
-                {notesToday.length > 0 && <div style={{ color: "#AFA9EC" }}>{notesToday.length} note{notesToday.length !== 1 ? "s" : ""} written</div>}
+                {focusWork.length > 0 && <div style={{ color: "var(--red)" }}>{focusWork.length} focus session{focusWork.length !== 1 ? "s" : ""} ({FMTHR(tfm)})</div>}
+                {resolvedRecent.map(i => <div key={i.id} style={{ color: "var(--green)" }}>Done: {i.title}</div>)}
+                {passedToday.map(t => <div key={t.id} style={{ color: "var(--lime)" }}>Passed: {t.title}</div>)}
+                {notesToday.length > 0 && <div style={{ color: "var(--purple)" }}>{notesToday.length} note{notesToday.length !== 1 ? "s" : ""} written</div>}
               </div>);
             })()}
           </div>
@@ -1569,10 +1574,10 @@ function WorkshopDashboard({ meetings, notes, people, onNav }) {
   const pendingFollowUps = people.filter(p => p.follow_up && !p.follow_up_done);
 
   const MetricCard = ({ label, value, color, sub, onClick }) => (
-    <div onClick={onClick} style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18", cursor: onClick ? "pointer" : "default" }}>
-      <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: color || "#F1EFE8" }}>{value}</div>
-      {sub && <div style={{ fontSize: 10, color: "#5F5E5A", marginTop: 2 }}>{sub}</div>}
+    <div onClick={onClick} style={{ background: "var(--side)", borderRadius: 10, padding: "14px 16px", border: "1px solid var(--surface)", cursor: onClick ? "pointer" : "default" }}>
+      <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: color || "var(--text)" }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 
@@ -1582,32 +1587,32 @@ function WorkshopDashboard({ meetings, notes, people, onNav }) {
     <div>
       {/* Metrics */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 20 }}>
-        <MetricCard label="Sessions" value={`${attended.length}/${activeMeetings.length}`} color="#85B7EB" sub="attended" onClick={() => onNav("calendar")} />
-        <MetricCard label="Notes" value={notes.length} color="#AFA9EC" onClick={() => onNav("notes")} />
-        <MetricCard label="People met" value={people.length} color="#5DCAA5" sub={pendingFollowUps.length > 0 ? `${pendingFollowUps.length} need follow-up` : ""} onClick={() => onNav("people")} />
+        <MetricCard label="Sessions" value={`${attended.length}/${activeMeetings.length}`} color="var(--blue)" sub="attended" onClick={() => onNav("calendar")} />
+        <MetricCard label="Notes" value={notes.length} color="var(--purple)" onClick={() => onNav("notes")} />
+        <MetricCard label="People met" value={people.length} color="var(--green)" sub={pendingFollowUps.length > 0 ? `${pendingFollowUps.length} need follow-up` : ""} onClick={() => onNav("people")} />
         <MetricCard label="Action items" value={actionItems.length} color="#D85A30" sub="from ! prefixed notes" />
-        <MetricCard label="Key insights" value={insights.length} color="#FAC775" sub="from ★ prefixed notes" />
+        <MetricCard label="Key insights" value={insights.length} color="var(--amber)" sub="from ★ prefixed notes" />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         {/* Left column */}
         <div>
           {/* Sessions with ratings */}
-          <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18", marginBottom: 12 }}>
-            <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Sessions {avgRating !== "—" && <span style={{ color: "#FAC775" }}>· avg {avgRating}★</span>}</div>
-            {activeMeetings.length === 0 && <div style={{ fontSize: 12, color: "#5F5E5A" }}>No sessions yet. Add them in the calendar.</div>}
+          <div style={{ background: "var(--side)", borderRadius: 10, padding: "14px 16px", border: "1px solid var(--surface)", marginBottom: 12 }}>
+            <div style={{ fontSize: 10, color: "var(--dim)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Sessions {avgRating !== "—" && <span style={{ color: "var(--amber)" }}>· avg {avgRating}★</span>}</div>
+            {activeMeetings.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>No sessions yet. Add them in the calendar.</div>}
             {activeMeetings.sort((a, b) => `${a.meeting_date}${a.start_time}`.localeCompare(`${b.meeting_date}${b.start_time}`)).map(m => (
-              <div key={m.id} style={{ padding: "8px 0", borderBottom: "1px solid #1A1A18", display: "flex", alignItems: "flex-start", gap: 8 }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", marginTop: 5, flexShrink: 0, background: m.attended ? "#5DCAA5" : "#2C2C2A" }} />
+              <div key={m.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--surface)", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", marginTop: 5, flexShrink: 0, background: m.attended ? "var(--green)" : "var(--line)" }} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: m.attended ? "#D3D1C7" : "#5F5E5A" }}>{m.title}</div>
-                  <div style={{ fontSize: 10, color: "#5F5E5A" }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: m.attended ? "var(--title)" : "var(--muted)" }}>{m.title}</div>
+                  <div style={{ fontSize: 10, color: "var(--muted)" }}>
                     {m.meeting_date} · {m.start_time}
                     {m.speaker && <span> · {m.speaker}</span>}
-                    {m.track && <span style={{ padding: "0 4px", marginLeft: 4, borderRadius: 2, background: "#1A0A29", color: "#AFA9EC", fontSize: 9 }}>{m.track}</span>}
+                    {m.track && <span style={{ padding: "0 4px", marginLeft: 4, borderRadius: 2, background: "var(--tint-purple-bg)", color: "var(--purple)", fontSize: 9 }}>{m.track}</span>}
                   </div>
-                  {m.rating > 0 && <div style={{ fontSize: 11, color: "#FAC775", marginTop: 2 }}>{stars(m.rating)}</div>}
-                  {m.takeaway && <div style={{ fontSize: 11, color: "#888780", marginTop: 2, fontStyle: "italic" }}>"{m.takeaway}"</div>}
+                  {m.rating > 0 && <div style={{ fontSize: 11, color: "var(--amber)", marginTop: 2 }}>{stars(m.rating)}</div>}
+                  {m.takeaway && <div style={{ fontSize: 11, color: "var(--sub)", marginTop: 2, fontStyle: "italic" }}>"{m.takeaway}"</div>}
                 </div>
               </div>
             ))}
@@ -1615,14 +1620,14 @@ function WorkshopDashboard({ meetings, notes, people, onNav }) {
 
           {/* People with follow-ups */}
           {pendingFollowUps.length > 0 && (
-            <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #2A1209", marginBottom: 12 }}>
+            <div style={{ background: "var(--side)", borderRadius: 10, padding: "14px 16px", border: "1px solid var(--tint-orange-bg)", marginBottom: 12 }}>
               <div style={{ fontSize: 10, color: "#D85A30", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Pending follow-ups</div>
               {pendingFollowUps.map(p => (
-                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #1A1A18" }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#1A0A29", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 500, color: "#AFA9EC" }}>{p.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase()}</div>
+                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid var(--surface)" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--tint-purple-bg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 500, color: "var(--purple)" }}>{p.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase()}</div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: "#D3D1C7" }}>{p.name} <span style={{ color: "#5F5E5A" }}>· {p.company}</span></div>
-                    <div style={{ fontSize: 10, color: "#F0997B" }}>{p.follow_up}</div>
+                    <div style={{ fontSize: 11, color: "var(--title)" }}>{p.name} <span style={{ color: "var(--muted)" }}>· {p.company}</span></div>
+                    <div style={{ fontSize: 10, color: "var(--orange)" }}>{p.follow_up}</div>
                   </div>
                 </div>
               ))}
@@ -1634,12 +1639,12 @@ function WorkshopDashboard({ meetings, notes, people, onNav }) {
         <div>
           {/* Key insights */}
           {insights.length > 0 && (
-            <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #412402", marginBottom: 12 }}>
-              <div style={{ fontSize: 10, color: "#FAC775", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Key insights ({insights.length})</div>
+            <div style={{ background: "var(--side)", borderRadius: 10, padding: "14px 16px", border: "1px solid var(--tint-amber-bd)", marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: "var(--amber)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Key insights ({insights.length})</div>
               {insights.map((item, idx) => (
-                <div key={idx} style={{ padding: "6px 0", borderBottom: idx < insights.length - 1 ? "1px solid #1A1A18" : "none", display: "flex", gap: 6 }}>
-                  <span style={{ color: "#FAC775", flexShrink: 0 }}>★</span>
-                  <span style={{ fontSize: 12, color: "#D3D1C7" }}>{item.text}</span>
+                <div key={idx} style={{ padding: "6px 0", borderBottom: idx < insights.length - 1 ? "1px solid var(--surface)" : "none", display: "flex", gap: 6 }}>
+                  <span style={{ color: "var(--amber)", flexShrink: 0 }}>★</span>
+                  <span style={{ fontSize: 12, color: "var(--title)" }}>{item.text}</span>
                 </div>
               ))}
             </div>
@@ -1647,12 +1652,12 @@ function WorkshopDashboard({ meetings, notes, people, onNav }) {
 
           {/* Action items */}
           {actionItems.length > 0 && (
-            <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #4A1B0C", marginBottom: 12 }}>
+            <div style={{ background: "var(--side)", borderRadius: 10, padding: "14px 16px", border: "1px solid var(--tint-orange-bd)", marginBottom: 12 }}>
               <div style={{ fontSize: 10, color: "#D85A30", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Action items ({actionItems.length})</div>
               {actionItems.map((item, idx) => (
-                <div key={idx} style={{ padding: "6px 0", borderBottom: idx < actionItems.length - 1 ? "1px solid #1A1A18" : "none", display: "flex", gap: 6 }}>
+                <div key={idx} style={{ padding: "6px 0", borderBottom: idx < actionItems.length - 1 ? "1px solid var(--surface)" : "none", display: "flex", gap: 6 }}>
                   <span style={{ color: "#D85A30", flexShrink: 0 }}>!</span>
-                  <span style={{ fontSize: 12, color: "#D3D1C7" }}>{item.text}</span>
+                  <span style={{ fontSize: 12, color: "var(--title)" }}>{item.text}</span>
                 </div>
               ))}
             </div>
@@ -1660,25 +1665,25 @@ function WorkshopDashboard({ meetings, notes, people, onNav }) {
 
           {/* Questions */}
           {questions.length > 0 && (
-            <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #042C53", marginBottom: 12 }}>
-              <div style={{ fontSize: 10, color: "#85B7EB", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Questions ({questions.length})</div>
+            <div style={{ background: "var(--side)", borderRadius: 10, padding: "14px 16px", border: "1px solid var(--tint-blue-bd)", marginBottom: 12 }}>
+              <div style={{ fontSize: 10, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Questions ({questions.length})</div>
               {questions.map((item, idx) => (
-                <div key={idx} style={{ padding: "6px 0", borderBottom: idx < questions.length - 1 ? "1px solid #1A1A18" : "none", display: "flex", gap: 6 }}>
-                  <span style={{ color: "#85B7EB", flexShrink: 0 }}>?</span>
-                  <span style={{ fontSize: 12, color: "#D3D1C7" }}>{item.text}</span>
+                <div key={idx} style={{ padding: "6px 0", borderBottom: idx < questions.length - 1 ? "1px solid var(--surface)" : "none", display: "flex", gap: 6 }}>
+                  <span style={{ color: "var(--blue)", flexShrink: 0 }}>?</span>
+                  <span style={{ fontSize: 12, color: "var(--title)" }}>{item.text}</span>
                 </div>
               ))}
             </div>
           )}
 
           {/* Recent notes */}
-          <div style={{ background: "#161615", borderRadius: 10, padding: "14px 16px", border: "1px solid #1A1A18" }}>
-            <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Recent notes</div>
-            {notes.length === 0 && <div style={{ fontSize: 12, color: "#5F5E5A" }}>No notes yet.</div>}
+          <div style={{ background: "var(--side)", borderRadius: 10, padding: "14px 16px", border: "1px solid var(--surface)" }}>
+            <div style={{ fontSize: 10, color: "var(--dim)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>Recent notes</div>
+            {notes.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>No notes yet.</div>}
             {notes.slice(0, 5).map(n => (
-              <div key={n.id} style={{ padding: "6px 0", borderBottom: "1px solid #1A1A18" }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: "#D3D1C7" }}>{n.title || n.category || "Untitled"}</div>
-                <div style={{ fontSize: 10, color: "#5F5E5A", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.content?.substring(0, 80)}</div>
+              <div key={n.id} style={{ padding: "6px 0", borderBottom: "1px solid var(--surface)" }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: "var(--title)" }}>{n.title || n.category || "Untitled"}</div>
+                <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.content?.substring(0, 80)}</div>
               </div>
             ))}
           </div>
@@ -1713,116 +1718,116 @@ function IssuesView({ takeOpenId, issues, files, fm, filterType, setFilterType, 
     const lt = ltIds(vi.id); const done = pomCount("issue", vi.id); const est = vi.estimated_pomodoros || 0; const due = fmtDue(vi.due_date); const inotes = notesByIssue(vi.id);
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setViewId(null)}>
-        <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 560, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", overflowY: "auto" }}>
+        <div onClick={e => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, padding: "20px 24px", width: 560, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", overflowY: "auto" }}>
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-            <Badge label={vi.type} colors={vi.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} />
+            <Badge label={vi.type} colors={vi.type === "bug" ? { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" } : { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" }} />
             <Badge label={vi.priority} colors={PC[vi.priority]} />
             <span style={{ fontSize: 16, fontWeight: 500, flex: 1 }}>{vi.title}</span>
-            <button onClick={() => setViewId(null)} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button>
+            <button onClick={() => setViewId(null)} style={{ background: "none", border: "none", color: "var(--sub)", cursor: "pointer", fontSize: 16 }}>✕</button>
           </div>
           {/* Status + actions */}
           <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
             <Select value={normalizeTaskStatus(vi.status)} onChange={s => { updS(vi.id, s); }} options={ISSUE_STATUSES} style={{ fontSize: 12 }} />
             <Btn small onClick={() => { setViewId(null); focusOn("issue", vi.id); }}>▶ Focus</Btn>
             <Btn small onClick={() => { setViewId(null); onEdit(vi); }}>✎ Edit</Btn>
-            <Btn small onClick={() => { if (confirm("Delete this task?")) { del(vi.id); setViewId(null); } }} style={{ color: "#F09595" }}>Delete</Btn>
+            <Btn small onClick={() => { if (confirm("Delete this task?")) { del(vi.id); setViewId(null); } }} style={{ color: "var(--pink)" }}>Delete</Btn>
           </div>
           {/* Description */}
-          {vi.description && <div style={{ fontSize: 13, color: "#D3D1C7", lineHeight: 1.6, marginBottom: 16, padding: "10px 12px", background: "#111110", borderRadius: 6 }}>{vi.description}</div>}
+          {vi.description && <div style={{ fontSize: 13, color: "var(--title)", lineHeight: 1.6, marginBottom: 16, padding: "10px 12px", background: "var(--bg)", borderRadius: 6 }}>{vi.description}</div>}
           {/* Meta grid */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16, fontSize: 12 }}>
-            <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>File: </span><span style={{ fontFamily: "'SF Mono', monospace", color: "#D3D1C7" }}>{fm[vi.file_id]?.name || "—"}</span></div>
-            <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>Created: </span><span style={{ color: "#D3D1C7" }}>{SHORT_DATE(vi.created_at)}</span></div>
-            {vi.repo_name && <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>Repo: </span><span style={{ fontFamily: "'SF Mono', monospace", color: "#D3D1C7" }}>{vi.repo_name}</span></div>}
-            {vi.branch_name && <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>Branch: </span><span style={{ fontFamily: "'SF Mono', monospace", color: "#D3D1C7" }}>{vi.branch_name}</span></div>}
-            {est > 0 && <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>Pomodoros: </span><span style={{ color: done >= est ? "#97C459" : "#E24B4A", fontFamily: "'SF Mono', monospace" }}>{done}/{est}</span></div>}
-            {due && <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>Due: </span><span style={{ color: due.color }}>{due.text}</span></div>}
+            <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>File: </span><span style={{ fontFamily: "'SF Mono', monospace", color: "var(--title)" }}>{fm[vi.file_id]?.name || "—"}</span></div>
+            <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>Created: </span><span style={{ color: "var(--title)" }}>{SHORT_DATE(vi.created_at)}</span></div>
+            {vi.repo_name && <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>Repo: </span><span style={{ fontFamily: "'SF Mono', monospace", color: "var(--title)" }}>{vi.repo_name}</span></div>}
+            {vi.branch_name && <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>Branch: </span><span style={{ fontFamily: "'SF Mono', monospace", color: "var(--title)" }}>{vi.branch_name}</span></div>}
+            {est > 0 && <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>Pomodoros: </span><span style={{ color: done >= est ? "var(--lime)" : "var(--red)", fontFamily: "'SF Mono', monospace" }}>{done}/{est}</span></div>}
+            {due && <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>Due: </span><span style={{ color: due.color }}>{due.text}</span></div>}
           </div>
           {/* Linked tests */}
-          {lt.length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 6 }}>LINKED TESTS</div>{lt.map(tid => { const tc = tm[tid]; if (!tc) return null; return (<div key={tid} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: "#111110", borderRadius: 6, marginBottom: 4, fontSize: 12 }}><span style={{ color: TC[tc.status].text }}>{tc.status === "pass" ? "✓" : tc.status === "fail" ? "✗" : "▷"}</span><span style={{ flex: 1, color: "#D3D1C7" }}>{tc.title}</span><Badge label={tc.status} colors={TC[tc.status]} small /></div>); })}</div>}
+          {lt.length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>LINKED TESTS</div>{lt.map(tid => { const tc = tm[tid]; if (!tc) return null; return (<div key={tid} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: "var(--bg)", borderRadius: 6, marginBottom: 4, fontSize: 12 }}><span style={{ color: TC[tc.status].text }}>{tc.status === "pass" ? "✓" : tc.status === "fail" ? "✗" : "▷"}</span><span style={{ flex: 1, color: "var(--title)" }}>{tc.title}</span><Badge label={tc.status} colors={TC[tc.status]} small /></div>); })}</div>}
           {/* Linked notes */}
-          {inotes.length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 6 }}>LINKED NOTES</div>{inotes.map(n => (<div key={n.id} onClick={() => { setViewId(null); onViewNote(n.id); }} style={{ padding: "6px 10px", background: "#111110", borderRadius: 6, marginBottom: 4, fontSize: 12, cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.background = "#1A1A18"} onMouseLeave={e => e.currentTarget.style.background = "#111110"}><span style={{ color: "#AFA9EC" }}>☰ </span><span style={{ color: "#D3D1C7" }}>{n.title || n.category}</span>{n.content && <div style={{ fontSize: 11, color: "#5F5E5A", marginTop: 2, maxHeight: 40, overflow: "hidden" }}>{n.content.substring(0, 100)}{n.content.length > 100 ? "..." : ""}</div>}</div>))}</div>}
+          {inotes.length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>LINKED NOTES</div>{inotes.map(n => (<div key={n.id} onClick={() => { setViewId(null); onViewNote(n.id); }} style={{ padding: "6px 10px", background: "var(--bg)", borderRadius: 6, marginBottom: 4, fontSize: 12, cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.background = "var(--surface)"} onMouseLeave={e => e.currentTarget.style.background = "var(--bg)"}><span style={{ color: "var(--purple)" }}>☰ </span><span style={{ color: "var(--title)" }}>{n.title || n.category}</span>{n.content && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, maxHeight: 40, overflow: "hidden" }}>{n.content.substring(0, 100)}{n.content.length > 100 ? "..." : ""}</div>}</div>))}</div>}
         </div>
       </div>
     );
   }
 
   const IssueCard = ({ i, dimmed }) => { const lt = ltIds(i.id); const done = pomCount("issue", i.id); const est = i.estimated_pomodoros || 0; const due = fmtDue(i.due_date); return (
-    <div onClick={() => !dimmed && setViewId(i.id)} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8, opacity: dimmed ? 0.6 : 1, cursor: dimmed ? "default" : "pointer" }} onMouseEnter={e => { if (!dimmed) e.currentTarget.style.borderColor = "#444441"; }} onMouseLeave={e => e.currentTarget.style.borderColor = "#2C2C2A"}>
+    <div onClick={() => !dimmed && setViewId(i.id)} style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "12px 14px", marginBottom: 8, opacity: dimmed ? 0.6 : 1, cursor: dimmed ? "default" : "pointer" }} onMouseEnter={e => { if (!dimmed) e.currentTarget.style.borderColor = "var(--dim)"; }} onMouseLeave={e => e.currentTarget.style.borderColor = "var(--line)"}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} /><span style={{ fontSize: 13, fontWeight: 500, textDecoration: dimmed ? "line-through" : "none", color: dimmed ? "#888780" : "#F1EFE8" }}>{i.title}</span>{dimmed && <Badge label={i.status} colors={{ bg: "#081F12", text: "#5DCAA5", border: "#04342C" }} small />}</div>
-          {!dimmed && i.description && <div style={{ fontSize: 12, color: "#888780", marginBottom: 6, lineHeight: 1.5 }}>{i.description}</div>}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" } : { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" }} /><span style={{ fontSize: 13, fontWeight: 500, textDecoration: dimmed ? "line-through" : "none", color: dimmed ? "var(--sub)" : "var(--text)" }}>{i.title}</span>{dimmed && <Badge label={i.status} colors={{ bg: "var(--tint-green-bg)", text: "var(--green)", border: "var(--tint-green-bd)" }} small />}</div>
+          {!dimmed && i.description && <div style={{ fontSize: 12, color: "var(--sub)", marginBottom: 6, lineHeight: 1.5 }}>{i.description}</div>}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", flexWrap: "wrap" }}>
             <span style={{ fontFamily: "'SF Mono', monospace" }}>{fm[i.file_id]?.name || "—"}</span><span>·</span><span>{SHORT_DATE(i.created_at)}</span>
-            {i.repo_name && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#888780" }}>{i.repo_name}{i.branch_name ? ` : ${i.branch_name}` : ""}</span></>}
-            {est > 0 && <><span>·</span><span style={{ color: done >= est ? "#97C459" : "#E24B4A" }}>{done}/{est} pomodoros</span></>}
+            {i.repo_name && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace", color: "var(--sub)" }}>{i.repo_name}{i.branch_name ? ` : ${i.branch_name}` : ""}</span></>}
+            {est > 0 && <><span>·</span><span style={{ color: done >= est ? "var(--lime)" : "var(--red)" }}>{done}/{est} pomodoros</span></>}
             {due && <><span>·</span><span style={{ color: due.color }}>{due.text}</span></>}
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-          {!dimmed && <button onClick={() => focusOn("issue", i.id)} title="Focus" style={{ background: "none", border: "1px solid #2C2C2A", color: "#E24B4A", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }}>▶</button>}
-          {!dimmed && !inQueue(i.id) && <button onClick={() => addToQ("issue", i.id)} title="Add to queue" style={{ background: "none", border: "1px solid #2C2C2A", color: "#7F77DD", cursor: "pointer", fontSize: 9, padding: "3px 6px", borderRadius: 4 }}>+ Queue</button>}
-          {!dimmed && inQueue(i.id) && <span style={{ fontSize: 9, padding: "3px 6px", borderRadius: 4, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C" }}>queued</span>}
+          {!dimmed && <button onClick={() => focusOn("issue", i.id)} title="Focus" style={{ background: "none", border: "1px solid var(--line)", color: "var(--red)", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }}>▶</button>}
+          {!dimmed && !inQueue(i.id) && <button onClick={() => addToQ("issue", i.id)} title="Add to queue" style={{ background: "none", border: "1px solid var(--line)", color: "#7F77DD", cursor: "pointer", fontSize: 9, padding: "3px 6px", borderRadius: 4 }}>+ Queue</button>}
+          {!dimmed && inQueue(i.id) && <span style={{ fontSize: 9, padding: "3px 6px", borderRadius: 4, background: "var(--tint-purple-bg)", color: "var(--purple)", border: "1px solid var(--tint-purple-bd)" }}>queued</span>}
           {!dimmed && <Badge label={i.priority} colors={PC[i.priority]} />}
           <Select value={normalizeTaskStatus(i.status)} onChange={s => updS(i.id, s)} options={ISSUE_STATUSES} style={{ fontSize: 11, padding: "3px 6px" }} />
-          <button onClick={() => onEdit(i)} title="Edit" style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
-          <button onClick={() => del(i.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
+          <button onClick={() => onEdit(i)} title="Edit" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
+          <button onClick={() => del(i.id)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
         </div>
       </div>
       {!dimmed && <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }} onClick={e => e.stopPropagation()}>
         {lt.map(tid => { const tc = tm[tid]; if (!tc) return null; return (<span key={tid} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: TC[tc.status].bg, color: TC[tc.status].text, border: `1px solid ${TC[tc.status].border}` }}>{tc.status === "pass" ? "✓" : tc.status === "fail" ? "✗" : "▷"} {tc.title}<button onClick={() => ulnk(i.id, tid)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 10, padding: 0, marginLeft: 2, opacity: 0.6 }}>✕</button></span>); })}
-        {notesByIssue(i.id).map(n => (<span key={n.id} onClick={() => onViewNote(n.id)} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C", cursor: "pointer" }}>☰ {n.title || n.category}</span>))}
-        <button onClick={() => openLink(i.id)} style={{ background: "none", border: "1px dashed #444441", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>+ Link test</button>
+        {notesByIssue(i.id).map(n => (<span key={n.id} onClick={() => onViewNote(n.id)} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "var(--tint-purple-bg)", color: "var(--purple)", border: "1px solid var(--tint-purple-bd)", cursor: "pointer" }}>☰ {n.title || n.category}</span>))}
+        <button onClick={() => openLink(i.id)} style={{ background: "none", border: "1px dashed var(--dim)", color: "var(--muted)", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>+ Link test</button>
       </div>}
     </div>); };
 
   return (<div>
-    <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}><Pill active={filterType === "all"} onClick={() => setFilterType("all")}>All</Pill><Pill active={filterType === "bug"} onClick={() => setFilterType("bug")}>Bugs</Pill><Pill active={filterType === "todo"} onClick={() => setFilterType("todo")}>To-dos</Pill><span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} /><Select value={filterFile} onChange={setFilterFile} options={[{ value: "all", label: "All files" }, ...files.map(f => ({ value: f.id, label: f.name }))]} /><Select value={filterPriority} onChange={setFilterPriority} options={[{ value: "all", label: "All priorities" }, ...PRIORITIES.map(p => ({ value: p, label: p }))]} /><span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} /><select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 10, background: "#1A1A18", color: "#888780", border: "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}><option value="created">Newest</option><option value="due">Due date</option><option value="priority">Priority</option><option value="status">Status</option></select><span style={{ flex: 1 }} /><button onClick={() => setViewMode("card")} title="Cards" style={{ background: viewMode === "card" ? "#2C2C2A" : "none", border: "none", color: viewMode === "card" ? "#F1EFE8" : "#444441", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>◫</button><button onClick={() => setViewMode("list")} title="List" style={{ background: viewMode === "list" ? "#2C2C2A" : "none", border: "none", color: viewMode === "list" ? "#F1EFE8" : "#444441", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>≡</button></div>
+    <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}><Pill active={filterType === "all"} onClick={() => setFilterType("all")}>All</Pill><Pill active={filterType === "bug"} onClick={() => setFilterType("bug")}>Bugs</Pill><Pill active={filterType === "todo"} onClick={() => setFilterType("todo")}>To-dos</Pill><span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} /><Select value={filterFile} onChange={setFilterFile} options={[{ value: "all", label: "All files" }, ...files.map(f => ({ value: f.id, label: f.name }))]} /><Select value={filterPriority} onChange={setFilterPriority} options={[{ value: "all", label: "All priorities" }, ...PRIORITIES.map(p => ({ value: p, label: p }))]} /><span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} /><select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 10, background: "var(--surface)", color: "var(--sub)", border: "1px solid var(--line)", outline: "none", cursor: "pointer" }}><option value="created">Newest</option><option value="due">Due date</option><option value="priority">Priority</option><option value="status">Status</option></select><span style={{ flex: 1 }} /><button onClick={() => setViewMode("card")} title="Cards" style={{ background: viewMode === "card" ? "var(--line)" : "none", border: "none", color: viewMode === "card" ? "var(--text)" : "var(--dim)", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>◫</button><button onClick={() => setViewMode("list")} title="List" style={{ background: viewMode === "list" ? "var(--line)" : "none", border: "none", color: viewMode === "list" ? "var(--text)" : "var(--dim)", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>≡</button></div>
     {issues.length === 0 && <EmptyState icon="◉" title="No tasks found" sub="Create tasks to track bugs and to-dos" action="New task" onAction={onAdd} />}
     {viewMode === "card" && <>
       {open.length > 0 && open.map(i => <IssueCard key={i.id} i={i} />)}
       {resolved.length > 0 && (<>
         <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "20px 0 10px" }}>
-          <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
-          <span style={{ fontSize: 11, color: "#5DCAA5", fontWeight: 500 }}>Closed ({resolved.length})</span>
-          <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
+          <div style={{ height: 1, flex: 1, background: "var(--line)" }} />
+          <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 500 }}>Closed ({resolved.length})</span>
+          <div style={{ height: 1, flex: 1, background: "var(--line)" }} />
         </div>
         {resolved.map(i => <IssueCard key={i.id} i={i} dimmed />)}
       </>)}
     </>}
     {viewMode === "list" && (<div>
-      <div style={{ border: "1px solid #2C2C2A", borderRadius: 8, overflow: "hidden" }}>
-        <div style={{ display: "flex", padding: "6px 12px", background: "#161615", borderBottom: "1px solid #2C2C2A", fontSize: 9, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>
+      <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+        <div style={{ display: "flex", padding: "6px 12px", background: "var(--side)", borderBottom: "1px solid var(--line)", fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
           <span style={{ width: 50 }}>Type</span><span style={{ flex: 1 }}>Title</span><span style={{ width: 70 }}>Priority</span><span style={{ width: 90 }}>Status</span><span style={{ width: 80 }}>Due</span><span style={{ width: 40 }}></span>
         </div>
         {open.map(i => { const due = fmtDue(i.due_date); return (
-          <div key={i.id} onClick={() => setViewId(i.id)} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #1A1A18", cursor: "pointer", fontSize: 12 }} onMouseEnter={e => e.currentTarget.style.background = "#161615"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-            <span style={{ width: 50 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small /></span>
-            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#D3D1C7" }}>{i.title}</span>
+          <div key={i.id} onClick={() => setViewId(i.id)} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid var(--surface)", cursor: "pointer", fontSize: 12 }} onMouseEnter={e => e.currentTarget.style.background = "var(--side)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+            <span style={{ width: 50 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" } : { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" }} small /></span>
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--title)" }}>{i.title}</span>
             <span style={{ width: 70 }}><Badge label={i.priority} colors={PC[i.priority]} small /></span>
-            <span style={{ width: 90 }}><Badge label={taskStatusLabel(i.status)} colors={TC[i.status] || { bg: "#2C2C2A", text: "#888780", border: "#444441" }} small /></span>
-            <span style={{ width: 80, fontSize: 10, color: due?.color || "#5F5E5A" }}>{due?.text || "—"}</span>
-            <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(i); }} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11 }}>✎</button></span>
+            <span style={{ width: 90 }}><Badge label={taskStatusLabel(i.status)} colors={TC[i.status] || { bg: "var(--line)", text: "var(--sub)", border: "var(--dim)" }} small /></span>
+            <span style={{ width: 80, fontSize: 10, color: due?.color || "var(--muted)" }}>{due?.text || "—"}</span>
+            <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(i); }} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 11 }}>✎</button></span>
           </div>
         ); })}
       </div>
       {resolved.length > 0 && (<>
         <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "20px 0 10px" }}>
-          <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
-          <span style={{ fontSize: 11, color: "#5DCAA5", fontWeight: 500 }}>Closed ({resolved.length})</span>
-          <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
+          <div style={{ height: 1, flex: 1, background: "var(--line)" }} />
+          <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 500 }}>Closed ({resolved.length})</span>
+          <div style={{ height: 1, flex: 1, background: "var(--line)" }} />
         </div>
-        <div style={{ border: "1px solid #2C2C2A", borderRadius: 8, overflow: "hidden", opacity: 0.5 }}>
+        <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", opacity: 0.5 }}>
           {resolved.map(i => { const due = fmtDue(i.due_date); return (
-            <div key={i.id} onClick={() => setViewId(i.id)} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #1A1A18", cursor: "pointer", fontSize: 12 }} onMouseEnter={e => e.currentTarget.style.background = "#161615"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-              <span style={{ width: 50 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small /></span>
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#888780", textDecoration: "line-through" }}>{i.title}</span>
+            <div key={i.id} onClick={() => setViewId(i.id)} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid var(--surface)", cursor: "pointer", fontSize: 12 }} onMouseEnter={e => e.currentTarget.style.background = "var(--side)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <span style={{ width: 50 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" } : { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" }} small /></span>
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--sub)", textDecoration: "line-through" }}>{i.title}</span>
               <span style={{ width: 70 }}><Badge label={i.priority} colors={PC[i.priority]} small /></span>
-              <span style={{ width: 90 }}><Badge label={taskStatusLabel(i.status)} colors={{ bg: "#081F12", text: "#5DCAA5", border: "#04342C" }} small /></span>
-              <span style={{ width: 80, fontSize: 10, color: "#5F5E5A" }}>{due?.text || "—"}</span>
-              <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(i); }} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11 }}>✎</button></span>
+              <span style={{ width: 90 }}><Badge label={taskStatusLabel(i.status)} colors={{ bg: "var(--tint-green-bg)", text: "var(--green)", border: "var(--tint-green-bd)" }} small /></span>
+              <span style={{ width: 80, fontSize: 10, color: "var(--muted)" }}>{due?.text || "—"}</span>
+              <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(i); }} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 11 }}>✎</button></span>
             </div>
           ); })}
         </div>
@@ -1853,86 +1858,86 @@ function TestsView({ takeOpenId, tests, files, fm, filterFile, setFilterFile, ex
     const li = liIds(vt.id); const done = pomCount("test", vt.id); const est = vt.estimated_pomodoros || 0; const due = fmtDue(vt.due_date); const tnotes = notesByTest(vt.id);
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setViewTid(null)}>
-        <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 560, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", overflowY: "auto" }}>
+        <div onClick={e => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, padding: "20px 24px", width: 560, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", overflowY: "auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             <Badge label={vt.status} colors={TC[vt.status]} />
             <span style={{ fontSize: 16, fontWeight: 500, flex: 1 }}>{vt.title}</span>
-            <button onClick={() => setViewTid(null)} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button>
+            <button onClick={() => setViewTid(null)} style={{ background: "none", border: "none", color: "var(--sub)", cursor: "pointer", fontSize: 16 }}>✕</button>
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
-            <Btn small onClick={() => updS(vt.id, "pass")} style={{ color: "#97C459", borderColor: "#3B6D11" }}>✓ Pass</Btn>
-            <Btn small onClick={() => updS(vt.id, "fail")} style={{ color: "#F09595", borderColor: "#A32D2D" }}>✗ Fail</Btn>
+            <Btn small onClick={() => updS(vt.id, "pass")} style={{ color: "var(--lime)", borderColor: "#3B6D11" }}>✓ Pass</Btn>
+            <Btn small onClick={() => updS(vt.id, "fail")} style={{ color: "var(--pink)", borderColor: "#A32D2D" }}>✗ Fail</Btn>
             <Btn small onClick={() => { setViewTid(null); focusOn("test", vt.id); }}>▶ Focus</Btn>
             <Btn small onClick={() => { setViewTid(null); onEdit(vt); }}>✎ Edit</Btn>
-            <Btn small onClick={() => { if (confirm("Delete this test?")) { del(vt.id); setViewTid(null); } }} style={{ color: "#F09595" }}>Delete</Btn>
+            <Btn small onClick={() => { if (confirm("Delete this test?")) { del(vt.id); setViewTid(null); } }} style={{ color: "var(--pink)" }}>Delete</Btn>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16, fontSize: 12 }}>
-            <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>File: </span><span style={{ fontFamily: "'SF Mono', monospace", color: "#D3D1C7" }}>{fm[vt.file_id]?.name || "—"}</span></div>
-            <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>Steps: </span><span style={{ color: "#D3D1C7" }}>{(vt.steps||[]).length}</span></div>
-            {vt.repo_name && <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>Repo: </span><span style={{ fontFamily: "'SF Mono', monospace", color: "#D3D1C7" }}>{vt.repo_name}{vt.branch_name ? ` : ${vt.branch_name}` : ""}</span></div>}
-            {est > 0 && <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>Pomodoros: </span><span style={{ color: done >= est ? "#97C459" : "#E24B4A", fontFamily: "'SF Mono', monospace" }}>{done}/{est}</span></div>}
-            {due && <div style={{ padding: "8px 10px", background: "#111110", borderRadius: 6 }}><span style={{ color: "#5F5E5A" }}>Due: </span><span style={{ color: due.color }}>{due.text}</span></div>}
+            <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>File: </span><span style={{ fontFamily: "'SF Mono', monospace", color: "var(--title)" }}>{fm[vt.file_id]?.name || "—"}</span></div>
+            <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>Steps: </span><span style={{ color: "var(--title)" }}>{(vt.steps||[]).length}</span></div>
+            {vt.repo_name && <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>Repo: </span><span style={{ fontFamily: "'SF Mono', monospace", color: "var(--title)" }}>{vt.repo_name}{vt.branch_name ? ` : ${vt.branch_name}` : ""}</span></div>}
+            {est > 0 && <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>Pomodoros: </span><span style={{ color: done >= est ? "var(--lime)" : "var(--red)", fontFamily: "'SF Mono', monospace" }}>{done}/{est}</span></div>}
+            {due && <div style={{ padding: "8px 10px", background: "var(--bg)", borderRadius: 6 }}><span style={{ color: "var(--muted)" }}>Due: </span><span style={{ color: due.color }}>{due.text}</span></div>}
           </div>
-          {vt.precondition && <div style={{ fontSize: 12, color: "#888780", padding: "8px 10px", background: "#111110", borderRadius: 6, marginBottom: 12 }}><span style={{ color: "#5F5E5A", fontSize: 10, textTransform: "uppercase" }}>Precondition: </span>{vt.precondition}</div>}
-          {(vt.steps||[]).length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 6 }}>STEPS</div>{(vt.steps||[]).map((s, idx) => (<div key={idx} style={{ display: "flex", gap: 10, padding: "8px 10px", background: "#111110", borderRadius: 6, marginBottom: 4 }}><span style={{ color: "#5F5E5A", fontSize: 11, fontFamily: "'SF Mono', monospace", minWidth: 20 }}>{idx + 1}.</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, color: "#D3D1C7", marginBottom: 2 }}>{s.step}</div><div style={{ fontSize: 11, color: "#5DCAA5", fontStyle: "italic" }}>→ {s.expected}</div></div></div>))}</div>}
-          {li.length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 6 }}>LINKED TASKS</div>{li.map(iid => { const issue = im[iid]; if (!issue) return null; return (<div key={iid} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: "#111110", borderRadius: 6, marginBottom: 4, fontSize: 12 }}><span style={{ color: issue.type === "bug" ? "#F09595" : "#85B7EB" }}>{issue.type === "bug" ? "◉" : "○"}</span><span style={{ flex: 1, color: "#D3D1C7" }}>{issue.title}</span><Badge label={issue.priority} colors={PC[issue.priority]} small /></div>); })}</div>}
-          {tnotes.length > 0 && <div><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 6 }}>LINKED NOTES</div>{tnotes.map(n => (<div key={n.id} onClick={() => { setViewTid(null); onViewNote(n.id); }} style={{ padding: "6px 10px", background: "#111110", borderRadius: 6, marginBottom: 4, fontSize: 12, cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.background = "#1A1A18"} onMouseLeave={e => e.currentTarget.style.background = "#111110"}><span style={{ color: "#AFA9EC" }}>☰ </span><span style={{ color: "#D3D1C7" }}>{n.title || n.category}</span>{n.content && <div style={{ fontSize: 11, color: "#5F5E5A", marginTop: 2, maxHeight: 40, overflow: "hidden" }}>{n.content.substring(0, 100)}{n.content.length > 100 ? "..." : ""}</div>}</div>))}</div>}
+          {vt.precondition && <div style={{ fontSize: 12, color: "var(--sub)", padding: "8px 10px", background: "var(--bg)", borderRadius: 6, marginBottom: 12 }}><span style={{ color: "var(--muted)", fontSize: 10, textTransform: "uppercase" }}>Precondition: </span>{vt.precondition}</div>}
+          {(vt.steps||[]).length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>STEPS</div>{(vt.steps||[]).map((s, idx) => (<div key={idx} style={{ display: "flex", gap: 10, padding: "8px 10px", background: "var(--bg)", borderRadius: 6, marginBottom: 4 }}><span style={{ color: "var(--muted)", fontSize: 11, fontFamily: "'SF Mono', monospace", minWidth: 20 }}>{idx + 1}.</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, color: "var(--title)", marginBottom: 2 }}>{s.step}</div><div style={{ fontSize: 11, color: "var(--green)", fontStyle: "italic" }}>→ {s.expected}</div></div></div>))}</div>}
+          {li.length > 0 && <div style={{ marginBottom: 12 }}><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>LINKED TASKS</div>{li.map(iid => { const issue = im[iid]; if (!issue) return null; return (<div key={iid} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", background: "var(--bg)", borderRadius: 6, marginBottom: 4, fontSize: 12 }}><span style={{ color: issue.type === "bug" ? "var(--pink)" : "var(--blue)" }}>{issue.type === "bug" ? "◉" : "○"}</span><span style={{ flex: 1, color: "var(--title)" }}>{issue.title}</span><Badge label={issue.priority} colors={PC[issue.priority]} small /></div>); })}</div>}
+          {tnotes.length > 0 && <div><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 6 }}>LINKED NOTES</div>{tnotes.map(n => (<div key={n.id} onClick={() => { setViewTid(null); onViewNote(n.id); }} style={{ padding: "6px 10px", background: "var(--bg)", borderRadius: 6, marginBottom: 4, fontSize: 12, cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.background = "var(--surface)"} onMouseLeave={e => e.currentTarget.style.background = "var(--bg)"}><span style={{ color: "var(--purple)" }}>☰ </span><span style={{ color: "var(--title)" }}>{n.title || n.category}</span>{n.content && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, maxHeight: 40, overflow: "hidden" }}>{n.content.substring(0, 100)}{n.content.length > 100 ? "..." : ""}</div>}</div>))}</div>}
         </div>
       </div>
     );
   }
 
   return (<div>
-    <div style={{ display: "flex", gap: 6, marginBottom: 16, alignItems: "center" }}><Select value={filterFile} onChange={setFilterFile} options={[{ value: "all", label: "All files" }, ...files.map(f => ({ value: f.id, label: f.name }))]} /><span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} /><select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 10, background: "#1A1A18", color: "#888780", border: "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}><option value="created">Newest</option><option value="due">Due date</option><option value="status">Status</option><option value="last_run">Last run</option></select><span style={{ flex: 1 }} /><button onClick={() => setViewMode("card")} title="Cards" style={{ background: viewMode === "card" ? "#2C2C2A" : "none", border: "none", color: viewMode === "card" ? "#F1EFE8" : "#444441", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>◫</button><button onClick={() => setViewMode("list")} title="List" style={{ background: viewMode === "list" ? "#2C2C2A" : "none", border: "none", color: viewMode === "list" ? "#F1EFE8" : "#444441", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>≡</button></div>
+    <div style={{ display: "flex", gap: 6, marginBottom: 16, alignItems: "center" }}><Select value={filterFile} onChange={setFilterFile} options={[{ value: "all", label: "All files" }, ...files.map(f => ({ value: f.id, label: f.name }))]} /><span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} /><select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 10, background: "var(--surface)", color: "var(--sub)", border: "1px solid var(--line)", outline: "none", cursor: "pointer" }}><option value="created">Newest</option><option value="due">Due date</option><option value="status">Status</option><option value="last_run">Last run</option></select><span style={{ flex: 1 }} /><button onClick={() => setViewMode("card")} title="Cards" style={{ background: viewMode === "card" ? "var(--line)" : "none", border: "none", color: viewMode === "card" ? "var(--text)" : "var(--dim)", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>◫</button><button onClick={() => setViewMode("list")} title="List" style={{ background: viewMode === "list" ? "var(--line)" : "none", border: "none", color: viewMode === "list" ? "var(--text)" : "var(--dim)", cursor: "pointer", fontSize: 12, padding: "4px 6px", borderRadius: 4 }}>≡</button></div>
     {sorted.length === 0 && <EmptyState icon="▷" title="No test cases yet" sub="Write test cases to verify your code." action="New test case" onAction={onAdd} />}
     {viewMode === "card" && sorted.map(t => { const ex = exp === t.id; const li = liIds(t.id); const done = pomCount("test", t.id); const est = t.estimated_pomodoros || 0; const due = fmtDue(t.due_date); return (
-      <div key={t.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, marginBottom: 8 }}>
+      <div key={t.id} style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, marginBottom: 8 }}>
         <div style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }} onClick={() => setExp(ex ? null : t.id)}>
-          <span style={{ color: "#5F5E5A", fontSize: 12, marginTop: 2, transform: ex ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>▸</span>
+          <span style={{ color: "var(--muted)", fontSize: 12, marginTop: 2, transform: ex ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>▸</span>
           <div style={{ flex: "1 1 200px", minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}><span style={{ fontSize: 13, fontWeight: 500 }}>{t.title}</span><Badge label={t.status} colors={TC[t.status]} small /></div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", flexWrap: "wrap" }}>
               <span style={{ fontFamily: "'SF Mono', monospace" }}>{fm[t.file_id]?.name || "—"}</span>
               {t.last_run && <><span>·</span><span>{SHORT_DATE(t.last_run)}</span></>}
               <span>·</span><span>{(t.steps||[]).length} step{(t.steps||[]).length !== 1 ? "s" : ""}</span>
-              {t.repo_name && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#888780" }}>{t.repo_name}{t.branch_name ? ` : ${t.branch_name}` : ""}</span></>}
-              {est > 0 && <><span>·</span><span style={{ color: done >= est ? "#97C459" : "#E24B4A" }}>{done}/{est} pomodoros</span></>}
+              {t.repo_name && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace", color: "var(--sub)" }}>{t.repo_name}{t.branch_name ? ` : ${t.branch_name}` : ""}</span></>}
+              {est > 0 && <><span>·</span><span style={{ color: done >= est ? "var(--lime)" : "var(--red)" }}>{done}/{est} pomodoros</span></>}
               {due && <><span>·</span><span style={{ color: due.color }}>{due.text}</span></>}
             </div>
           </div>
           <div style={{ display: "flex", gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-            <button onClick={() => focusOn("test", t.id)} title="Focus" style={{ background: "none", border: "1px solid #2C2C2A", color: "#E24B4A", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }}>▶</button>
-            {!inQueue(t.id) && <button onClick={() => addToQ("test", t.id)} title="Add to queue" style={{ background: "none", border: "1px solid #2C2C2A", color: "#7F77DD", cursor: "pointer", fontSize: 9, padding: "3px 6px", borderRadius: 4 }}>+ Queue</button>}
-            {inQueue(t.id) && <span style={{ fontSize: 9, padding: "3px 6px", borderRadius: 4, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C" }}>queued</span>}
-            <button onClick={() => setViewTid(t.id)} title="View details" style={{ background: "none", border: "1px solid #2C2C2A", color: "#85B7EB", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }}>◫</button>
-            <Btn small onClick={() => updS(t.id, "pass")} style={{ color: t.status === "pass" ? "#97C459" : "#5F5E5A", borderColor: t.status === "pass" ? "#3B6D11" : undefined }}>✓</Btn>
-            <Btn small onClick={() => updS(t.id, "fail")} style={{ color: t.status === "fail" ? "#F09595" : "#5F5E5A", borderColor: t.status === "fail" ? "#A32D2D" : undefined }}>✗</Btn>
-            <button onClick={() => onEdit(t)} title="Edit" style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
-            <button onClick={() => del(t.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
+            <button onClick={() => focusOn("test", t.id)} title="Focus" style={{ background: "none", border: "1px solid var(--line)", color: "var(--red)", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }}>▶</button>
+            {!inQueue(t.id) && <button onClick={() => addToQ("test", t.id)} title="Add to queue" style={{ background: "none", border: "1px solid var(--line)", color: "#7F77DD", cursor: "pointer", fontSize: 9, padding: "3px 6px", borderRadius: 4 }}>+ Queue</button>}
+            {inQueue(t.id) && <span style={{ fontSize: 9, padding: "3px 6px", borderRadius: 4, background: "var(--tint-purple-bg)", color: "var(--purple)", border: "1px solid var(--tint-purple-bd)" }}>queued</span>}
+            <button onClick={() => setViewTid(t.id)} title="View details" style={{ background: "none", border: "1px solid var(--line)", color: "var(--blue)", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }}>◫</button>
+            <Btn small onClick={() => updS(t.id, "pass")} style={{ color: t.status === "pass" ? "var(--lime)" : "var(--muted)", borderColor: t.status === "pass" ? "#3B6D11" : undefined }}>✓</Btn>
+            <Btn small onClick={() => updS(t.id, "fail")} style={{ color: t.status === "fail" ? "var(--pink)" : "var(--muted)", borderColor: t.status === "fail" ? "#A32D2D" : undefined }}>✗</Btn>
+            <button onClick={() => onEdit(t)} title="Edit" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
+            <button onClick={() => del(t.id)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
           </div>
         </div>
         <div style={{ padding: "0 14px 10px 32px", display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
-          {li.map(iid => { const issue = im[iid]; if (!issue) return null; const ic = issue.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }; return (<span key={iid} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: ic.bg, color: ic.text, border: `1px solid ${ic.border}` }}>{issue.type === "bug" ? "◉" : "○"} {issue.title}<button onClick={() => ulnk(iid, t.id)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 10, padding: 0, marginLeft: 2, opacity: 0.6 }}>✕</button></span>); })}
-          {notesByTest(t.id).map(n => (<span key={n.id} onClick={() => onViewNote(n.id)} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C", cursor: "pointer" }}>☰ {n.title || n.category}</span>))}
-          <button onClick={() => openLink(t.id)} style={{ background: "none", border: "1px dashed #444441", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>+ Link task</button>
+          {li.map(iid => { const issue = im[iid]; if (!issue) return null; const ic = issue.type === "bug" ? { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" } : { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" }; return (<span key={iid} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: ic.bg, color: ic.text, border: `1px solid ${ic.border}` }}>{issue.type === "bug" ? "◉" : "○"} {issue.title}<button onClick={() => ulnk(iid, t.id)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 10, padding: 0, marginLeft: 2, opacity: 0.6 }}>✕</button></span>); })}
+          {notesByTest(t.id).map(n => (<span key={n.id} onClick={() => onViewNote(n.id)} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, padding: "2px 8px", borderRadius: 4, background: "var(--tint-purple-bg)", color: "var(--purple)", border: "1px solid var(--tint-purple-bd)", cursor: "pointer" }}>☰ {n.title || n.category}</span>))}
+          <button onClick={() => openLink(t.id)} style={{ background: "none", border: "1px dashed var(--dim)", color: "var(--muted)", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>+ Link task</button>
         </div>
-        {ex && (<div style={{ padding: "0 14px 14px 32px", borderTop: "1px solid #2C2C2A" }}>
-          {t.precondition && <div style={{ fontSize: 12, color: "#888780", margin: "10px 0 8px", padding: "6px 10px", background: "#1A1A18", borderRadius: 6 }}><span style={{ color: "#5F5E5A", fontSize: 10, textTransform: "uppercase" }}>Precondition: </span>{t.precondition}</div>}
-          {(t.steps||[]).map((s, idx) => (<div key={idx} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: idx < (t.steps||[]).length - 1 ? "1px solid #1A1A18" : "none" }}><span style={{ color: "#5F5E5A", fontSize: 11, fontFamily: "'SF Mono', monospace", minWidth: 20 }}>{idx + 1}.</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, color: "#D3D1C7", marginBottom: 2 }}>{s.step}</div><div style={{ fontSize: 11, color: "#5DCAA5", fontStyle: "italic" }}>→ {s.expected}</div></div></div>))}
+        {ex && (<div style={{ padding: "0 14px 14px 32px", borderTop: "1px solid var(--line)" }}>
+          {t.precondition && <div style={{ fontSize: 12, color: "var(--sub)", margin: "10px 0 8px", padding: "6px 10px", background: "var(--surface)", borderRadius: 6 }}><span style={{ color: "var(--muted)", fontSize: 10, textTransform: "uppercase" }}>Precondition: </span>{t.precondition}</div>}
+          {(t.steps||[]).map((s, idx) => (<div key={idx} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: idx < (t.steps||[]).length - 1 ? "1px solid var(--surface)" : "none" }}><span style={{ color: "var(--muted)", fontSize: 11, fontFamily: "'SF Mono', monospace", minWidth: 20 }}>{idx + 1}.</span><div style={{ flex: 1 }}><div style={{ fontSize: 12, color: "var(--title)", marginBottom: 2 }}>{s.step}</div><div style={{ fontSize: 11, color: "var(--green)", fontStyle: "italic" }}>→ {s.expected}</div></div></div>))}
         </div>)}
       </div>); })}
-    {viewMode === "list" && (<div style={{ border: "1px solid #2C2C2A", borderRadius: 8, overflow: "hidden" }}>
-      <div style={{ display: "flex", padding: "6px 12px", background: "#161615", borderBottom: "1px solid #2C2C2A", fontSize: 9, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5 }}>
+    {viewMode === "list" && (<div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+      <div style={{ display: "flex", padding: "6px 12px", background: "var(--side)", borderBottom: "1px solid var(--line)", fontSize: 9, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
         <span style={{ flex: 1 }}>Title</span><span style={{ width: 70 }}>Status</span><span style={{ width: 60 }}>Steps</span><span style={{ width: 80 }}>Due</span><span style={{ width: 80 }}>Last run</span><span style={{ width: 40 }}></span>
       </div>
       {sorted.map(t => { const due = fmtDue(t.due_date); return (
-        <div key={t.id} onClick={() => setViewTid(t.id)} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #1A1A18", cursor: "pointer", fontSize: 12 }} onMouseEnter={e => e.currentTarget.style.background = "#161615"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#D3D1C7" }}>{t.title}</span>
+        <div key={t.id} onClick={() => setViewTid(t.id)} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid var(--surface)", cursor: "pointer", fontSize: 12 }} onMouseEnter={e => e.currentTarget.style.background = "var(--side)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--title)" }}>{t.title}</span>
           <span style={{ width: 70 }}><Badge label={t.status} colors={TC[t.status]} small /></span>
-          <span style={{ width: 60, fontSize: 10, color: "#5F5E5A" }}>{(t.steps||[]).length}</span>
-          <span style={{ width: 80, fontSize: 10, color: due?.color || "#5F5E5A" }}>{due?.text || "—"}</span>
-          <span style={{ width: 80, fontSize: 10, color: "#5F5E5A" }}>{t.last_run ? SHORT_DATE(t.last_run) : "—"}</span>
-          <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(t); }} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11 }}>✎</button></span>
+          <span style={{ width: 60, fontSize: 10, color: "var(--muted)" }}>{(t.steps||[]).length}</span>
+          <span style={{ width: 80, fontSize: 10, color: due?.color || "var(--muted)" }}>{due?.text || "—"}</span>
+          <span style={{ width: 80, fontSize: 10, color: "var(--muted)" }}>{t.last_run ? SHORT_DATE(t.last_run) : "—"}</span>
+          <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(t); }} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 11 }}>✎</button></span>
         </div>
       ); })}
     </div>)}
@@ -1945,7 +1950,7 @@ function FilesView({ files, issues, tests, del, onAdd, onNav }) {
   const tc = (fid) => tests.filter(t => t.file_id === fid).length;
   const tp = (fid) => tests.filter(t => t.file_id === fid && t.status === "pass").length;
   if (files.length === 0) return <EmptyState icon="⊞" title="No files yet" sub="Add files to attach tasks and tests" action="Add file" onAction={onAdd} />;
-  return (<div>{CATEGORIES.filter(c => g[c]).map(cat => (<div key={cat} style={{ marginBottom: 20 }}><div style={{ fontSize: 11, fontWeight: 500, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{cat}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>{g[cat].map(f => { const a = ic(f.id), b = tc(f.id), c = tp(f.id); return (<div key={f.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, fontWeight: 500, color: "#D3D1C7" }}>{f.name}</span><button onClick={() => del(f.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 12 }}>✕</button></div><div style={{ display: "flex", gap: 12, fontSize: 11 }}><span onClick={() => onNav("issues", f.id)} style={{ cursor: "pointer", color: a > 0 ? "#F09595" : "#5F5E5A" }}>{a} task{a !== 1 ? "s" : ""}</span><span onClick={() => onNav("tests", f.id)} style={{ cursor: "pointer", color: b > 0 ? "#85B7EB" : "#5F5E5A" }}>{c}/{b} tests</span></div></div>); })}</div></div>))}</div>);
+  return (<div>{CATEGORIES.filter(c => g[c]).map(cat => (<div key={cat} style={{ marginBottom: 20 }}><div style={{ fontSize: 11, fontWeight: 500, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{cat}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>{g[cat].map(f => { const a = ic(f.id), b = tc(f.id), c = tp(f.id); return (<div key={f.id} style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "12px 14px" }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, fontWeight: 500, color: "var(--title)" }}>{f.name}</span><button onClick={() => del(f.id)} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 12 }}>✕</button></div><div style={{ display: "flex", gap: 12, fontSize: 11 }}><span onClick={() => onNav("issues", f.id)} style={{ cursor: "pointer", color: a > 0 ? "var(--pink)" : "var(--muted)" }}>{a} task{a !== 1 ? "s" : ""}</span><span onClick={() => onNav("tests", f.id)} style={{ cursor: "pointer", color: b > 0 ? "var(--blue)" : "var(--muted)" }}>{c}/{b} tests</span></div></div>); })}</div></div>))}</div>);
 }
 
 // ============================================
@@ -1953,7 +1958,7 @@ function FilesView({ files, issues, tests, del, onAdd, onNav }) {
 // ============================================
 
 const NOTE_CATS = ["scratch", "decision", "investigation", "meeting"];
-const NOTE_CAT_COLORS = { scratch: { bg: "#1A1A18", text: "#B4B2A9", border: "#2C2C2A" }, decision: { bg: "#1A0A29", text: "#AFA9EC", border: "#26215C" }, investigation: { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }, meeting: { bg: "#081F12", text: "#5DCAA5", border: "#04342C" } };
+const NOTE_CAT_COLORS = { scratch: { bg: "var(--surface)", text: "var(--soft)", border: "var(--line)" }, decision: { bg: "var(--tint-purple-bg)", text: "var(--purple)", border: "var(--tint-purple-bd)" }, investigation: { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" }, meeting: { bg: "var(--tint-green-bg)", text: "var(--green)", border: "var(--tint-green-bd)" } };
 
 function detectLang(text) {
   if (!text) return "";
@@ -1989,9 +1994,9 @@ function highlight(code, lang) {
     while ((m = nr.exec(before)) !== null) { if (!allM.some(a => m.index >= a.start && m.index < a.end)) allM.push({ start: m.index, end: m.index + m[0].length, text: m[0], type: "number" }); }
     allM.sort((a, b) => a.start - b.start);
     let cur = 0;
-    allM.forEach(match => { if (match.start > cur) result.push({ text: before.slice(cur, match.start), color: null }); result.push({ text: match.text, color: match.type === "keyword" ? "#85B7EB" : match.type === "string" ? "#97C459" : "#FAC775" }); cur = match.end; });
+    allM.forEach(match => { if (match.start > cur) result.push({ text: before.slice(cur, match.start), color: null }); result.push({ text: match.text, color: match.type === "keyword" ? "var(--blue)" : match.type === "string" ? "var(--lime)" : "var(--amber)" }); cur = match.end; });
     if (cur < before.length) result.push({ text: before.slice(cur), color: null });
-    if (comment) result.push({ text: comment, color: "#5F5E5A" });
+    if (comment) result.push({ text: comment, color: "var(--muted)" });
   });
   return result;
 }
@@ -2027,12 +2032,12 @@ function NoteContent({ content, maxHeight }) {
   return (
     <div style={{ maxHeight: maxHeight || "none", overflow: maxHeight ? "hidden" : "visible" }}>
       {blocks.map((b, i) => b.type === "code" ? (
-        <div key={i} style={{ background: "#111110", borderRadius: 6, padding: "8px 10px", margin: "6px 0", position: "relative" }}>
-          {b.lang && <span style={{ position: "absolute", top: 4, right: 8, fontSize: 9, color: "#5F5E5A", textTransform: "uppercase" }}>{b.lang}</span>}
+        <div key={i} style={{ background: "var(--bg)", borderRadius: 6, padding: "8px 10px", margin: "6px 0", position: "relative" }}>
+          {b.lang && <span style={{ position: "absolute", top: 4, right: 8, fontSize: 9, color: "var(--muted)", textTransform: "uppercase" }}>{b.lang}</span>}
           <CodeBlock content={b.content} lang={b.lang} />
         </div>
       ) : (
-        <div key={i} style={{ fontSize: 12, color: "#D3D1C7", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{b.content}</div>
+        <div key={i} style={{ fontSize: 12, color: "var(--title)", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{b.content}</div>
       ))}
     </div>
   );
@@ -2046,7 +2051,7 @@ let mermaidPromise = null;
 const loadMermaid = () => {
   if (!mermaidPromise) {
     mermaidPromise = import("https://esm.sh/mermaid@10").then(m => {
-      m.default.initialize({ startOnLoad: false, theme: "dark", themeVariables: { darkMode: true, background: "#161615", primaryColor: "#1A1A18", primaryTextColor: "#D3D1C7", lineColor: "#5F5E5A", primaryBorderColor: "#2C2C2A" } });
+      m.default.initialize({ startOnLoad: false, theme: "dark", themeVariables: { darkMode: true, background: "var(--side)", primaryColor: "var(--surface)", primaryTextColor: "var(--title)", lineColor: "var(--muted)", primaryBorderColor: "var(--line)" } });
       return m.default;
     });
   }
@@ -2068,8 +2073,8 @@ function MermaidDiagram({ code }) {
     }).catch(e => setErr(e.message));
     return () => { cancelled = true; };
   }, [code]);
-  if (err) return <div style={{ fontSize: 10, color: "#F09595", padding: 8, background: "#1A1A18", borderRadius: 4 }}>Mermaid error: {err}</div>;
-  return <div ref={ref} style={{ padding: 12, background: "#161615", border: "1px solid #2C2C2A", borderRadius: 6, overflowX: "auto", margin: "8px 0", textAlign: "center" }} />;
+  if (err) return <div style={{ fontSize: 10, color: "var(--pink)", padding: 8, background: "var(--surface)", borderRadius: 4 }}>Mermaid error: {err}</div>;
+  return <div ref={ref} style={{ padding: 12, background: "var(--side)", border: "1px solid var(--line)", borderRadius: 6, overflowX: "auto", margin: "8px 0", textAlign: "center" }} />;
 }
 
 const parseInline = (text) => {
@@ -2081,7 +2086,7 @@ const parseInline = (text) => {
       if (buf) parts.push(buf); buf = "";
       const end = text.indexOf("**", i + 2);
       if (end === -1) { buf += text[i]; i++; continue; }
-      parts.push(<strong key={i} style={{ fontWeight: 500, color: "#F1EFE8" }}>{text.slice(i + 2, end)}</strong>);
+      parts.push(<strong key={i} style={{ fontWeight: 500, color: "var(--text)" }}>{text.slice(i + 2, end)}</strong>);
       i = end + 2;
     } else if (text[i] === "*") {
       if (buf) parts.push(buf); buf = "";
@@ -2093,7 +2098,7 @@ const parseInline = (text) => {
       if (buf) parts.push(buf); buf = "";
       const end = text.indexOf("`", i + 1);
       if (end === -1) { buf += text[i]; i++; continue; }
-      parts.push(<code key={i} style={{ background: "#1A1A18", color: "#F0997B", padding: "1px 5px", borderRadius: 3, fontSize: "0.9em", fontFamily: "'SF Mono', monospace" }}>{text.slice(i + 1, end)}</code>);
+      parts.push(<code key={i} style={{ background: "var(--surface)", color: "var(--orange)", padding: "1px 5px", borderRadius: 3, fontSize: "0.9em", fontFamily: "'SF Mono', monospace" }}>{text.slice(i + 1, end)}</code>);
       i = end + 1;
     } else if (text[i] === "[") {
       const close = text.indexOf("]", i + 1);
@@ -2101,7 +2106,7 @@ const parseInline = (text) => {
       const pclose = text.indexOf(")", paren);
       if (close !== -1 && paren === close + 1 && pclose !== -1) {
         if (buf) parts.push(buf); buf = "";
-        parts.push(<a key={i} href={text.slice(paren + 1, pclose)} target="_blank" rel="noopener noreferrer" style={{ color: "#85B7EB", textDecoration: "none" }}>{text.slice(i + 1, close)}</a>);
+        parts.push(<a key={i} href={text.slice(paren + 1, pclose)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--blue)", textDecoration: "none" }}>{text.slice(i + 1, close)}</a>);
         i = pclose + 1;
       } else { buf += text[i]; i++; }
     } else { buf += text[i]; i++; }
@@ -2128,36 +2133,36 @@ function MarkdownView({ content }) {
       if (lang === "mermaid") {
         blocks.push(<MermaidDiagram key={key++} code={code} />);
       } else {
-        blocks.push(<pre key={key++} style={{ background: "#0F0F0E", padding: "10px 14px", borderRadius: 6, overflowX: "auto", margin: "8px 0", fontSize: 12, fontFamily: "'SF Mono', monospace", color: "#D3D1C7", border: "1px solid #1A1A18", lineHeight: 1.5 }}>{lang && <div style={{ fontSize: 9, color: "#5F5E5A", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{lang}</div>}<code>{code}</code></pre>);
+        blocks.push(<pre key={key++} style={{ background: "var(--bg)", padding: "10px 14px", borderRadius: 6, overflowX: "auto", margin: "8px 0", fontSize: 12, fontFamily: "'SF Mono', monospace", color: "var(--title)", border: "1px solid var(--surface)", lineHeight: 1.5 }}>{lang && <div style={{ fontSize: 9, color: "var(--muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{lang}</div>}<code>{code}</code></pre>);
       }
       i++; continue;
     }
     // Headings
-    if (line.startsWith("### ")) { blocks.push(<h3 key={key++} style={{ fontSize: 14, fontWeight: 500, color: "#F1EFE8", margin: "12px 0 6px" }}>{parseInline(line.slice(4))}</h3>); i++; continue; }
-    if (line.startsWith("## ")) { blocks.push(<h2 key={key++} style={{ fontSize: 16, fontWeight: 500, color: "#F1EFE8", margin: "16px 0 6px" }}>{parseInline(line.slice(3))}</h2>); i++; continue; }
-    if (line.startsWith("# ")) { blocks.push(<h1 key={key++} style={{ fontSize: 18, fontWeight: 500, color: "#F1EFE8", margin: "20px 0 8px" }}>{parseInline(line.slice(2))}</h1>); i++; continue; }
+    if (line.startsWith("### ")) { blocks.push(<h3 key={key++} style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", margin: "12px 0 6px" }}>{parseInline(line.slice(4))}</h3>); i++; continue; }
+    if (line.startsWith("## ")) { blocks.push(<h2 key={key++} style={{ fontSize: 16, fontWeight: 500, color: "var(--text)", margin: "16px 0 6px" }}>{parseInline(line.slice(3))}</h2>); i++; continue; }
+    if (line.startsWith("# ")) { blocks.push(<h1 key={key++} style={{ fontSize: 18, fontWeight: 500, color: "var(--text)", margin: "20px 0 8px" }}>{parseInline(line.slice(2))}</h1>); i++; continue; }
     // Horizontal rule
-    if (line.trim() === "---") { blocks.push(<hr key={key++} style={{ border: "none", borderTop: "1px solid #2C2C2A", margin: "12px 0" }} />); i++; continue; }
+    if (line.trim() === "---") { blocks.push(<hr key={key++} style={{ border: "none", borderTop: "1px solid var(--line)", margin: "12px 0" }} />); i++; continue; }
     // Blockquote
-    if (line.startsWith("> ")) { blocks.push(<blockquote key={key++} style={{ borderLeft: "3px solid #2C2C2A", paddingLeft: 12, margin: "8px 0", color: "#888780", fontStyle: "italic" }}>{parseInline(line.slice(2))}</blockquote>); i++; continue; }
+    if (line.startsWith("> ")) { blocks.push(<blockquote key={key++} style={{ borderLeft: "3px solid var(--line)", paddingLeft: 12, margin: "8px 0", color: "var(--sub)", fontStyle: "italic" }}>{parseInline(line.slice(2))}</blockquote>); i++; continue; }
     // Unordered list
     if (line.match(/^\s*[-*]\s/)) {
       const items = [];
       while (i < lines.length && lines[i].match(/^\s*[-*]\s/)) { items.push(lines[i].replace(/^\s*[-*]\s/, "")); i++; }
-      blocks.push(<ul key={key++} style={{ margin: "6px 0", paddingLeft: 20 }}>{items.map((it, j) => <li key={j} style={{ fontSize: 13, color: "#D3D1C7", margin: "2px 0", lineHeight: 1.6 }}>{parseInline(it)}</li>)}</ul>);
+      blocks.push(<ul key={key++} style={{ margin: "6px 0", paddingLeft: 20 }}>{items.map((it, j) => <li key={j} style={{ fontSize: 13, color: "var(--title)", margin: "2px 0", lineHeight: 1.6 }}>{parseInline(it)}</li>)}</ul>);
       continue;
     }
     // Ordered list
     if (line.match(/^\s*\d+\.\s/)) {
       const items = [];
       while (i < lines.length && lines[i].match(/^\s*\d+\.\s/)) { items.push(lines[i].replace(/^\s*\d+\.\s/, "")); i++; }
-      blocks.push(<ol key={key++} style={{ margin: "6px 0", paddingLeft: 20 }}>{items.map((it, j) => <li key={j} style={{ fontSize: 13, color: "#D3D1C7", margin: "2px 0", lineHeight: 1.6 }}>{parseInline(it)}</li>)}</ol>);
+      blocks.push(<ol key={key++} style={{ margin: "6px 0", paddingLeft: 20 }}>{items.map((it, j) => <li key={j} style={{ fontSize: 13, color: "var(--title)", margin: "2px 0", lineHeight: 1.6 }}>{parseInline(it)}</li>)}</ol>);
       continue;
     }
     // Empty line
     if (line.trim() === "") { blocks.push(<div key={key++} style={{ height: 6 }} />); i++; continue; }
     // Paragraph
-    blocks.push(<p key={key++} style={{ fontSize: 13, color: "#D3D1C7", margin: "4px 0", lineHeight: 1.7 }}>{parseInline(line)}</p>);
+    blocks.push(<p key={key++} style={{ fontSize: 13, color: "var(--title)", margin: "4px 0", lineHeight: 1.7 }}>{parseInline(line)}</p>);
     i++;
   }
   return <div>{blocks}</div>;
@@ -2363,20 +2368,20 @@ function PdfReader({ docUrl, docId, topic, highlights, onSelectionHighlight, onH
 
   return (
     <div style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderBottom: "1px solid #2C2C2A", flexShrink: 0, background: "#1A1A18" }}>
-        <button onClick={() => setScale(s => Math.max(0.6, +(s - 0.2).toFixed(1)))} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 13, padding: "2px 8px", borderRadius: 4 }}>−</button>
-        <span style={{ fontSize: 10, color: "#888780", minWidth: 38, textAlign: "center", fontFamily: "'SF Mono', monospace" }}>{Math.round(scale / 1.4 * 100)}%</span>
-        <button onClick={() => setScale(s => Math.min(3, +(s + 0.2).toFixed(1)))} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 13, padding: "2px 8px", borderRadius: 4 }}>+</button>
-        <button onClick={() => setScale(1.4)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Reset</button>
-        {numPages > 0 && <span style={{ fontSize: 10, color: "#5F5E5A", marginLeft: "auto" }}>{numPages} page{numPages !== 1 ? "s" : ""}</span>}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderBottom: "1px solid var(--line)", flexShrink: 0, background: "var(--surface)" }}>
+        <button onClick={() => setScale(s => Math.max(0.6, +(s - 0.2).toFixed(1)))} style={{ background: "none", border: "1px solid var(--line)", color: "var(--sub)", cursor: "pointer", fontSize: 13, padding: "2px 8px", borderRadius: 4 }}>−</button>
+        <span style={{ fontSize: 10, color: "var(--sub)", minWidth: 38, textAlign: "center", fontFamily: "'SF Mono', monospace" }}>{Math.round(scale / 1.4 * 100)}%</span>
+        <button onClick={() => setScale(s => Math.min(3, +(s + 0.2).toFixed(1)))} style={{ background: "none", border: "1px solid var(--line)", color: "var(--sub)", cursor: "pointer", fontSize: 13, padding: "2px 8px", borderRadius: 4 }}>+</button>
+        <button onClick={() => setScale(1.4)} style={{ background: "none", border: "1px solid var(--line)", color: "var(--sub)", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Reset</button>
+        {numPages > 0 && <span style={{ fontSize: 10, color: "var(--muted)", marginLeft: "auto" }}>{numPages} page{numPages !== 1 ? "s" : ""}</span>}
       </div>
-      {loading && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#5F5E5A", fontSize: 12, zIndex: 5 }}>Loading PDF…</div>}
-      {err && <div style={{ padding: 16, color: "#F09595", fontSize: 12 }}>Couldn't load PDF: {err}</div>}
-      <div ref={containerRef} onMouseUp={handleMouseUp} style={{ flex: 1, overflowY: "auto", background: "#333330", padding: "12px 0", position: "relative" }} />
+      {loading && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 12, zIndex: 5 }}>Loading PDF…</div>}
+      {err && <div style={{ padding: 16, color: "var(--pink)", fontSize: 12 }}>Couldn't load PDF: {err}</div>}
+      <div ref={containerRef} onMouseUp={handleMouseUp} style={{ flex: 1, overflowY: "auto", background: "var(--line)", padding: "12px 0", position: "relative" }} />
       {sel && (
-        <div style={{ position: "absolute", left: Math.min(sel.x, 280), top: Math.min(sel.y + 60, 400), zIndex: 10, background: "#1A1A18", border: "1px solid #534AB7", borderRadius: 6, padding: 4, display: "flex", gap: 4, boxShadow: "0 4px 12px rgba(0,0,0,0.5)" }}>
-          <button onClick={() => { onSelectionHighlight(sel, false); setSel(null); window.getSelection().removeAllRanges(); }} style={{ background: "#26215C", border: "none", color: "#CECBF6", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>✎ Highlight</button>
-          <button onClick={() => { onSelectionHighlight(sel, true); setSel(null); window.getSelection().removeAllRanges(); }} style={{ background: "#534AB7", border: "none", color: "#F1EFE8", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>+ Note</button>
+        <div style={{ position: "absolute", left: Math.min(sel.x, 280), top: Math.min(sel.y + 60, 400), zIndex: 10, background: "var(--surface)", border: "1px solid var(--tint-purple-bd)", borderRadius: 6, padding: 4, display: "flex", gap: 4, boxShadow: "0 4px 12px rgba(0,0,0,0.5)" }}>
+          <button onClick={() => { onSelectionHighlight(sel, false); setSel(null); window.getSelection().removeAllRanges(); }} style={{ background: "var(--tint-purple-bd)", border: "none", color: "var(--purple)", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>✎ Highlight</button>
+          <button onClick={() => { onSelectionHighlight(sel, true); setSel(null); window.getSelection().removeAllRanges(); }} style={{ background: "#534AB7", border: "none", color: "var(--text)", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>+ Note</button>
         </div>
       )}
     </div>
@@ -2495,39 +2500,39 @@ function TopicStudyView({ topic, projectId, notes, onClose, onStudyStart, reload
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#0F0F0E", zIndex: 200, display: "flex", flexDirection: "column" }}>
+    <div style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 200, display: "flex", flexDirection: "column" }}>
       {/* Top bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: "1px solid #2C2C2A", flexShrink: 0 }}>
-        <button onClick={onClose} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 12, padding: "4px 10px", borderRadius: 4 }}>← Back</button>
-        <span style={{ fontSize: 16, fontWeight: 500, color: "#CECBF6" }}>📚 {topic}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "none", border: "1px solid var(--line)", color: "var(--sub)", cursor: "pointer", fontSize: 12, padding: "4px 10px", borderRadius: 4 }}>← Back</button>
+        <span style={{ fontSize: 16, fontWeight: 500, color: "var(--purple)" }}>📚 {topic}</span>
         {tmr.st !== "idle" && tmr.tType === "study" && tmr.studyTopic === topic && (
-          <span style={{ fontSize: 13, fontFamily: "'SF Mono', monospace", color: "#E24B4A", padding: "2px 8px", background: "#2D0A0A", borderRadius: 4 }}>● {FMT(tmr.left)}</span>
+          <span style={{ fontSize: 13, fontFamily: "'SF Mono', monospace", color: "var(--red)", padding: "2px 8px", background: "var(--tint-red-bg)", borderRadius: 4 }}>● {FMT(tmr.left)}</span>
         )}
         <span style={{ flex: 1 }} />
-        {!(tmr.st !== "idle" && tmr.tType === "study" && tmr.studyTopic === topic) && <button onClick={() => onStudyStart(topic, false)} style={{ background: "#26215C", border: "none", color: "#CECBF6", cursor: "pointer", fontSize: 12, padding: "5px 12px", borderRadius: 4 }}>▶ Start study timer</button>}
+        {!(tmr.st !== "idle" && tmr.tType === "study" && tmr.studyTopic === topic) && <button onClick={() => onStudyStart(topic, false)} style={{ background: "var(--tint-purple-bd)", border: "none", color: "var(--purple)", cursor: "pointer", fontSize: 12, padding: "5px 12px", borderRadius: 4 }}>▶ Start study timer</button>}
       </div>
 
       {/* Split */}
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* Left: PDF */}
-        <div style={{ flex: 1.3, display: "flex", flexDirection: "column", borderRight: "1px solid #2C2C2A", minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderBottom: "1px solid #1A1A18", flexShrink: 0, overflowX: "auto" }}>
+        <div style={{ flex: 1.3, display: "flex", flexDirection: "column", borderRight: "1px solid var(--line)", minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderBottom: "1px solid var(--surface)", flexShrink: 0, overflowX: "auto" }}>
             <input ref={fileRef} type="file" accept="application/pdf" onChange={handleUpload} style={{ display: "none" }} />
-            <button onClick={() => fileRef.current?.click()} disabled={uploading} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 11, padding: "3px 10px", borderRadius: 4, whiteSpace: "nowrap" }}>{uploading ? "Uploading..." : "+ Upload PDF"}</button>
+            <button onClick={() => fileRef.current?.click()} disabled={uploading} style={{ background: "none", border: "1px dashed var(--line)", color: "var(--sub)", cursor: "pointer", fontSize: 11, padding: "3px 10px", borderRadius: 4, whiteSpace: "nowrap" }}>{uploading ? "Uploading..." : "+ Upload PDF"}</button>
             {docs.map(d => (
-              <button key={d.id} onClick={() => openDoc(d)} style={{ background: selectedDoc?.id === d.id ? "#1A0F2E" : "#1A1A18", border: selectedDoc?.id === d.id ? "1px solid #534AB7" : "1px solid #2C2C2A", color: selectedDoc?.id === d.id ? "#CECBF6" : "#888780", cursor: "pointer", fontSize: 11, padding: "3px 10px", borderRadius: 4, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+              <button key={d.id} onClick={() => openDoc(d)} style={{ background: selectedDoc?.id === d.id ? "var(--tint-purple-bg)" : "var(--surface)", border: selectedDoc?.id === d.id ? "1px solid var(--tint-purple-bd)" : "1px solid var(--line)", color: selectedDoc?.id === d.id ? "var(--purple)" : "var(--sub)", cursor: "pointer", fontSize: 11, padding: "3px 10px", borderRadius: 4, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
                 📄 {d.name.length > 20 ? d.name.slice(0, 18) + "…" : d.name}
-                <span onClick={e => { e.stopPropagation(); delDoc(d); }} style={{ color: "#5F5E5A", fontSize: 10 }}>✕</span>
+                <span onClick={e => { e.stopPropagation(); delDoc(d); }} style={{ color: "var(--muted)", fontSize: 10 }}>✕</span>
               </button>
             ))}
           </div>
-          <div style={{ flex: 1, background: "#222220", minHeight: 0 }}>
+          <div style={{ flex: 1, background: "var(--line2)", minHeight: 0 }}>
             {selectedDoc && docUrl ? (
               <PdfReader docUrl={docUrl} docId={selectedDoc.id} topic={topic} highlights={highlights} onSelectionHighlight={onSelectionHighlight} onHighlightClick={onHighlightClick} onHighlightDelete={onHighlightDelete} jumpTo={jumpTo} />
             ) : selectedDoc && !docUrl ? (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#5F5E5A", fontSize: 12 }}>Loading PDF…</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>Loading PDF…</div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "#5F5E5A", fontSize: 12, gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12, gap: 8 }}>
                 <span style={{ fontSize: 32 }}>📄</span>
                 <span>{docs.length === 0 ? "Upload a PDF to read here" : "Select a PDF above"}</span>
               </div>
@@ -2538,32 +2543,32 @@ function TopicStudyView({ topic, projectId, notes, onClose, onStudyStart, reload
         {/* Right: Notes */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
           {activeNote ? (<>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid #1A1A18", flexShrink: 0 }}>
-              <button onClick={() => setActiveNote(null)} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 12 }}>←</button>
-              <input value={noteTitle} onChange={e => { setNoteTitle(e.target.value); saveNote(e.target.value, noteContent); }} placeholder="Note title" style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 13, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-              <button onClick={() => setPreview(!preview)} style={{ background: preview ? "#1A0F2E" : "none", border: "1px solid #2C2C2A", color: preview ? "#AFA9EC" : "#888780", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>{preview ? "Edit" : "Preview"}</button>
-              {activeNote !== "new" && <button onClick={() => { const n = topicNotes.find(x => x.id === activeNote); if (n) delNote(n); }} title="Delete note" style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }} onMouseEnter={e => { e.currentTarget.style.color = "#F09595"; e.currentTarget.style.borderColor = "#A32D2D"; }} onMouseLeave={e => { e.currentTarget.style.color = "#888780"; e.currentTarget.style.borderColor = "#2C2C2A"; }}>🗑</button>}
-              <span style={{ fontSize: 9, color: savedTick === 2 ? "#5DCAA5" : savedTick === 1 ? "#FAC775" : "#2C2C2A" }}>{savedTick === 2 ? "✓" : savedTick === 1 ? "…" : ""}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--surface)", flexShrink: 0 }}>
+              <button onClick={() => setActiveNote(null)} style={{ background: "none", border: "none", color: "var(--sub)", cursor: "pointer", fontSize: 12 }}>←</button>
+              <input value={noteTitle} onChange={e => { setNoteTitle(e.target.value); saveNote(e.target.value, noteContent); }} placeholder="Note title" style={{ flex: 1, padding: "4px 8px", borderRadius: 4, fontSize: 13, background: "var(--surface)", color: "var(--text)", border: "1px solid var(--line)", outline: "none" }} />
+              <button onClick={() => setPreview(!preview)} style={{ background: preview ? "var(--tint-purple-bg)" : "none", border: "1px solid var(--line)", color: preview ? "var(--purple)" : "var(--sub)", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>{preview ? "Edit" : "Preview"}</button>
+              {activeNote !== "new" && <button onClick={() => { const n = topicNotes.find(x => x.id === activeNote); if (n) delNote(n); }} title="Delete note" style={{ background: "none", border: "1px solid var(--line)", color: "var(--sub)", cursor: "pointer", fontSize: 11, padding: "3px 8px", borderRadius: 4 }} onMouseEnter={e => { e.currentTarget.style.color = "var(--pink)"; e.currentTarget.style.borderColor = "#A32D2D"; }} onMouseLeave={e => { e.currentTarget.style.color = "var(--sub)"; e.currentTarget.style.borderColor = "var(--line)"; }}>🗑</button>}
+              <span style={{ fontSize: 9, color: savedTick === 2 ? "var(--green)" : savedTick === 1 ? "var(--amber)" : "var(--line)" }}>{savedTick === 2 ? "✓" : savedTick === 1 ? "…" : ""}</span>
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
               {preview ? (
                 <div style={{ padding: "12px 16px" }}><MarkdownView content={noteContent} /></div>
               ) : (
-                <textarea value={noteContent} onChange={e => { setNoteContent(e.target.value); saveNote(noteTitle, e.target.value); }} placeholder={"Write notes... supports markdown + ```mermaid"} style={{ width: "100%", height: "100%", padding: "12px 16px", background: "#111110", color: "#F1EFE8", border: "none", outline: "none", resize: "none", fontFamily: "'SF Mono', monospace", fontSize: 13, lineHeight: 1.6, boxSizing: "border-box" }} />
+                <textarea value={noteContent} onChange={e => { setNoteContent(e.target.value); saveNote(noteTitle, e.target.value); }} placeholder={"Write notes... supports markdown + ```mermaid"} style={{ width: "100%", height: "100%", padding: "12px 16px", background: "var(--bg)", color: "var(--text)", border: "none", outline: "none", resize: "none", fontFamily: "'SF Mono', monospace", fontSize: 13, lineHeight: 1.6, boxSizing: "border-box" }} />
               )}
             </div>
           </>) : (<>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px solid #1A1A18", flexShrink: 0 }}>
-              <span style={{ fontSize: 11, color: "#5F5E5A" }}>NOTES ({topicNotes.length})</span>
-              <button onClick={newNote} style={{ background: "#26215C", border: "none", color: "#CECBF6", cursor: "pointer", fontSize: 11, padding: "3px 10px", borderRadius: 4 }}>+ New note</button>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px solid var(--surface)", flexShrink: 0 }}>
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>NOTES ({topicNotes.length})</span>
+              <button onClick={newNote} style={{ background: "var(--tint-purple-bd)", border: "none", color: "var(--purple)", cursor: "pointer", fontSize: 11, padding: "3px 10px", borderRadius: 4 }}>+ New note</button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
-              {topicNotes.length === 0 && <div style={{ textAlign: "center", color: "#5F5E5A", fontSize: 12, padding: 24 }}>No notes yet. Click "+ New note" to start.</div>}
+              {topicNotes.length === 0 && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 12, padding: 24 }}>No notes yet. Click "+ New note" to start.</div>}
               {topicNotes.map(n => (
-                <div key={n.id} onClick={() => openNote(n)} style={{ padding: "10px 12px", background: "#161615", border: "1px solid #2C2C2A", borderRadius: 6, marginBottom: 6, cursor: "pointer", position: "relative" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#444441"; const b = e.currentTarget.querySelector(".note-del"); if (b) b.style.opacity = "1"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#2C2C2A"; const b = e.currentTarget.querySelector(".note-del"); if (b) b.style.opacity = "0"; }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: "#F1EFE8", marginBottom: 2, paddingRight: 20 }}>{n.title || "Untitled"}</div>
-                  <div style={{ fontSize: 11, color: "#888780", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(n.content || "").slice(0, 80)}</div>
-                  <button className="note-del" onClick={e => { e.stopPropagation(); delNote(n); }} title="Delete note" style={{ position: "absolute", top: 8, right: 8, background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 13, opacity: 0, transition: "opacity 0.15s", padding: 2, lineHeight: 1 }} onMouseEnter={e => e.currentTarget.style.color = "#F09595"} onMouseLeave={e => e.currentTarget.style.color = "#5F5E5A"}>🗑</button>
+                <div key={n.id} onClick={() => openNote(n)} style={{ padding: "10px 12px", background: "var(--side)", border: "1px solid var(--line)", borderRadius: 6, marginBottom: 6, cursor: "pointer", position: "relative" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--dim)"; const b = e.currentTarget.querySelector(".note-del"); if (b) b.style.opacity = "1"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--line)"; const b = e.currentTarget.querySelector(".note-del"); if (b) b.style.opacity = "0"; }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--text)", marginBottom: 2, paddingRight: 20 }}>{n.title || "Untitled"}</div>
+                  <div style={{ fontSize: 11, color: "var(--sub)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(n.content || "").slice(0, 80)}</div>
+                  <button className="note-del" onClick={e => { e.stopPropagation(); delNote(n); }} title="Delete note" style={{ position: "absolute", top: 8, right: 8, background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 13, opacity: 0, transition: "opacity 0.15s", padding: 2, lineHeight: 1 }} onMouseEnter={e => e.currentTarget.style.color = "var(--pink)"} onMouseLeave={e => e.currentTarget.style.color = "var(--muted)"}>🗑</button>
                 </div>
               ))}
             </div>
@@ -2640,27 +2645,27 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
     const linkedTest = (testCases || []).find(t => t.id === n.linked_test_id);
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setViewing(null)}>
-        <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 640, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div onClick={e => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, padding: "20px 24px", width: 640, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexShrink: 0, flexWrap: "wrap" }}>
-            {n.is_study && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "#1A0F2E", color: "#AFA9EC", border: "1px solid #534AB7" }}>★ Study</span>}
-            {n.is_study && n.topic && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "#1A0F2E", color: "#CECBF6" }}>📁 {n.topic}</span>}
+            {n.is_study && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "var(--tint-purple-bg)", color: "var(--purple)", border: "1px solid var(--tint-purple-bd)" }}>★ Study</span>}
+            {n.is_study && n.topic && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "var(--tint-purple-bg)", color: "var(--purple)" }}>📁 {n.topic}</span>}
             <Badge label={n.category} colors={cc} />
-            {n.repo_name && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{n.repo_name}</span>}
-            {Array.isArray(n.tags) && n.tags.map(t => <span key={t} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#2D1F4E", color: "#AFA9EC" }}>#{t}</span>)}
+            {n.repo_name && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "var(--tint-blue-bg)", color: "var(--blue)", border: "1px solid var(--tint-blue-bd)", fontFamily: "'SF Mono', monospace" }}>{n.repo_name}</span>}
+            {Array.isArray(n.tags) && n.tags.map(t => <span key={t} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--tint-purple-bd)", color: "var(--purple)" }}>#{t}</span>)}
             {n.title && <span style={{ fontSize: 15, fontWeight: 500, flex: 1 }}>{n.title}</span>}
             {!n.title && <span style={{ flex: 1 }} />}
-            <button onClick={() => startEdit(n)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#B4B2A9", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>Edit</button>
-            <button onClick={() => setViewing(null)} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button>
+            <button onClick={() => startEdit(n)} style={{ background: "none", border: "1px solid var(--line)", color: "var(--soft)", cursor: "pointer", fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>Edit</button>
+            <button onClick={() => setViewing(null)} style={{ background: "none", border: "none", color: "var(--sub)", cursor: "pointer", fontSize: 16 }}>✕</button>
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
             {n.is_study ? <MarkdownView content={n.content} /> : <NoteContent content={n.content} />}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", marginTop: 12, paddingTop: 10, borderTop: "1px solid #2C2C2A", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--line)", flexShrink: 0 }}>
             <span>{SHORT_DATE(n.updated_at)}</span>
-            {linkedIssue && <><span>·</span><span style={{ color: "#F09595" }}>◉ {linkedIssue.title}</span></>}
-            {linkedTest && <><span>·</span><span style={{ color: "#5DCAA5" }}>▷ {linkedTest.title}</span></>}
+            {linkedIssue && <><span>·</span><span style={{ color: "var(--pink)" }}>◉ {linkedIssue.title}</span></>}
+            {linkedTest && <><span>·</span><span style={{ color: "var(--green)" }}>▷ {linkedTest.title}</span></>}
             {linkedFile && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace" }}>{linkedFile.name}</span></>}
-            {parseMtags(n.meeting_tag).map(t => <span key={t} style={{ padding: "0 4px", borderRadius: 2, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C", fontSize: 9 }}>{t}</span>)}
+            {parseMtags(n.meeting_tag).map(t => <span key={t} style={{ padding: "0 4px", borderRadius: 2, background: "var(--tint-purple-bg)", color: "var(--purple)", border: "1px solid var(--tint-purple-bd)", fontSize: 9 }}>{t}</span>)}
           </div>
         </div>
       </div>
@@ -2680,30 +2685,30 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
           {!form.is_study && <Select value={form.category} onChange={v => setForm({ ...form, category: v })} options={NOTE_CATS} />}
           {form.is_study && <Input value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="Note title" style={{ flex: 1 }} />}
           {!form.is_study && form.category !== "scratch" && <Input value={form.title} onChange={v => setForm({ ...form, title: v })} placeholder="Title" style={{ flex: 1 }} />}
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: form.is_study ? "#AFA9EC" : "#888780", cursor: "pointer", padding: "0 8px", border: "1px solid", borderColor: form.is_study ? "#534AB7" : "#2C2C2A", borderRadius: 4, background: form.is_study ? "#1A0F2E" : "transparent" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: form.is_study ? "var(--purple)" : "var(--sub)", cursor: "pointer", padding: "0 8px", border: "1px solid", borderColor: form.is_study ? "#534AB7" : "var(--line)", borderRadius: 4, background: form.is_study ? "var(--tint-purple-bg)" : "transparent" }}>
             <input type="checkbox" checked={form.is_study} onChange={e => setForm({ ...form, is_study: e.target.checked })} style={{ cursor: "pointer" }} />
             ★ Study note
           </label>
         </div>
-        {form.is_study && <div style={{ marginBottom: 10, padding: "8px 12px", background: "#1A0F2E", border: "1px solid #534AB7", borderRadius: 6 }}>
-          <div style={{ fontSize: 10, color: "#AFA9EC", marginBottom: 6 }}>TAGS · supports markdown + ```mermaid blocks</div>
+        {form.is_study && <div style={{ marginBottom: 10, padding: "8px 12px", background: "var(--tint-purple-bg)", border: "1px solid var(--tint-purple-bd)", borderRadius: 6 }}>
+          <div style={{ fontSize: 10, color: "var(--purple)", marginBottom: 6 }}>TAGS · supports markdown + ```mermaid blocks</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
             {form.tags.map(t => (
-              <span key={t} style={{ fontSize: 10, padding: "2px 6px", background: "#2D1F4E", color: "#AFA9EC", borderRadius: 3, display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span key={t} style={{ fontSize: 10, padding: "2px 6px", background: "var(--tint-purple-bd)", color: "var(--purple)", borderRadius: 3, display: "inline-flex", alignItems: "center", gap: 4 }}>
                 #{t} <button onClick={() => removeTag(t)} style={{ background: "none", border: "none", color: "#7F77DD", cursor: "pointer", padding: 0, fontSize: 10 }}>✕</button>
               </span>
             ))}
-            <input value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }} placeholder="+ add tag" style={{ padding: "2px 6px", borderRadius: 3, fontSize: 10, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: 100 }} />
+            <input value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }} placeholder="+ add tag" style={{ padding: "2px 6px", borderRadius: 3, fontSize: 10, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", width: 100 }} />
           </div>
         </div>}
         <div style={{ display: "flex", gap: 12, marginBottom: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 10, color: "#5F5E5A", marginBottom: 4 }}>Editor — use ```sql or ```python for code blocks</div>
-            <textarea value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} placeholder={"Write notes and paste code...\n\nUse ```sql or ```python fences:\n\n```sql\nSELECT * FROM users\n```"} rows={16} style={{ padding: "10px 12px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", resize: "vertical", fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, boxSizing: "border-box", tabSize: 2 }} onKeyDown={e => { if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; const end = e.target.selectionEnd; const v = form.content; setForm({ ...form, content: v.substring(0, s) + "  " + v.substring(end) }); setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0); } }} />
+            <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>Editor — use ```sql or ```python for code blocks</div>
+            <textarea value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} placeholder={"Write notes and paste code...\n\nUse ```sql or ```python fences:\n\n```sql\nSELECT * FROM users\n```"} rows={16} style={{ padding: "10px 12px", borderRadius: 6, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", width: "100%", resize: "vertical", fontFamily: "'SF Mono', 'Fira Code', monospace", lineHeight: 1.6, boxSizing: "border-box", tabSize: 2 }} onKeyDown={e => { if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; const end = e.target.selectionEnd; const v = form.content; setForm({ ...form, content: v.substring(0, s) + "  " + v.substring(end) }); setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0); } }} />
           </div>
           {(hasCode || form.content.length > 20) && (
-            <div style={{ flex: 1, minWidth: 0, background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 14px", maxHeight: 420, overflowY: "auto" }}>
-              <div style={{ fontSize: 10, color: "#5F5E5A", marginBottom: 6 }}>Preview</div>
+            <div style={{ flex: 1, minWidth: 0, background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 14px", maxHeight: 420, overflowY: "auto" }}>
+              <div style={{ fontSize: 10, color: "var(--muted)", marginBottom: 6 }}>Preview</div>
               <NoteContent content={form.content} />
             </div>
           )}
@@ -2711,28 +2716,28 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
         {form.is_study ? (
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <div style={{ flex: 1, maxWidth: 280 }}>
-              <div style={{ fontSize: 11, color: "#AFA9EC", marginBottom: 4 }}>📚 Topic</div>
-              <input list="study-topic-list" value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} placeholder="e.g. Kafka, SQL, System Design" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #534AB7", outline: "none", width: "100%", boxSizing: "border-box" }} />
+              <div style={{ fontSize: 11, color: "var(--purple)", marginBottom: 4 }}>📚 Topic</div>
+              <input list="study-topic-list" value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })} placeholder="e.g. Kafka, SQL, System Design" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--tint-purple-bd)", outline: "none", width: "100%", boxSizing: "border-box" }} />
               <datalist id="study-topic-list">{allTopics.map(f => <option key={f} value={f} />)}</datalist>
             </div>
           </div>
         ) : (<>
         <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to task</div><Select value={form.linked_issue_id} onChange={v => setForm({ ...form, linked_issue_id: v })} options={[{ value: "", label: "None" }, ...issues.map(i => ({ value: i.id, label: i.title }))]} style={{ width: "100%" }} /></div>
-          <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to test</div><Select value={form.linked_test_id} onChange={v => setForm({ ...form, linked_test_id: v })} options={[{ value: "", label: "None" }, ...(testCases || []).map(t => ({ value: t.id, label: t.title }))]} style={{ width: "100%" }} /></div>
-          <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Link to file</div><Select value={form.linked_file_id} onChange={v => setForm({ ...form, linked_file_id: v })} options={[{ value: "", label: "None" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /></div>
+          <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Link to task</div><Select value={form.linked_issue_id} onChange={v => setForm({ ...form, linked_issue_id: v })} options={[{ value: "", label: "None" }, ...issues.map(i => ({ value: i.id, label: i.title }))]} style={{ width: "100%" }} /></div>
+          <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Link to test</div><Select value={form.linked_test_id} onChange={v => setForm({ ...form, linked_test_id: v })} options={[{ value: "", label: "None" }, ...(testCases || []).map(t => ({ value: t.id, label: t.title }))]} style={{ width: "100%" }} /></div>
+          <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Link to file</div><Select value={form.linked_file_id} onChange={v => setForm({ ...form, linked_file_id: v })} options={[{ value: "", label: "None" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /></div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Repo</div>
-            <input list="note-repo-list" value={form.repo_name} onChange={e => setForm({ ...form, repo_name: e.target.value })} placeholder="Select or type repo" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "'SF Mono', monospace" }} />
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Repo</div>
+            <input list="note-repo-list" value={form.repo_name} onChange={e => setForm({ ...form, repo_name: e.target.value })} placeholder="Select or type repo" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "var(--surface)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "'SF Mono', monospace" }} />
             <datalist id="note-repo-list">{allNoteRepos.map(r => <option key={r} value={r} />)}</datalist>
           </div>
           {(meetingTags || []).length > 0 && <div style={{ flex: 2 }}>
-            <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Meeting tags</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Meeting tags</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {(meetingTags || []).map(t => { const on = form.meeting_tag.includes(t); return (
-                <button key={t} onClick={() => setForm({ ...form, meeting_tag: on ? form.meeting_tag.filter(x => x !== t) : [...form.meeting_tag, t] })} style={{ padding: "4px 10px", borderRadius: 4, fontSize: 10, cursor: "pointer", border: on ? "1px solid #7F77DD" : "1px solid #2C2C2A", background: on ? "#1A0A29" : "#1A1A18", color: on ? "#AFA9EC" : "#5F5E5A" }}>{on ? "✓ " : ""}{t}</button>
+                <button key={t} onClick={() => setForm({ ...form, meeting_tag: on ? form.meeting_tag.filter(x => x !== t) : [...form.meeting_tag, t] })} style={{ padding: "4px 10px", borderRadius: 4, fontSize: 10, cursor: "pointer", border: on ? "1px solid #7F77DD" : "1px solid var(--line)", background: on ? "var(--tint-purple-bg)" : "var(--surface)", color: on ? "var(--purple)" : "var(--muted)" }}>{on ? "✓ " : ""}{t}</button>
               ); })}
             </div>
           </div>}
@@ -2751,21 +2756,21 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
       <Pill active={filterMode === "all"} onClick={() => setFilterMode("all")}>All</Pill>
       <Pill active={filterMode === "regular"} onClick={() => setFilterMode("regular")}>☰ Regular</Pill>
       <Pill active={filterMode === "study"} onClick={() => setFilterMode("study")}>★ Study</Pill>
-      <span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} />
+      <span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} />
       <Pill active={filterCat === "all"} onClick={() => setFilterCat("all")}>All cats</Pill>
       {NOTE_CATS.map(c => <Pill key={c} active={filterCat === c} onClick={() => setFilterCat(c)}>{c}</Pill>)}
-      {filterMode === "study" && allTopics.length > 0 && <select value={filterTopic} onChange={e => setFilterTopic(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: filterTopic !== "all" ? "#1A0F2E" : "#1A1A18", color: filterTopic !== "all" ? "#AFA9EC" : "#888780", border: filterTopic !== "all" ? "1px solid #534AB7" : "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}>
+      {filterMode === "study" && allTopics.length > 0 && <select value={filterTopic} onChange={e => setFilterTopic(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: filterTopic !== "all" ? "var(--tint-purple-bg)" : "var(--surface)", color: filterTopic !== "all" ? "var(--purple)" : "var(--sub)", border: filterTopic !== "all" ? "1px solid var(--tint-purple-bd)" : "1px solid var(--line)", outline: "none", cursor: "pointer" }}>
         <option value="all">All topics</option>
         {allTopics.map(f => <option key={f} value={f}>📁 {f}</option>)}
       </select>}
       {allTags.length > 0 && <>
-        <span style={{ width: 1, height: 16, background: "#2C2C2A", margin: "0 4px" }} />
-        <select value={filterTag} onChange={e => setFilterTag(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: filterTag !== "all" ? "#2D1F4E" : "#1A1A18", color: filterTag !== "all" ? "#AFA9EC" : "#888780", border: filterTag !== "all" ? "1px solid #534AB7" : "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}>
+        <span style={{ width: 1, height: 16, background: "var(--line)", margin: "0 4px" }} />
+        <select value={filterTag} onChange={e => setFilterTag(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: filterTag !== "all" ? "var(--tint-purple-bd)" : "var(--surface)", color: filterTag !== "all" ? "var(--purple)" : "var(--sub)", border: filterTag !== "all" ? "1px solid var(--tint-purple-bd)" : "1px solid var(--line)", outline: "none", cursor: "pointer" }}>
           <option value="all">All tags</option>
           {allTags.map(t => <option key={t} value={t}>#{t}</option>)}
         </select>
       </>}
-      {allNoteRepos.length > 0 && <select value={filterRepo} onChange={e => setFilterRepo(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: filterRepo !== "all" ? "#0A1929" : "#1A1A18", color: filterRepo !== "all" ? "#85B7EB" : "#888780", border: filterRepo !== "all" ? "1px solid #042C53" : "1px solid #2C2C2A", outline: "none", cursor: "pointer", fontFamily: "'SF Mono', monospace" }}>
+      {allNoteRepos.length > 0 && <select value={filterRepo} onChange={e => setFilterRepo(e.target.value)} style={{ padding: "4px 8px", borderRadius: 4, fontSize: 11, background: filterRepo !== "all" ? "var(--tint-blue-bg)" : "var(--surface)", color: filterRepo !== "all" ? "var(--blue)" : "var(--sub)", border: filterRepo !== "all" ? "1px solid var(--tint-blue-bd)" : "1px solid var(--line)", outline: "none", cursor: "pointer", fontFamily: "'SF Mono', monospace" }}>
         <option value="all">All repos</option>
         {allNoteRepos.map(r => <option key={r} value={r}>{r}</option>)}
       </select>}
@@ -2776,23 +2781,23 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
     </div>
     {filterMode === "study" && allTopics.length > 0 && (
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 11, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>📚 Topics</div>
+        <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>📚 Topics</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
           {allTopics.map(t => {
             const st = topicStats[t];
             const active = filterTopic === t;
             return (
-              <div key={t} onClick={() => setFilterTopic(active ? "all" : t)} style={{ background: active ? "#1A0F2E" : "#161615", border: active ? "1px solid #534AB7" : "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", cursor: "pointer", transition: "all 0.15s" }}>
+              <div key={t} onClick={() => setFilterTopic(active ? "all" : t)} style={{ background: active ? "var(--tint-purple-bg)" : "var(--side)", border: active ? "1px solid var(--tint-purple-bd)" : "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", cursor: "pointer", transition: "all 0.15s" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <span onClick={e => { e.stopPropagation(); setOpenTopic(t); }} style={{ fontSize: 13, fontWeight: 500, color: "#CECBF6", cursor: "pointer", textDecoration: "underline", textDecorationColor: "#534AB7" }}>{t}</span>
+                  <span onClick={e => { e.stopPropagation(); setOpenTopic(t); }} style={{ fontSize: 13, fontWeight: 500, color: "var(--purple)", cursor: "pointer", textDecoration: "underline", textDecorationColor: "#534AB7" }}>{t}</span>
                   <div style={{ display: "flex", gap: 4 }}>
-                    <button onClick={e => { e.stopPropagation(); setOpenTopic(t); }} title="Open study view" style={{ background: "#1A0F2E", border: "1px solid #534AB7", color: "#AFA9EC", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>Open</button>
-                    <button onClick={e => { e.stopPropagation(); onStudyStart && onStudyStart(t); }} title="Start study session" style={{ background: "#26215C", border: "none", color: "#CECBF6", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>▶</button>
+                    <button onClick={e => { e.stopPropagation(); setOpenTopic(t); }} title="Open study view" style={{ background: "var(--tint-purple-bg)", border: "1px solid var(--tint-purple-bd)", color: "var(--purple)", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>Open</button>
+                    <button onClick={e => { e.stopPropagation(); onStudyStart && onStudyStart(t); }} title="Start study session" style={{ background: "var(--tint-purple-bd)", border: "none", color: "var(--purple)", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>▶</button>
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 10, fontSize: 10, color: "#888780" }}>
+                <div style={{ display: "flex", gap: 10, fontSize: 10, color: "var(--sub)" }}>
                   <span>{st.notes} note{st.notes !== 1 ? "s" : ""}</span>
-                  <span style={{ color: "#5DCAA5" }}>{st.seconds >= 60 ? FMTHR(Math.round(st.seconds / 60)) : "—"}</span>
+                  <span style={{ color: "var(--green)" }}>{st.seconds >= 60 ? FMTHR(Math.round(st.seconds / 60)) : "—"}</span>
                   {st.lastStudied && <span>· {SHORT_DATE(st.lastStudied)}</span>}
                 </div>
               </div>
@@ -2810,32 +2815,32 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
       const linkedFile = files.find(f => f.id === n.linked_file_id);
       const linkedTest = (testCases || []).find(t => t.id === n.linked_test_id);
       return (
-        <div key={n.id} onClick={() => setViewing(n.id)} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8, cursor: "pointer", borderLeft: n.pinned ? "3px solid #FAC775" : "3px solid transparent", borderTopLeftRadius: n.pinned ? 0 : 8, borderBottomLeftRadius: n.pinned ? 0 : 8 }} onMouseEnter={e => e.currentTarget.style.borderColor = "#444441"} onMouseLeave={e => e.currentTarget.style.borderColor = "#2C2C2A"}>
+        <div key={n.id} onClick={() => setViewing(n.id)} style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "12px 14px", marginBottom: 8, cursor: "pointer", borderLeft: n.pinned ? "3px solid var(--amber)" : "3px solid transparent", borderTopLeftRadius: n.pinned ? 0 : 8, borderBottomLeftRadius: n.pinned ? 0 : 8 }} onMouseEnter={e => e.currentTarget.style.borderColor = "var(--dim)"} onMouseLeave={e => e.currentTarget.style.borderColor = "var(--line)"}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
-                {n.is_study && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#1A0F2E", color: "#AFA9EC", border: "1px solid #534AB7" }}>★ Study</span>}
-                {n.is_study && n.topic && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#1A0F2E", color: "#CECBF6" }}>📁 {n.topic}</span>}
+                {n.is_study && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--tint-purple-bg)", color: "var(--purple)", border: "1px solid var(--tint-purple-bd)" }}>★ Study</span>}
+                {n.is_study && n.topic && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--tint-purple-bg)", color: "var(--purple)" }}>📁 {n.topic}</span>}
                 <Badge label={n.category} colors={cc} small />
-                {n.repo_name && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{n.repo_name}</span>}
-                {hasCode && <Badge label={blocks.find(b => b.type === "code")?.lang?.toUpperCase() || "CODE"} colors={{ bg: "#111110", text: "#888780", border: "#2C2C2A" }} small />}
-                {Array.isArray(n.tags) && n.tags.slice(0, 3).map(t => <span key={t} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#2D1F4E", color: "#AFA9EC" }}>#{t}</span>)}
+                {n.repo_name && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--tint-blue-bg)", color: "var(--blue)", border: "1px solid var(--tint-blue-bd)", fontFamily: "'SF Mono', monospace" }}>{n.repo_name}</span>}
+                {hasCode && <Badge label={blocks.find(b => b.type === "code")?.lang?.toUpperCase() || "CODE"} colors={{ bg: "var(--bg)", text: "var(--sub)", border: "var(--line)" }} small />}
+                {Array.isArray(n.tags) && n.tags.slice(0, 3).map(t => <span key={t} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--tint-purple-bd)", color: "var(--purple)" }}>#{t}</span>)}
                 {n.title && <span style={{ fontSize: 13, fontWeight: 500 }}>{n.title}</span>}
-                {n.pinned && <span style={{ fontSize: 10, color: "#FAC775" }}>pinned</span>}
+                {n.pinned && <span style={{ fontSize: 10, color: "var(--amber)" }}>pinned</span>}
               </div>
-              {n.is_study ? <div style={{ fontSize: 12, color: "#888780", lineHeight: 1.5, maxHeight: 80, overflow: "hidden", position: "relative" }}>{n.content.split("\n").slice(0, 4).join(" ").substring(0, 200)}{n.content.length > 200 ? "..." : ""}</div> : <NoteContent content={n.content} maxHeight={100} />}
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", marginTop: 6 }}>
+              {n.is_study ? <div style={{ fontSize: 12, color: "var(--sub)", lineHeight: 1.5, maxHeight: 80, overflow: "hidden", position: "relative" }}>{n.content.split("\n").slice(0, 4).join(" ").substring(0, 200)}{n.content.length > 200 ? "..." : ""}</div> : <NoteContent content={n.content} maxHeight={100} />}
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", marginTop: 6 }}>
                 <span>{SHORT_DATE(n.updated_at)}</span>
-                {linkedIssue && <><span>·</span><span style={{ color: "#F09595" }}>◉ {linkedIssue.title}</span></>}
-                {linkedTest && <><span>·</span><span style={{ color: "#5DCAA5" }}>▷ {linkedTest.title}</span></>}
+                {linkedIssue && <><span>·</span><span style={{ color: "var(--pink)" }}>◉ {linkedIssue.title}</span></>}
+                {linkedTest && <><span>·</span><span style={{ color: "var(--green)" }}>▷ {linkedTest.title}</span></>}
                 {linkedFile && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace" }}>{linkedFile.name}</span></>}
-                {parseMtags(n.meeting_tag).map(t => <span key={t} style={{ padding: "0 4px", borderRadius: 2, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C", fontSize: 9 }}>{t}</span>)}
+                {parseMtags(n.meeting_tag).map(t => <span key={t} style={{ padding: "0 4px", borderRadius: 2, background: "var(--tint-purple-bg)", color: "var(--purple)", border: "1px solid var(--tint-purple-bd)", fontSize: 9 }}>{t}</span>)}
               </div>
             </div>
             <div style={{ display: "flex", gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-              <button onClick={() => pin(n.id, n.pinned)} title={n.pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", color: n.pinned ? "#FAC775" : "#444441", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>⊙</button>
-              <button onClick={() => startEdit(n)} title="Edit" style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
-              <button onClick={() => del(n.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
+              <button onClick={() => pin(n.id, n.pinned)} title={n.pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", color: n.pinned ? "var(--amber)" : "var(--dim)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>⊙</button>
+              <button onClick={() => startEdit(n)} title="Edit" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
+              <button onClick={() => del(n.id)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
             </div>
           </div>
         </div>
@@ -2922,10 +2927,10 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
     <div>
       {/* Month nav */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-        <button onClick={prevMonth} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", padding: "6px 10px", borderRadius: 6, fontSize: 13 }}>◂</button>
-        <button onClick={nextMonth} style={{ background: "none", border: "1px solid #2C2C2A", color: "#888780", cursor: "pointer", padding: "6px 10px", borderRadius: 6, fontSize: 13 }}>▸</button>
+        <button onClick={prevMonth} style={{ background: "none", border: "1px solid var(--line)", color: "var(--sub)", cursor: "pointer", padding: "6px 10px", borderRadius: 6, fontSize: 13 }}>◂</button>
+        <button onClick={nextMonth} style={{ background: "none", border: "1px solid var(--line)", color: "var(--sub)", cursor: "pointer", padding: "6px 10px", borderRadius: 6, fontSize: 13 }}>▸</button>
         <span style={{ fontSize: 16, fontWeight: 500, marginLeft: 4 }}>{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</span>
-        <button onClick={goToday} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5DCAA5", cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 11 }}>Today</button>
+        <button onClick={goToday} style={{ background: "none", border: "1px solid var(--line)", color: "var(--green)", cursor: "pointer", padding: "4px 10px", borderRadius: 4, fontSize: 11 }}>Today</button>
         <span style={{ flex: 1 }} />
         <Btn primary onClick={() => { setShowAdd(true); setMForm({ title: "", meeting_date: selKey || dateKey(new Date()), start_time: "09:00", end_time: "10:00", recurrence: "none" }); }} small>+ Meeting</Btn>
       </div>
@@ -2934,7 +2939,7 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
         {/* Calendar grid */}
         <div style={{ flex: "0 0 340px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
-            {dayLabels.map((d, i) => (<div key={i} style={{ textAlign: "center", fontSize: 10, color: "#5F5E5A", padding: "6px 0", fontWeight: 500 }}>{d}</div>))}
+            {dayLabels.map((d, i) => (<div key={i} style={{ textAlign: "center", fontSize: 10, color: "var(--muted)", padding: "6px 0", fontWeight: 500 }}>{d}</div>))}
             {Array.from({ length: firstDay }).map((_, i) => <div key={`e${i}`} style={{ minHeight: 44 }} />)}
             {Array.from({ length: daysInMonth }).map((_, i) => {
               const day = new Date(y, m, i + 1);
@@ -2947,24 +2952,24 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
               const isWeekend = day.getDay() === 0 || day.getDay() === 6;
               const activeMeetings = dayMeetings.filter(m => !m.cancelled);
               return (
-                <div key={i} onClick={() => setSelectedDay(day)} style={{ minHeight: 44, padding: "3px 4px", borderRadius: 4, cursor: "pointer", background: isSel ? "#1A1A18" : "transparent", border: isToday ? "1px solid #5DCAA544" : isSel ? "1px solid #2C2C2A" : "1px solid transparent" }} onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = "#161615"; }} onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = "transparent"; }}>
+                <div key={i} onClick={() => setSelectedDay(day)} style={{ minHeight: 44, padding: "3px 4px", borderRadius: 4, cursor: "pointer", background: isSel ? "var(--surface)" : "transparent", border: isToday ? "1px solid #5DCAA544" : isSel ? "1px solid var(--line)" : "1px solid transparent" }} onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = "var(--side)"; }} onMouseLeave={e => { if (!isSel) e.currentTarget.style.background = "transparent"; }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: 11, fontWeight: isToday ? 500 : 400, color: isToday ? "#5DCAA5" : isWeekend ? "#444441" : "#B4B2A9" }}>{i + 1}</span>
+                    <span style={{ fontSize: 11, fontWeight: isToday ? 500 : 400, color: isToday ? "var(--green)" : isWeekend ? "var(--dim)" : "var(--soft)" }}>{i + 1}</span>
                     <div style={{ display: "flex", gap: 2 }}>
-                      {hasIssueDue && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#F09595" }} />}
-                      {hasTestDue && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#85B7EB" }} />}
+                      {hasIssueDue && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--pink)" }} />}
+                      {hasTestDue && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--blue)" }} />}
                     </div>
                   </div>
-                  {activeMeetings.length > 0 && <div style={{ fontSize: 8, padding: "1px 3px", borderRadius: 2, marginTop: 2, background: "#1A0A29", color: "#AFA9EC", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeMeetings.length > 1 ? `${activeMeetings.length} meetings` : activeMeetings[0].title.length > 10 ? activeMeetings[0].title.substring(0, 10) + "…" : activeMeetings[0].title}</div>}
+                  {activeMeetings.length > 0 && <div style={{ fontSize: 8, padding: "1px 3px", borderRadius: 2, marginTop: 2, background: "var(--tint-purple-bg)", color: "var(--purple)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeMeetings.length > 1 ? `${activeMeetings.length} meetings` : activeMeetings[0].title.length > 10 ? activeMeetings[0].title.substring(0, 10) + "…" : activeMeetings[0].title}</div>}
                 </div>
               );
             })}
           </div>
           {/* Legend */}
-          <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 10, color: "#444441" }}>
-            <span><span style={{ display: "inline-block", width: 8, height: 4, borderRadius: 1, background: "#1A0A29", marginRight: 3, verticalAlign: "middle" }} />Meeting</span>
-            <span><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: "#F09595", marginRight: 3, verticalAlign: "middle" }} />Task due</span>
-            <span><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: "#85B7EB", marginRight: 3, verticalAlign: "middle" }} />Test due</span>
+          <div style={{ display: "flex", gap: 14, marginTop: 10, fontSize: 10, color: "var(--dim)" }}>
+            <span><span style={{ display: "inline-block", width: 8, height: 4, borderRadius: 1, background: "var(--tint-purple-bg)", marginRight: 3, verticalAlign: "middle" }} />Meeting</span>
+            <span><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: "var(--pink)", marginRight: 3, verticalAlign: "middle" }} />Task due</span>
+            <span><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: "var(--blue)", marginRight: 3, verticalAlign: "middle" }} />Test due</span>
           </div>
         </div>
 
@@ -2974,7 +2979,7 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
             <div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 16 }}>
                 <span style={{ fontSize: 15, fontWeight: 500 }}>{selectedDay.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</span>
-                {selTotal === 0 && <span style={{ fontSize: 11, color: "#444441" }}>Nothing scheduled</span>}
+                {selTotal === 0 && <span style={{ fontSize: 11, color: "var(--dim)" }}>Nothing scheduled</span>}
               </div>
 
               {/* Meetings section */}
@@ -2982,27 +2987,27 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
                 <div style={{ fontSize: 10, color: "#7F77DD", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Meetings ({selMeetings.length})</div>
                 {selMeetings.map(mt => {
                   const isCancelled = mt.cancelled;
-                  const borderColor = isCancelled ? "#2C2C2A" : mt.attended ? "#5DCAA5" : "#7F77DD";
+                  const borderColor = isCancelled ? "var(--line)" : mt.attended ? "var(--green)" : "#7F77DD";
                   const qs = (() => { try { return Array.isArray(mt.questions) ? mt.questions : JSON.parse(mt.questions || "[]"); } catch { return []; } })();
                   return (
-                  <div key={mt.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, marginBottom: 6, borderLeft: `3px solid ${borderColor}`, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, opacity: isCancelled ? 0.45 : 1 }}>
+                  <div key={mt.id} style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, marginBottom: 6, borderLeft: `3px solid ${borderColor}`, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, opacity: isCancelled ? 0.45 : 1 }}>
                     {/* Row 1: checkbox + title + time */}
                     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 4px" }}>
                       {!isCancelled && <input type="checkbox" checked={mt.attended} onChange={() => toggleAttended(mt)} style={{ cursor: "pointer", flexShrink: 0 }} />}
-                      {isCancelled && <span style={{ fontSize: 9, color: "#F09595", fontWeight: 500, flexShrink: 0 }}>CANCELLED</span>}
-                      <span style={{ flex: 1, fontSize: 13, fontWeight: 500, textDecoration: (mt.attended || isCancelled) ? "line-through" : "none", color: (mt.attended || isCancelled) ? "#5F5E5A" : "#F1EFE8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{mt.title}</span>
-                      {qs.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C", flexShrink: 0 }}>{qs.filter(q => q.status === "answered").length}/{qs.length} Q</span>}
-                      <span style={{ fontSize: 10, fontFamily: "'SF Mono', monospace", color: "#5F5E5A", flexShrink: 0, whiteSpace: "nowrap" }}>{mt.start_time}–{mt.end_time}</span>
+                      {isCancelled && <span style={{ fontSize: 9, color: "var(--pink)", fontWeight: 500, flexShrink: 0 }}>CANCELLED</span>}
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 500, textDecoration: (mt.attended || isCancelled) ? "line-through" : "none", color: (mt.attended || isCancelled) ? "var(--muted)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{mt.title}</span>
+                      {qs.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--tint-purple-bg)", color: "var(--purple)", border: "1px solid var(--tint-purple-bd)", flexShrink: 0 }}>{qs.filter(q => q.status === "answered").length}/{qs.length} Q</span>}
+                      <span style={{ fontSize: 10, fontFamily: "'SF Mono', monospace", color: "var(--muted)", flexShrink: 0, whiteSpace: "nowrap" }}>{mt.start_time}–{mt.end_time}</span>
                     </div>
                     {/* Row 2: actions */}
                     <div style={{ display: "flex", gap: 4, padding: "4px 12px 10px", paddingLeft: isCancelled ? 12 : 32, flexWrap: "wrap" }}>
-                      {!isCancelled && !mt.attended && <button onClick={() => onFocusMeeting(mt)} style={{ background: "#7F77DD", border: "none", color: "#F1EFE8", cursor: "pointer", fontSize: 10, padding: "3px 10px", borderRadius: 4, fontWeight: 500 }}>Join</button>}
-                      {!isCancelled && !mt.attended && <button onClick={() => setPreppingId(preppingId === mt.id ? null : mt.id)} style={{ background: "none", border: "1px solid #26215C", color: "#AFA9EC", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Prep</button>}
-                      {!isCancelled && !mt.attended && <button onClick={() => cancelMeeting(mt.id)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Cancel</button>}
-                      {!isCancelled && !mt.attended && <button onClick={() => cancelFuture(mt)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>All future</button>}
-                      {isCancelled && <button onClick={() => uncancelMeeting(mt.id)} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5DCAA5", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Restore</button>}
+                      {!isCancelled && !mt.attended && <button onClick={() => onFocusMeeting(mt)} style={{ background: "#7F77DD", border: "none", color: "var(--text)", cursor: "pointer", fontSize: 10, padding: "3px 10px", borderRadius: 4, fontWeight: 500 }}>Join</button>}
+                      {!isCancelled && !mt.attended && <button onClick={() => setPreppingId(preppingId === mt.id ? null : mt.id)} style={{ background: "none", border: "1px solid var(--tint-purple-bd)", color: "var(--purple)", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Prep</button>}
+                      {!isCancelled && !mt.attended && <button onClick={() => cancelMeeting(mt.id)} style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Cancel</button>}
+                      {!isCancelled && !mt.attended && <button onClick={() => cancelFuture(mt)} style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>All future</button>}
+                      {isCancelled && <button onClick={() => uncancelMeeting(mt.id)} style={{ background: "none", border: "1px solid var(--line)", color: "var(--green)", cursor: "pointer", fontSize: 10, padding: "2px 8px", borderRadius: 4 }}>Restore</button>}
                       <span style={{ flex: 1 }} />
-                      <button onClick={() => delMeeting(mt.id)} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 12 }}>✕</button>
+                      <button onClick={() => delMeeting(mt.id)} style={{ background: "none", border: "none", color: "var(--line)", cursor: "pointer", fontSize: 12 }}>✕</button>
                     </div>
                     {/* Prep section */}
                     {preppingId === mt.id && !isCancelled && !mt.attended && (() => {
@@ -3018,36 +3023,36 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
                       const tn = (allNotes || []).filter(n => parseMtags(n.meeting_tag).includes(mt.title));
                       const hasAuto = done.length + prog.length + opn.length + tpass.length + tother.length + tn.length > 0;
                       return (
-                        <div style={{ padding: "0 12px 12px", borderTop: "1px solid #1A1A18", marginTop: 2, paddingTop: 10 }}>
+                        <div style={{ padding: "0 12px 12px", borderTop: "1px solid var(--surface)", marginTop: 2, paddingTop: 10 }}>
                           <div style={{ fontSize: 10, color: "#7F77DD", fontWeight: 500, marginBottom: 8 }}>Agenda preview</div>
-                          {(done.length > 0 || tpass.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#5DCAA5", marginBottom: 3, fontWeight: 500 }}>SHIPPED</div>{done.map(i => <div key={i.id} style={{ fontSize: 11, color: "#5DCAA5", padding: "2px 0" }}>✓ {i.title}</div>)}{tpass.map(t => <div key={t.id} style={{ fontSize: 11, color: "#5DCAA5", padding: "2px 0" }}>✓ {t.title}</div>)}</div>}
-                          {prog.length > 0 && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#85B7EB", marginBottom: 3, fontWeight: 500 }}>IN PROGRESS</div>{prog.map(i => <div key={i.id} style={{ fontSize: 11, color: "#85B7EB", padding: "2px 0" }}>→ {i.title}</div>)}</div>}
-                          {(opn.length > 0 || tother.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#888780", marginBottom: 3, fontWeight: 500 }}>OPEN</div>{opn.map(i => <div key={i.id} style={{ fontSize: 11, color: "#888780", padding: "2px 0" }}>○ {i.title}</div>)}{tother.map(t => <div key={t.id} style={{ fontSize: 11, color: "#888780", padding: "2px 0" }}>○ {t.title}</div>)}</div>}
-                          {tn.length > 0 && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "#AFA9EC", marginBottom: 3, fontWeight: 500 }}>NOTES</div>{tn.map(n => <div key={n.id} style={{ fontSize: 11, color: "#AFA9EC", padding: "2px 0" }}>☰ {n.title || n.content.substring(0, 40)}</div>)}</div>}
-                          {!hasAuto && <div style={{ fontSize: 10, color: "#2C2C2A", marginBottom: 6 }}>No items tagged. Use "Meeting tags" in editors.</div>}
-                          <div style={{ borderTop: hasAuto ? "1px solid #1A1A18" : "none", paddingTop: hasAuto ? 8 : 0 }}>
+                          {(done.length > 0 || tpass.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "var(--green)", marginBottom: 3, fontWeight: 500 }}>SHIPPED</div>{done.map(i => <div key={i.id} style={{ fontSize: 11, color: "var(--green)", padding: "2px 0" }}>✓ {i.title}</div>)}{tpass.map(t => <div key={t.id} style={{ fontSize: 11, color: "var(--green)", padding: "2px 0" }}>✓ {t.title}</div>)}</div>}
+                          {prog.length > 0 && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "var(--blue)", marginBottom: 3, fontWeight: 500 }}>IN PROGRESS</div>{prog.map(i => <div key={i.id} style={{ fontSize: 11, color: "var(--blue)", padding: "2px 0" }}>→ {i.title}</div>)}</div>}
+                          {(opn.length > 0 || tother.length > 0) && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "var(--sub)", marginBottom: 3, fontWeight: 500 }}>OPEN</div>{opn.map(i => <div key={i.id} style={{ fontSize: 11, color: "var(--sub)", padding: "2px 0" }}>○ {i.title}</div>)}{tother.map(t => <div key={t.id} style={{ fontSize: 11, color: "var(--sub)", padding: "2px 0" }}>○ {t.title}</div>)}</div>}
+                          {tn.length > 0 && <div style={{ marginBottom: 6 }}><div style={{ fontSize: 9, color: "var(--purple)", marginBottom: 3, fontWeight: 500 }}>NOTES</div>{tn.map(n => <div key={n.id} style={{ fontSize: 11, color: "var(--purple)", padding: "2px 0" }}>☰ {n.title || n.content.substring(0, 40)}</div>)}</div>}
+                          {!hasAuto && <div style={{ fontSize: 10, color: "var(--line)", marginBottom: 6 }}>No items tagged. Use "Meeting tags" in editors.</div>}
+                          <div style={{ borderTop: hasAuto ? "1px solid var(--surface)" : "none", paddingTop: hasAuto ? 8 : 0 }}>
                             <div style={{ fontSize: 9, color: "#D85A30", marginBottom: 3, fontWeight: 500 }}>TALKING POINTS</div>
                             {qs.map((q, idx) => (
                               <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", fontSize: 11 }}>
                                 <span style={{ color: "#D85A30" }}>•</span>
-                                <span style={{ flex: 1, color: "#D3D1C7" }}>{q.q}</span>
-                                <button onClick={async () => { const nq = qs.filter((_, j) => j !== idx); try { await db.updateMeeting(mt.id, { questions: JSON.stringify(nq) }); await reload(); } catch {} }} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9 }}>✕</button>
+                                <span style={{ flex: 1, color: "var(--title)" }}>{q.q}</span>
+                                <button onClick={async () => { const nq = qs.filter((_, j) => j !== idx); try { await db.updateMeeting(mt.id, { questions: JSON.stringify(nq) }); await reload(); } catch {} }} style={{ background: "none", border: "none", color: "var(--line)", cursor: "pointer", fontSize: 9 }}>✕</button>
                               </div>
                             ))}
-                            <input value={prepQ} onChange={e => setPrepQ(e.target.value)} onKeyDown={async e => { if (e.key === "Enter" && prepQ.trim()) { const nq = [...qs, { q: prepQ.trim(), a: "", status: "pending" }]; try { await db.updateMeeting(mt.id, { questions: JSON.stringify(nq) }); setPrepQ(""); await reload(); } catch {} } }} placeholder="Add a talking point..." style={{ marginTop: 4, width: "100%", padding: "5px 8px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#F1EFE8", border: "1px solid #1A1A18", outline: "none", boxSizing: "border-box" }} />
+                            <input value={prepQ} onChange={e => setPrepQ(e.target.value)} onKeyDown={async e => { if (e.key === "Enter" && prepQ.trim()) { const nq = [...qs, { q: prepQ.trim(), a: "", status: "pending" }]; try { await db.updateMeeting(mt.id, { questions: JSON.stringify(nq) }); setPrepQ(""); await reload(); } catch {} } }} placeholder="Add a talking point..." style={{ marginTop: 4, width: "100%", padding: "5px 8px", borderRadius: 4, fontSize: 11, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--surface)", outline: "none", boxSizing: "border-box" }} />
                           </div>
                         </div>
                       );
                     })()}
                     {/* Notes on attended */}
                     {mt.attended && !isCancelled && (
-                      <div style={{ padding: "0 12px 10px", borderTop: "1px solid #1A1A18", marginTop: 2, paddingTop: 8 }}>
+                      <div style={{ padding: "0 12px 10px", borderTop: "1px solid var(--surface)", marginTop: 2, paddingTop: 8 }}>
                         {editingNotes === mt.id ? (
                           <div><TextArea value={noteText} onChange={setNoteText} placeholder="Meeting notes..." rows={3} /><div style={{ display: "flex", gap: 4, marginTop: 4 }}><Btn small primary onClick={() => saveNotes(mt.id)}>Save</Btn><Btn small onClick={() => setEditingNotes(null)}>Cancel</Btn></div></div>
                         ) : (
                           <div>
-                            {mt.meeting_notes && <div style={{ fontSize: 11, color: "#888780", whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "2px 0 4px" }}>{mt.meeting_notes}</div>}
-                            <button onClick={() => { setEditingNotes(mt.id); setNoteText(mt.meeting_notes || ""); }} style={{ background: "none", border: "1px dashed #1A1A18", color: "#444441", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>{mt.meeting_notes ? "Edit notes" : "+ Notes"}</button>
+                            {mt.meeting_notes && <div style={{ fontSize: 11, color: "var(--sub)", whiteSpace: "pre-wrap", lineHeight: 1.5, padding: "2px 0 4px" }}>{mt.meeting_notes}</div>}
+                            <button onClick={() => { setEditingNotes(mt.id); setNoteText(mt.meeting_notes || ""); }} style={{ background: "none", border: "1px dashed var(--surface)", color: "var(--dim)", cursor: "pointer", fontSize: 10, padding: "3px 8px", borderRadius: 4 }}>{mt.meeting_notes ? "Edit notes" : "+ Notes"}</button>
                           </div>
                         )}
                       </div>
@@ -3058,23 +3063,23 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
 
               {/* Task dues */}
               {selIssues.length > 0 && <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 10, color: "#F09595", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Tasks due ({selIssues.length})</div>
+                <div style={{ fontSize: 10, color: "var(--pink)", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Tasks due ({selIssues.length})</div>
                 {selIssues.map(i => (
-                  <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#161615", borderRadius: 6, marginBottom: 4, border: "1px solid #2C2C2A" }}>
-                    <Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small />
-                    <span style={{ flex: 1, fontSize: 12, color: "#D3D1C7" }}>{i.title}</span>
-                    <Badge label={taskStatusLabel(i.status)} colors={normalizeTaskStatus(i.status) === "done" ? { bg: "#081F12", text: "#5DCAA5", border: "#04342C" } : PC[i.priority]} small />
+                  <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--side)", borderRadius: 6, marginBottom: 4, border: "1px solid var(--line)" }}>
+                    <Badge label={i.type} colors={i.type === "bug" ? { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" } : { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" }} small />
+                    <span style={{ flex: 1, fontSize: 12, color: "var(--title)" }}>{i.title}</span>
+                    <Badge label={taskStatusLabel(i.status)} colors={normalizeTaskStatus(i.status) === "done" ? { bg: "var(--tint-green-bg)", text: "var(--green)", border: "var(--tint-green-bd)" } : PC[i.priority]} small />
                   </div>
                 ))}
               </div>}
 
               {/* Test dues */}
               {selTests.length > 0 && <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 10, color: "#85B7EB", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Tests due ({selTests.length})</div>
+                <div style={{ fontSize: 10, color: "var(--blue)", fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Tests due ({selTests.length})</div>
                 {selTests.map(t => (
-                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#161615", borderRadius: 6, marginBottom: 4, border: "1px solid #2C2C2A" }}>
-                    <span style={{ color: "#85B7EB", fontSize: 12 }}>▷</span>
-                    <span style={{ flex: 1, fontSize: 12, color: "#D3D1C7" }}>{t.title}</span>
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "var(--side)", borderRadius: 6, marginBottom: 4, border: "1px solid var(--line)" }}>
+                    <span style={{ color: "var(--blue)", fontSize: 12 }}>▷</span>
+                    <span style={{ flex: 1, fontSize: 12, color: "var(--title)" }}>{t.title}</span>
                     <Badge label={t.status} colors={TC[t.status]} small />
                   </div>
                 ))}
@@ -3082,20 +3087,20 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
 
               {/* Add meeting form */}
               {showAdd && (
-                <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", marginBottom: 10 }}>New meeting</div>
+                <div style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "14px 16px" }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: "var(--soft)", marginBottom: 10 }}>New meeting</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     <Input value={mForm.title} onChange={v => setMForm({ ...mForm, title: v })} placeholder="Meeting title" />
                     <div style={{ display: "flex", gap: 8 }}>
-                      <input type="date" value={mForm.meeting_date} onChange={e => setMForm({ ...mForm, meeting_date: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-                      <input type="time" value={mForm.start_time} onChange={e => setMForm({ ...mForm, start_time: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-                      <input type="time" value={mForm.end_time} onChange={e => setMForm({ ...mForm, end_time: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+                      <input type="date" value={mForm.meeting_date} onChange={e => setMForm({ ...mForm, meeting_date: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none" }} />
+                      <input type="time" value={mForm.start_time} onChange={e => setMForm({ ...mForm, start_time: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none" }} />
+                      <input type="time" value={mForm.end_time} onChange={e => setMForm({ ...mForm, end_time: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none" }} />
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <span style={{ fontSize: 11, color: "#5F5E5A" }}>Repeat:</span>
+                      <span style={{ fontSize: 11, color: "var(--muted)" }}>Repeat:</span>
                       <Select value={mForm.recurrence} onChange={v => setMForm({ ...mForm, recurrence: v })} options={[{ value: "none", label: "One-time" }, { value: "daily", label: "Daily (8 weeks)" }, { value: "weekly", label: "Weekly (8 weeks)" }, { value: "biweekly", label: "Biweekly (8 weeks)" }, { value: "monthly", label: "Monthly (8 months)" }]} style={{ flex: 1 }} />
                     </div>
-                    {mForm.recurrence !== "none" && <div style={{ fontSize: 10, color: "#5DCAA5" }}>Creates {mForm.recurrence === "daily" ? "57" : "9"} meetings starting {mForm.meeting_date || "..."}</div>}
+                    {mForm.recurrence !== "none" && <div style={{ fontSize: 10, color: "var(--green)" }}>Creates {mForm.recurrence === "daily" ? "57" : "9"} meetings starting {mForm.meeting_date || "..."}</div>}
                     <div style={{ display: "flex", gap: 6 }}><Btn small primary onClick={addMeeting}>Add</Btn><Btn small onClick={() => setShowAdd(false)}>Cancel</Btn></div>
                   </div>
                 </div>
@@ -3172,81 +3177,81 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
     onClose();
   };
 
-  const STS = { todo: { color: "#888780", icon: "○" }, done: { color: "#5DCAA5", icon: "✓" }, skipped: { color: "#5F5E5A", icon: "—" }, fixed: { color: "#5DCAA5", icon: "✓" }, verified: { color: "#5DCAA5", icon: "✓✓" }, wont_fix: { color: "#5F5E5A", icon: "—" }, in_progress: { color: "#85B7EB", icon: "→" }, review: { color: "#AFA9EC", icon: "◎" }, open: { color: "#888780", icon: "○" }, reopened: { color: "#F09595", icon: "↺" }, pass: { color: "#5DCAA5", icon: "✓" }, fail: { color: "#F09595", icon: "✗" }, not_run: { color: "#888780", icon: "○" } };
-  const stsOf = (s) => STS[s] || STS[normalizeTaskStatus(s)] || { color: "#888780", icon: "·" };
+  const STS = { todo: { color: "var(--sub)", icon: "○" }, done: { color: "var(--green)", icon: "✓" }, skipped: { color: "var(--muted)", icon: "—" }, fixed: { color: "var(--green)", icon: "✓" }, verified: { color: "var(--green)", icon: "✓✓" }, wont_fix: { color: "var(--muted)", icon: "—" }, in_progress: { color: "var(--blue)", icon: "→" }, review: { color: "var(--purple)", icon: "◎" }, open: { color: "var(--sub)", icon: "○" }, reopened: { color: "var(--pink)", icon: "↺" }, pass: { color: "var(--green)", icon: "✓" }, fail: { color: "var(--pink)", icon: "✗" }, not_run: { color: "var(--sub)", icon: "○" } };
+  const stsOf = (s) => STS[s] || STS[normalizeTaskStatus(s)] || { color: "var(--sub)", icon: "·" };
 
   const taggedTotal = taggedIssues.length + taggedTests.length + taggedNotes.length;
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#111110", zIndex: 120, display: "flex", flexDirection: "column" }}>
+    <div style={{ position: "fixed", inset: 0, background: "var(--bg)", zIndex: 120, display: "flex", flexDirection: "column" }}>
       {/* Top bar */}
-      <div style={{ padding: "10px 24px", borderBottom: "1px solid #1A1A18", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+      <div style={{ padding: "10px 24px", borderBottom: "1px solid var(--surface)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
         <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#7F77DD" }} />
-        <span style={{ fontSize: 14, fontWeight: 500, color: "#F1EFE8", flex: 1 }}>{meeting.title}</span>
+        <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text)", flex: 1 }}>{meeting.title}</span>
         <span style={{ fontSize: 13, fontFamily: "'SF Mono', monospace", color: "#7F77DD" }}>{FMT(elapsed)}</span>
-        <span style={{ fontSize: 11, color: "#5F5E5A" }}>{meeting.start_time} – {meeting.end_time}</span>
-        <button onClick={endMeeting} disabled={saving} style={{ background: "#7F77DD", border: "none", color: "#F1EFE8", cursor: "pointer", fontSize: 12, padding: "6px 16px", borderRadius: 6, fontWeight: 500, opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : "End meeting"}</button>
-        <button onClick={onClose} style={{ background: "none", border: "1px solid #2C2C2A", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "6px 12px", borderRadius: 6 }}>Leave</button>
+        <span style={{ fontSize: 11, color: "var(--muted)" }}>{meeting.start_time} – {meeting.end_time}</span>
+        <button onClick={endMeeting} disabled={saving} style={{ background: "#7F77DD", border: "none", color: "var(--text)", cursor: "pointer", fontSize: 12, padding: "6px 16px", borderRadius: 6, fontWeight: 500, opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : "End meeting"}</button>
+        <button onClick={onClose} style={{ background: "none", border: "1px solid var(--line)", color: "var(--muted)", cursor: "pointer", fontSize: 11, padding: "6px 12px", borderRadius: 6 }}>Leave</button>
       </div>
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Left: Agenda */}
-        <div style={{ width: 360, flexShrink: 0, borderRight: "1px solid #1A1A18", display: "flex", flexDirection: "column", padding: "16px 20px" }}>
+        <div style={{ width: 360, flexShrink: 0, borderRight: "1px solid var(--surface)", display: "flex", flexDirection: "column", padding: "16px 20px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexShrink: 0 }}>
             <span style={{ fontSize: 12, color: "#7F77DD", fontWeight: 500, textTransform: "uppercase", letterSpacing: 1 }}>Agenda</span>
-            <span style={{ fontSize: 10, color: "#5F5E5A" }}>{taggedTotal} item{taggedTotal !== 1 ? "s" : ""} tagged</span>
+            <span style={{ fontSize: 10, color: "var(--muted)" }}>{taggedTotal} item{taggedTotal !== 1 ? "s" : ""} tagged</span>
           </div>
 
           <div style={{ flex: 1, overflowY: "auto" }}>
             {/* Auto: Completed */}
             {(completedIssues.length > 0 || passedTests.length > 0) && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, color: "#5DCAA5", fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Shipped</div>
-                {completedIssues.map(i => (<div key={i.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: stsOf(i.status).color }}>{stsOf(i.status).icon}</span><span style={{ color: "#D3D1C7", flex: 1 }}>{i.title}</span><span style={{ fontSize: 9, color: "#5F5E5A" }}>{i.type}</span></div>))}
-                {passedTests.map(t => (<div key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "#5DCAA5" }}>✓</span><span style={{ color: "#D3D1C7", flex: 1 }}>{t.title}</span><span style={{ fontSize: 9, color: "#5F5E5A" }}>test</span></div>))}
+                <div style={{ fontSize: 10, color: "var(--green)", fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Shipped</div>
+                {completedIssues.map(i => (<div key={i.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: stsOf(i.status).color }}>{stsOf(i.status).icon}</span><span style={{ color: "var(--title)", flex: 1 }}>{i.title}</span><span style={{ fontSize: 9, color: "var(--muted)" }}>{i.type}</span></div>))}
+                {passedTests.map(t => (<div key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "var(--green)" }}>✓</span><span style={{ color: "var(--title)", flex: 1 }}>{t.title}</span><span style={{ fontSize: 9, color: "var(--muted)" }}>test</span></div>))}
               </div>
             )}
 
             {/* Auto: In progress */}
             {(activeIssues.length > 0 || otherTests.filter(t => t.status === "fail").length > 0) && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, color: "#85B7EB", fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>In progress</div>
-                {activeIssues.map(i => (<div key={i.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: stsOf(i.status).color }}>{stsOf(i.status).icon}</span><span style={{ color: "#D3D1C7", flex: 1 }}>{i.title}</span><span style={{ fontSize: 9, color: "#5F5E5A" }}>{i.status.replace("_", " ")}</span></div>))}
-                {otherTests.filter(t => t.status === "fail").map(t => (<div key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "#F09595" }}>✗</span><span style={{ color: "#D3D1C7", flex: 1 }}>{t.title}</span><span style={{ fontSize: 9, color: "#5F5E5A" }}>failing</span></div>))}
+                <div style={{ fontSize: 10, color: "var(--blue)", fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>In progress</div>
+                {activeIssues.map(i => (<div key={i.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: stsOf(i.status).color }}>{stsOf(i.status).icon}</span><span style={{ color: "var(--title)", flex: 1 }}>{i.title}</span><span style={{ fontSize: 9, color: "var(--muted)" }}>{i.status.replace("_", " ")}</span></div>))}
+                {otherTests.filter(t => t.status === "fail").map(t => (<div key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "var(--pink)" }}>✗</span><span style={{ color: "var(--title)", flex: 1 }}>{t.title}</span><span style={{ fontSize: 9, color: "var(--muted)" }}>failing</span></div>))}
               </div>
             )}
 
             {/* Auto: Open */}
             {(openIssues.length > 0 || otherTests.filter(t => t.status === "not_run").length > 0) && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, color: "#888780", fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Open</div>
-                {openIssues.map(i => (<div key={i.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "#888780" }}>○</span><span style={{ color: "#888780", flex: 1 }}>{i.title}</span><span style={{ fontSize: 9, color: "#5F5E5A" }}>{i.type}</span></div>))}
-                {otherTests.filter(t => t.status === "not_run").map(t => (<div key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "#888780" }}>○</span><span style={{ color: "#888780", flex: 1 }}>{t.title}</span><span style={{ fontSize: 9, color: "#5F5E5A" }}>test</span></div>))}
+                <div style={{ fontSize: 10, color: "var(--sub)", fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Open</div>
+                {openIssues.map(i => (<div key={i.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "var(--sub)" }}>○</span><span style={{ color: "var(--sub)", flex: 1 }}>{i.title}</span><span style={{ fontSize: 9, color: "var(--muted)" }}>{i.type}</span></div>))}
+                {otherTests.filter(t => t.status === "not_run").map(t => (<div key={t.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "var(--sub)" }}>○</span><span style={{ color: "var(--sub)", flex: 1 }}>{t.title}</span><span style={{ fontSize: 9, color: "var(--muted)" }}>test</span></div>))}
               </div>
             )}
 
             {/* Tagged notes */}
             {taggedNotes.length > 0 && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, color: "#AFA9EC", fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Notes</div>
-                {taggedNotes.map(n => (<div key={n.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "#AFA9EC" }}>☰</span><span style={{ color: "#D3D1C7", flex: 1 }}>{n.title || n.content.substring(0, 40)}</span><span style={{ fontSize: 9, color: "#5F5E5A" }}>{n.category}</span></div>))}
+                <div style={{ fontSize: 10, color: "var(--purple)", fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Notes</div>
+                {taggedNotes.map(n => (<div key={n.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, fontSize: 11, marginBottom: 2 }}><span style={{ color: "var(--purple)" }}>☰</span><span style={{ color: "var(--title)", flex: 1 }}>{n.title || n.content.substring(0, 40)}</span><span style={{ fontSize: 9, color: "var(--muted)" }}>{n.category}</span></div>))}
               </div>
             )}
 
-            {taggedTotal === 0 && <div style={{ padding: "12px 8px", fontSize: 11, color: "#2C2C2A" }}>No items tagged with this meeting. Tag tasks, tests, or notes in the editor.</div>}
+            {taggedTotal === 0 && <div style={{ padding: "12px 8px", fontSize: 11, color: "var(--line)" }}>No items tagged with this meeting. Tag tasks, tests, or notes in the editor.</div>}
 
             {/* Manual talking points */}
-            <div style={{ borderTop: taggedTotal > 0 ? "1px solid #1A1A18" : "none", paddingTop: taggedTotal > 0 ? 12 : 0 }}>
+            <div style={{ borderTop: taggedTotal > 0 ? "1px solid var(--surface)" : "none", paddingTop: taggedTotal > 0 ? 12 : 0 }}>
               <div style={{ fontSize: 10, color: "#D85A30", fontWeight: 500, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Talking points</div>
               {manualItems.map((m, idx) => (
                 <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", fontSize: 11, marginBottom: 2 }}>
                   <span style={{ color: "#D85A30" }}>•</span>
-                  <span style={{ flex: 1, color: "#D3D1C7" }}>{m.q}</span>
-                  <button onClick={() => removeManual(idx)} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 9 }}>✕</button>
+                  <span style={{ flex: 1, color: "var(--title)" }}>{m.q}</span>
+                  <button onClick={() => removeManual(idx)} style={{ background: "none", border: "none", color: "var(--line)", cursor: "pointer", fontSize: 9 }}>✕</button>
                 </div>
               ))}
               <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
-                <input value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addManual(); }} placeholder="Add a talking point..." style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 11, background: "#161615", color: "#F1EFE8", border: "1px solid #1A1A18", outline: "none" }} />
+                <input value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addManual(); }} placeholder="Add a talking point..." style={{ flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 11, background: "var(--side)", color: "var(--text)", border: "1px solid var(--surface)", outline: "none" }} />
               </div>
             </div>
           </div>
@@ -3254,18 +3259,18 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
 
         {/* Right: Notes */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "16px 24px" }}>
-          <div style={{ fontSize: 11, color: "#444441", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12, flexShrink: 0 }}>Meeting notes</div>
+          <div style={{ fontSize: 11, color: "var(--dim)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12, flexShrink: 0 }}>Meeting notes</div>
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
             placeholder={"Start typing notes...\n\nKey points:\n•\n•\n\nAction items:\n•\n•\n\nDecisions:\n•"}
             autoFocus
-            style={{ flex: 1, padding: "20px 24px", borderRadius: 10, fontSize: 14, background: "#161615", color: "#D3D1C7", border: "1px solid #1A1A18", outline: "none", width: "100%", resize: "none", fontFamily: "'DM Sans', -apple-system, sans-serif", lineHeight: 1.8, boxSizing: "border-box" }}
+            style={{ flex: 1, padding: "20px 24px", borderRadius: 10, fontSize: 14, background: "var(--side)", color: "var(--title)", border: "1px solid var(--surface)", outline: "none", width: "100%", resize: "none", fontFamily: "'DM Sans', -apple-system, sans-serif", lineHeight: 1.8, boxSizing: "border-box" }}
             onKeyDown={e => { if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; const end = e.target.selectionEnd; setNotes(notes.substring(0, s) + "  " + notes.substring(end)); setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = s + 2; }, 0); } }}
           />
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, flexShrink: 0 }}>
-            <span style={{ fontSize: 10, color: "#2C2C2A" }}>Auto-saves every 10s</span>
-            <span style={{ fontSize: 10, color: "#2C2C2A" }}>{notes.length} chars</span>
+            <span style={{ fontSize: 10, color: "var(--line)" }}>Auto-saves every 10s</span>
+            <span style={{ fontSize: 10, color: "var(--line)" }}>{notes.length} chars</span>
           </div>
         </div>
       </div>
@@ -3380,15 +3385,15 @@ Return ONLY valid JSON array, no markdown, no backticks, no preamble.`;
     <div>
       {/* Topics */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Your topics</div>
+        <div style={{ fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Your topics</div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
           {topics.map(t => (
-            <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 16, fontSize: 11, background: "#2A1209", color: "#F0997B", border: "1px solid #4A1B0C" }}>
+            <span key={t} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 16, fontSize: 11, background: "var(--tint-orange-bg)", color: "var(--orange)", border: "1px solid var(--tint-orange-bd)" }}>
               {t}
-              <button onClick={() => removeTopic(t)} style={{ background: "none", border: "none", color: "#F0997B", cursor: "pointer", fontSize: 10, padding: 0, opacity: 0.6 }}>✕</button>
+              <button onClick={() => removeTopic(t)} style={{ background: "none", border: "none", color: "var(--orange)", cursor: "pointer", fontSize: 10, padding: 0, opacity: 0.6 }}>✕</button>
             </span>
           ))}
-          <input value={newTopic} onChange={e => setNewTopic(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addTopic(); }} placeholder="+ add topic..." style={{ padding: "4px 10px", borderRadius: 16, fontSize: 11, background: "transparent", color: "#888780", border: "1px dashed #2C2C2A", outline: "none", width: 140 }} />
+          <input value={newTopic} onChange={e => setNewTopic(e.target.value)} onKeyDown={e => { if (e.key === "Enter") addTopic(); }} placeholder="+ add topic..." style={{ padding: "4px 10px", borderRadius: 16, fontSize: 11, background: "transparent", color: "var(--sub)", border: "1px dashed var(--line)", outline: "none", width: 140 }} />
         </div>
       </div>
 
@@ -3397,21 +3402,21 @@ Return ONLY valid JSON array, no markdown, no backticks, no preamble.`;
         <Btn primary small onClick={fetchNews} disabled={loading || topics.length === 0}>
           {loading ? "Searching..." : "Refresh feed"}
         </Btn>
-        {cacheAge && <span style={{ fontSize: 10, color: "#5F5E5A" }}>Updated {cacheAge}</span>}
-        {topics.length === 0 && <span style={{ fontSize: 10, color: "#5F5E5A" }}>Add topics to get started</span>}
+        {cacheAge && <span style={{ fontSize: 10, color: "var(--muted)" }}>Updated {cacheAge}</span>}
+        {topics.length === 0 && <span style={{ fontSize: 10, color: "var(--muted)" }}>Add topics to get started</span>}
       </div>
 
       {/* Error + API key fallback */}
       {error && (
-        <div style={{ background: "#161615", border: "1px solid #501313", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
-          <div style={{ fontSize: 11, color: "#F09595", marginBottom: 6 }}>{error}</div>
+        <div style={{ background: "var(--side)", border: "1px solid var(--tint-red-bd)", borderRadius: 8, padding: "10px 14px", marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: "var(--pink)", marginBottom: 6 }}>{error}</div>
           {!apiKey && error.includes("API key") && (
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-              <input value={keyInput} onChange={e => setKeyInput(e.target.value)} placeholder="sk-ant-..." type="password" style={{ flex: 1, padding: "6px 8px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", fontFamily: "'SF Mono', monospace" }} />
+              <input value={keyInput} onChange={e => setKeyInput(e.target.value)} placeholder="sk-ant-..." type="password" style={{ flex: 1, padding: "6px 8px", borderRadius: 4, fontSize: 11, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", fontFamily: "'SF Mono', monospace" }} />
               <Btn small onClick={saveKey}>Use key</Btn>
             </div>
           )}
-          {apiKey && <div style={{ fontSize: 9, color: "#5F5E5A" }}>Using local API key as fallback</div>}
+          {apiKey && <div style={{ fontSize: 9, color: "var(--muted)" }}>Using local API key as fallback</div>}
         </div>
       )}
 
@@ -3420,28 +3425,28 @@ Return ONLY valid JSON array, no markdown, no backticks, no preamble.`;
         const saved = newsCache.filter(a => a.bookmarked);
         const recent = newsCache.filter(a => !a.bookmarked);
         const ArticleCard = ({ article, isSaved }) => (
-          <div style={{ background: "#161615", border: `1px solid ${isSaved ? "#412402" : "#1A1A18"}`, borderRadius: 8, padding: "12px 16px", marginBottom: 6 }}>
+          <div style={{ background: "var(--side)", border: `1px solid ${isSaved ? "var(--tint-amber-bd)" : "var(--surface)"}`, borderRadius: 8, padding: "12px 16px", marginBottom: 6 }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <button onClick={async () => { await db.toggleBookmark(article.id, !isSaved); await reload(); }} title={isSaved ? "Remove bookmark" : "Bookmark"} style={{ background: "none", border: "none", color: isSaved ? "#FAC775" : "#2C2C2A", cursor: "pointer", fontSize: 14, padding: 0, flexShrink: 0, marginTop: 1 }} onMouseEnter={e => { if (!isSaved) e.currentTarget.style.color = "#FAC775"; }} onMouseLeave={e => { if (!isSaved) e.currentTarget.style.color = "#2C2C2A"; }}>{isSaved ? "★" : "☆"}</button>
+              <button onClick={async () => { await db.toggleBookmark(article.id, !isSaved); await reload(); }} title={isSaved ? "Remove bookmark" : "Bookmark"} style={{ background: "none", border: "none", color: isSaved ? "var(--amber)" : "var(--line)", cursor: "pointer", fontSize: 14, padding: 0, flexShrink: 0, marginTop: 1 }} onMouseEnter={e => { if (!isSaved) e.currentTarget.style.color = "var(--amber)"; }} onMouseLeave={e => { if (!isSaved) e.currentTarget.style.color = "var(--line)"; }}>{isSaved ? "★" : "☆"}</button>
               <div style={{ flex: 1 }}>
-                <a href={article.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 500, color: "#F1EFE8", textDecoration: "none", lineHeight: 1.4, display: "block" }}>{article.title}</a>
-                {article.summary && <div style={{ fontSize: 11, color: "#888780", marginTop: 4, lineHeight: 1.5 }}>{article.summary}</div>}
+                <a href={article.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 500, color: "var(--text)", textDecoration: "none", lineHeight: 1.4, display: "block" }}>{article.title}</a>
+                {article.summary && <div style={{ fontSize: 11, color: "var(--sub)", marginTop: 4, lineHeight: 1.5 }}>{article.summary}</div>}
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 10, color: "#5F5E5A" }}>{article.source}</span>
-                  {article.published_at && <><span style={{ color: "#2C2C2A" }}>·</span><span style={{ fontSize: 10, color: "#5F5E5A" }}>{article.published_at}</span></>}
-                  {article.topic_match && <span style={{ fontSize: 9, padding: "1px 8px", borderRadius: 12, background: "#2A1209", color: "#F0997B", border: "1px solid #4A1B0C" }}>{article.topic_match}</span>}
+                  <span style={{ fontSize: 10, color: "var(--muted)" }}>{article.source}</span>
+                  {article.published_at && <><span style={{ color: "var(--line)" }}>·</span><span style={{ fontSize: 10, color: "var(--muted)" }}>{article.published_at}</span></>}
+                  {article.topic_match && <span style={{ fontSize: 9, padding: "1px 8px", borderRadius: 12, background: "var(--tint-orange-bg)", color: "var(--orange)", border: "1px solid var(--tint-orange-bd)" }}>{article.topic_match}</span>}
                 </div>
               </div>
-              <a href={article.url} target="_blank" rel="noopener noreferrer" style={{ color: "#5F5E5A", fontSize: 11, textDecoration: "none", flexShrink: 0, padding: "2px" }}>↗</a>
-              <a href={`https://www.google.com/search?q=${encodeURIComponent(article.title)}`} target="_blank" rel="noopener noreferrer" title="Search Google" style={{ color: "#2C2C2A", fontSize: 10, textDecoration: "none", flexShrink: 0 }}>🔍</a>
-              {!isSaved && <button onClick={async () => { await db.deleteNewsItem(article.id); await reload(); }} title="Remove" style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 10, flexShrink: 0 }}>✕</button>}
+              <a href={article.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--muted)", fontSize: 11, textDecoration: "none", flexShrink: 0, padding: "2px" }}>↗</a>
+              <a href={`https://www.google.com/search?q=${encodeURIComponent(article.title)}`} target="_blank" rel="noopener noreferrer" title="Search Google" style={{ color: "var(--line)", fontSize: 10, textDecoration: "none", flexShrink: 0 }}>🔍</a>
+              {!isSaved && <button onClick={async () => { await db.deleteNewsItem(article.id); await reload(); }} title="Remove" style={{ background: "none", border: "none", color: "var(--line)", cursor: "pointer", fontSize: 10, flexShrink: 0 }}>✕</button>}
             </div>
           </div>
         );
         return (<div>
-          {saved.length > 0 && <div style={{ fontSize: 10, color: "#FAC775", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Saved ({saved.length})</div>}
+          {saved.length > 0 && <div style={{ fontSize: 10, color: "var(--amber)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Saved ({saved.length})</div>}
           {saved.map(a => <ArticleCard key={a.id} article={a} isSaved />)}
-          {saved.length > 0 && recent.length > 0 && <div style={{ fontSize: 10, color: "#444441", textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 6px" }}>Recent</div>}
+          {saved.length > 0 && recent.length > 0 && <div style={{ fontSize: 10, color: "var(--dim)", textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 6px" }}>Recent</div>}
           {recent.map(a => <ArticleCard key={a.id} article={a} />)}
         </div>);
       })()}
@@ -3484,24 +3489,24 @@ function PeopleView({ people, meetings, projectId, reload }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-        <span style={{ fontSize: 13, color: "#5F5E5A" }}>{people.length} contact{people.length !== 1 ? "s" : ""}</span>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>{people.length} contact{people.length !== 1 ? "s" : ""}</span>
         <Btn primary small onClick={() => { setShowAdd(!showAdd); setEditId(null); setForm({ name: "", company: "", role: "", context: "", follow_up: "", email: "", session_id: "" }); }}>+ Person</Btn>
       </div>
 
       {showAdd && (
-        <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 10, padding: 16, marginBottom: 16 }}>
+        <div style={{ background: "var(--side)", border: "1px solid var(--line)", borderRadius: 10, padding: 16, marginBottom: 16 }}>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Name" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-            <input value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} placeholder="Company" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+            <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Name" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none" }} />
+            <input value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} placeholder="Company" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none" }} />
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <input value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} placeholder="Role" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
-            <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="Email" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none" }} />
+            <input value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} placeholder="Role" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none" }} />
+            <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="Email" style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none" }} />
           </div>
-          <textarea value={form.context} onChange={e => setForm({ ...form, context: e.target.value })} placeholder="What did you discuss?" rows={2} style={{ width: "100%", padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", resize: "none", marginBottom: 8, boxSizing: "border-box", fontFamily: "inherit" }} />
-          <input value={form.follow_up} onChange={e => setForm({ ...form, follow_up: e.target.value })} placeholder="Follow-up action (e.g. Email benchmark results)" style={{ width: "100%", padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", marginBottom: 8, boxSizing: "border-box" }} />
+          <textarea value={form.context} onChange={e => setForm({ ...form, context: e.target.value })} placeholder="What did you discuss?" rows={2} style={{ width: "100%", padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", resize: "none", marginBottom: 8, boxSizing: "border-box", fontFamily: "inherit" }} />
+          <input value={form.follow_up} onChange={e => setForm({ ...form, follow_up: e.target.value })} placeholder="Follow-up action (e.g. Email benchmark results)" style={{ width: "100%", padding: "6px 10px", borderRadius: 4, fontSize: 12, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", marginBottom: 8, boxSizing: "border-box" }} />
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <select value={form.session_id} onChange={e => setForm({ ...form, session_id: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 11, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none" }}>
+            <select value={form.session_id} onChange={e => setForm({ ...form, session_id: e.target.value })} style={{ flex: 1, padding: "6px 10px", borderRadius: 4, fontSize: 11, background: "var(--bg)", color: "var(--sub)", border: "1px solid var(--line)", outline: "none" }}>
               <option value="">Met at... (optional)</option>
               {meetings.map(m => <option key={m.id} value={m.id}>{m.title} ({m.meeting_date})</option>)}
             </select>
@@ -3515,43 +3520,43 @@ function PeopleView({ people, meetings, projectId, reload }) {
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 10, color: "#D85A30", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Needs follow-up ({needFollowUp.length})</div>
           {needFollowUp.map(p => (
-            <div key={p.id} style={{ background: "#161615", border: "1px solid #2A1209", borderRadius: 8, padding: "12px 14px", marginBottom: 6 }}>
+            <div key={p.id} style={{ background: "var(--side)", border: "1px solid var(--tint-orange-bg)", borderRadius: 8, padding: "12px 14px", marginBottom: 6 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#1A0A29", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 500, color: "#AFA9EC" }}>{p.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase()}</div>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--tint-purple-bg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 500, color: "var(--purple)" }}>{p.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase()}</div>
                 <div style={{ flex: 1 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: "#F1EFE8" }}>{p.name}</span>
-                  {p.company && <span style={{ fontSize: 11, color: "#5F5E5A" }}> · {p.company}</span>}
+                  <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>{p.name}</span>
+                  {p.company && <span style={{ fontSize: 11, color: "var(--muted)" }}> · {p.company}</span>}
                 </div>
-                <button onClick={() => edit(p)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>✎</button>
-                <button onClick={() => del(p.id)} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 11 }}>✕</button>
+                <button onClick={() => edit(p)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11 }}>✎</button>
+                <button onClick={() => del(p.id)} style={{ background: "none", border: "none", color: "var(--line)", cursor: "pointer", fontSize: 11 }}>✕</button>
               </div>
-              {p.context && <div style={{ fontSize: 11, color: "#888780", marginBottom: 4 }}>{p.context}</div>}
+              {p.context && <div style={{ fontSize: 11, color: "var(--sub)", marginBottom: 4 }}>{p.context}</div>}
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <input type="checkbox" checked={p.follow_up_done} onChange={() => toggleFollowUp(p)} style={{ cursor: "pointer" }} />
-                <span style={{ fontSize: 11, color: "#F0997B" }}>{p.follow_up}</span>
+                <span style={{ fontSize: 11, color: "var(--orange)" }}>{p.follow_up}</span>
               </div>
-              {p.session_id && <div style={{ fontSize: 9, color: "#5F5E5A", marginTop: 4 }}>Met at: {sessionName(p.session_id)}</div>}
+              {p.session_id && <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 4 }}>Met at: {sessionName(p.session_id)}</div>}
             </div>
           ))}
         </div>
       )}
 
       {others.map(p => (
-        <div key={p.id} style={{ background: "#161615", border: "1px solid #1A1A18", borderRadius: 8, padding: "12px 14px", marginBottom: 6 }}>
+        <div key={p.id} style={{ background: "var(--side)", border: "1px solid var(--surface)", borderRadius: 8, padding: "12px 14px", marginBottom: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#0A1929", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 500, color: "#85B7EB" }}>{p.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase()}</div>
+            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--tint-blue-bg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 500, color: "var(--blue)" }}>{p.name.split(" ").map(w => w[0]).join("").substring(0, 2).toUpperCase()}</div>
             <div style={{ flex: 1 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: "#F1EFE8" }}>{p.name}</span>
-              {p.company && <span style={{ fontSize: 11, color: "#5F5E5A" }}> · {p.company}</span>}
-              {p.role && <span style={{ fontSize: 11, color: "#5F5E5A" }}> · {p.role}</span>}
+              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)" }}>{p.name}</span>
+              {p.company && <span style={{ fontSize: 11, color: "var(--muted)" }}> · {p.company}</span>}
+              {p.role && <span style={{ fontSize: 11, color: "var(--muted)" }}> · {p.role}</span>}
             </div>
-            {p.email && <a href={`mailto:${p.email}`} style={{ fontSize: 10, color: "#85B7EB", textDecoration: "none" }}>✉</a>}
-            <button onClick={() => edit(p)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>✎</button>
-            <button onClick={() => del(p.id)} style={{ background: "none", border: "none", color: "#2C2C2A", cursor: "pointer", fontSize: 11 }}>✕</button>
+            {p.email && <a href={`mailto:${p.email}`} style={{ fontSize: 10, color: "var(--blue)", textDecoration: "none" }}>✉</a>}
+            <button onClick={() => edit(p)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11 }}>✎</button>
+            <button onClick={() => del(p.id)} style={{ background: "none", border: "none", color: "var(--line)", cursor: "pointer", fontSize: 11 }}>✕</button>
           </div>
-          {p.context && <div style={{ fontSize: 11, color: "#888780", marginTop: 4 }}>{p.context}</div>}
-          {p.follow_up_done && p.follow_up && <div style={{ fontSize: 10, color: "#5DCAA5", marginTop: 4, textDecoration: "line-through" }}>✓ {p.follow_up}</div>}
-          {p.session_id && <div style={{ fontSize: 9, color: "#5F5E5A", marginTop: 4 }}>Met at: {sessionName(p.session_id)}</div>}
+          {p.context && <div style={{ fontSize: 11, color: "var(--sub)", marginTop: 4 }}>{p.context}</div>}
+          {p.follow_up_done && p.follow_up && <div style={{ fontSize: 10, color: "var(--green)", marginTop: 4, textDecoration: "line-through" }}>✓ {p.follow_up}</div>}
+          {p.session_id && <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 4 }}>Met at: {sessionName(p.session_id)}</div>}
         </div>
       ))}
 
@@ -3579,8 +3584,8 @@ function HowList({ steps }) {
     <div style={{ textAlign: "left", maxWidth: 360, margin: "0 auto" }}>
       {steps.map((s, i) => (
         <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 8 }}>
-          <span style={{ flexShrink: 0, width: 18, height: 18, borderRadius: "50%", background: "#26215C", color: "#CECBF6", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 1 }}>{i + 1}</span>
-          <span style={{ fontSize: 13, color: "#B4B2A9", lineHeight: 1.5 }}>{s}</span>
+          <span style={{ flexShrink: 0, width: 18, height: 18, borderRadius: "50%", background: "var(--tint-purple-bd)", color: "var(--purple)", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 1 }}>{i + 1}</span>
+          <span style={{ fontSize: 13, color: "var(--soft)", lineHeight: 1.5 }}>{s}</span>
         </div>
       ))}
     </div>
@@ -3593,27 +3598,27 @@ function Tutorial({ onClose }) {
   const isLast = step === TUTORIAL_STEPS.length - 1;
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 16, padding: "32px 36px", width: 480, maxWidth: "90vw" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 16, padding: "32px 36px", width: 480, maxWidth: "90vw" }}>
         <div style={{ display: "flex", gap: 4, justifyContent: "center", marginBottom: 24 }}>
-          {TUTORIAL_STEPS.map((_, i) => (<div key={i} style={{ width: i === step ? 20 : 6, height: 6, borderRadius: 3, background: i === step ? "#7F77DD" : i < step ? "#5DCAA5" : "#2C2C2A", transition: "all 0.2s", cursor: "pointer" }} onClick={() => setStep(i)} />))}
+          {TUTORIAL_STEPS.map((_, i) => (<div key={i} style={{ width: i === step ? 20 : 6, height: 6, borderRadius: 3, background: i === step ? "#7F77DD" : i < step ? "var(--green)" : "var(--line)", transition: "all 0.2s", cursor: "pointer" }} onClick={() => setStep(i)} />))}
         </div>
         <div style={{ textAlign: "center", marginBottom: 16 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 14, background: "#111110", border: "1px solid #2C2C2A", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{s.icon}</div>
+          <div style={{ width: 56, height: 56, borderRadius: 14, background: "var(--bg)", border: "1px solid var(--line)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>{s.icon}</div>
         </div>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <div style={{ fontSize: 20, fontWeight: 500, color: "#F1EFE8", marginBottom: 4 }}>{s.title}</div>
+          <div style={{ fontSize: 20, fontWeight: 500, color: "var(--text)", marginBottom: 4 }}>{s.title}</div>
           <div style={{ fontSize: 13, color: "#7F77DD", marginBottom: 16 }}>{s.sub}</div>
-          {s.how ? <HowList steps={s.how} /> : <div style={{ fontSize: 13, color: "#888780", lineHeight: 1.7, maxWidth: 380, margin: "0 auto" }}>{s.desc}</div>}
+          {s.how ? <HowList steps={s.how} /> : <div style={{ fontSize: 13, color: "var(--sub)", lineHeight: 1.7, maxWidth: 380, margin: "0 auto" }}>{s.desc}</div>}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12 }}>Skip tour</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12 }}>Skip tour</button>
           <div style={{ display: "flex", gap: 8 }}>
             {step > 0 && <Btn onClick={() => setStep(step - 1)} small>Back</Btn>}
             {!isLast && <Btn primary onClick={() => setStep(step + 1)}>Next</Btn>}
-            {isLast && <Btn primary onClick={onClose} style={{ background: "#7F77DD", color: "#F1EFE8" }}>Get started</Btn>}
+            {isLast && <Btn primary onClick={onClose} style={{ background: "#7F77DD", color: "var(--text)" }}>Get started</Btn>}
           </div>
         </div>
-        <div style={{ textAlign: "center", marginTop: 12, fontSize: 10, color: "#444441" }}>{step + 1} of {TUTORIAL_STEPS.length}</div>
+        <div style={{ textAlign: "center", marginTop: 12, fontSize: 10, color: "var(--dim)" }}>{step + 1} of {TUTORIAL_STEPS.length}</div>
       </div>
     </div>
   );
@@ -3622,7 +3627,7 @@ function Tutorial({ onClose }) {
 // Board View (Kanban Sticky Notes)
 // ============================================
 
-const CARD_COLORS = { yellow: { bg: "#2A2309", text: "#FAC775", border: "#412402" }, blue: { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }, green: { bg: "#0E1A08", text: "#97C459", border: "#173404" }, pink: { bg: "#2A0A1A", text: "#ED93B1", border: "#4B1528" }, purple: { bg: "#1A0A29", text: "#AFA9EC", border: "#26215C" }, coral: { bg: "#2A1209", text: "#F0997B", border: "#4A1B0C" } };
+const CARD_COLORS = { yellow: { bg: "#2A2309", text: "var(--amber)", border: "var(--tint-amber-bd)" }, blue: { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" }, green: { bg: "var(--tint-green-bg)", text: "var(--lime)", border: "var(--tint-green-bd)" }, pink: { bg: "#2A0A1A", text: "#ED93B1", border: "#4B1528" }, purple: { bg: "var(--tint-purple-bg)", text: "var(--purple)", border: "var(--tint-purple-bd)" }, coral: { bg: "var(--tint-orange-bg)", text: "var(--orange)", border: "var(--tint-orange-bd)" } };
 const CARD_COLOR_KEYS = Object.keys(CARD_COLORS);
 
 function BoardView({ columns, cards, projectId, reload, issues, files, addIssue }) {
@@ -3662,17 +3667,17 @@ function BoardView({ columns, cards, projectId, reload, issues, files, addIssue 
       {columns.map(col => {
         const colCards = cards.filter(c => c.column_id === col.id);
         return (
-          <div key={col.id} style={{ minWidth: 240, maxWidth: 280, flex: "0 0 260px", background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px" }}>
+          <div key={col.id} style={{ minWidth: 240, maxWidth: 280, flex: "0 0 260px", background: "var(--side)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px" }}>
             {/* Column header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               {editColId === col.id ? (
-                <input autoFocus value={editColName} onChange={e => setEditColName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") renameCol(col.id); if (e.key === "Escape") setEditColId(null); }} onBlur={() => renameCol(col.id)} style={{ flex: 1, padding: "2px 6px", borderRadius: 4, fontSize: 12, fontWeight: 500, background: "#111110", color: "#F1EFE8", border: "1px solid #444441", outline: "none" }} />
+                <input autoFocus value={editColName} onChange={e => setEditColName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") renameCol(col.id); if (e.key === "Escape") setEditColId(null); }} onBlur={() => renameCol(col.id)} style={{ flex: 1, padding: "2px 6px", borderRadius: 4, fontSize: 12, fontWeight: 500, background: "var(--bg)", color: "var(--text)", border: "1px solid var(--dim)", outline: "none" }} />
               ) : (
-                <span onDoubleClick={() => { setEditColId(col.id); setEditColName(col.name); }} style={{ fontSize: 12, fontWeight: 500, color: "#B4B2A9", cursor: "default" }}>{col.name}</span>
+                <span onDoubleClick={() => { setEditColId(col.id); setEditColName(col.name); }} style={{ fontSize: 12, fontWeight: 500, color: "var(--soft)", cursor: "default" }}>{col.name}</span>
               )}
               <div style={{ display: "flex", gap: 2 }}>
-                <span style={{ fontSize: 10, color: "#5F5E5A" }}>{colCards.length}</span>
-                <button onClick={() => delCol(col.id)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✕</button>
+                <span style={{ fontSize: 10, color: "var(--muted)" }}>{colCards.length}</span>
+                <button onClick={() => delCol(col.id)} style={{ background: "none", border: "none", color: "var(--dim)", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✕</button>
               </div>
             </div>
             {/* Cards */}
@@ -3681,7 +3686,7 @@ function BoardView({ columns, cards, projectId, reload, issues, files, addIssue 
               if (editingCard === card.id) return (
                 <div key={card.id} style={{ marginBottom: 6, padding: "8px", background: cc.bg, border: `1px solid ${cc.border}`, borderRadius: 6 }}>
                   <TextArea value={cardForm.text} onChange={v => setCardForm({ ...cardForm, text: v })} placeholder="Card text..." rows={2} />
-                  <div style={{ display: "flex", gap: 3, margin: "6px 0" }}>{CARD_COLOR_KEYS.map(k => (<div key={k} onClick={() => setCardForm({ ...cardForm, color: k })} style={{ width: 16, height: 16, borderRadius: 3, background: CARD_COLORS[k].text, cursor: "pointer", border: cardForm.color === k ? "2px solid #F1EFE8" : "2px solid transparent" }} />))}</div>
+                  <div style={{ display: "flex", gap: 3, margin: "6px 0" }}>{CARD_COLOR_KEYS.map(k => (<div key={k} onClick={() => setCardForm({ ...cardForm, color: k })} style={{ width: 16, height: 16, borderRadius: 3, background: CARD_COLORS[k].text, cursor: "pointer", border: cardForm.color === k ? "2px solid var(--text)" : "2px solid transparent" }} />))}</div>
                   <div style={{ display: "flex", gap: 4 }}><Btn small primary onClick={() => saveCard(col.id)}>Save</Btn><Btn small onClick={() => setEditingCard(null)}>Cancel</Btn></div>
                 </div>
               );
@@ -3689,26 +3694,26 @@ function BoardView({ columns, cards, projectId, reload, issues, files, addIssue 
                 <div key={card.id} style={{ marginBottom: 6, padding: "8px 10px", background: cc.bg, border: `1px solid ${cc.border}`, borderRadius: 6 }}>
                   <div style={{ fontSize: 12, color: cc.text, lineHeight: 1.5, whiteSpace: "pre-wrap", marginBottom: 6 }}>{card.text}</div>
                   <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-                    <select value={card.column_id} onChange={e => moveCard(card.id, e.target.value)} style={{ padding: "2px 4px", borderRadius: 4, fontSize: 10, background: "#111110", color: "#888780", border: "1px solid #2C2C2A", outline: "none", cursor: "pointer" }}>
+                    <select value={card.column_id} onChange={e => moveCard(card.id, e.target.value)} style={{ padding: "2px 4px", borderRadius: 4, fontSize: 10, background: "var(--bg)", color: "var(--sub)", border: "1px solid var(--line)", outline: "none", cursor: "pointer" }}>
                       {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                     <span style={{ flex: 1 }} />
-                    <button onClick={() => convertToIssue(card)} title="Convert to task" style={{ background: "none", border: "1px solid #2C2C2A", color: "#85B7EB", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>→ task</button>
-                    <button onClick={() => startEditCard(card)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✎</button>
-                    <button onClick={() => delCard(card.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✕</button>
+                    <button onClick={() => convertToIssue(card)} title="Convert to task" style={{ background: "none", border: "1px solid var(--line)", color: "var(--blue)", cursor: "pointer", fontSize: 9, padding: "2px 6px", borderRadius: 3 }}>→ task</button>
+                    <button onClick={() => startEditCard(card)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✎</button>
+                    <button onClick={() => delCard(card.id)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 11, padding: "0 2px" }}>✕</button>
                   </div>
                 </div>
               );
             })}
             {/* Add card form or button */}
             {addingTo === col.id ? (
-              <div style={{ padding: "6px", background: "#1A1A18", border: "1px dashed #2C2C2A", borderRadius: 6 }}>
+              <div style={{ padding: "6px", background: "var(--surface)", border: "1px dashed var(--line)", borderRadius: 6 }}>
                 <TextArea value={cardForm.text} onChange={v => setCardForm({ ...cardForm, text: v })} placeholder="What's on your mind?" rows={2} />
-                <div style={{ display: "flex", gap: 3, margin: "6px 0" }}>{CARD_COLOR_KEYS.map(k => (<div key={k} onClick={() => setCardForm({ ...cardForm, color: k })} style={{ width: 16, height: 16, borderRadius: 3, background: CARD_COLORS[k].text, cursor: "pointer", border: cardForm.color === k ? "2px solid #F1EFE8" : "2px solid transparent" }} />))}</div>
+                <div style={{ display: "flex", gap: 3, margin: "6px 0" }}>{CARD_COLOR_KEYS.map(k => (<div key={k} onClick={() => setCardForm({ ...cardForm, color: k })} style={{ width: 16, height: 16, borderRadius: 3, background: CARD_COLORS[k].text, cursor: "pointer", border: cardForm.color === k ? "2px solid var(--text)" : "2px solid transparent" }} />))}</div>
                 <div style={{ display: "flex", gap: 4 }}><Btn small primary onClick={() => saveCard(col.id)}>Add</Btn><Btn small onClick={() => setAddingTo(null)}>Cancel</Btn></div>
               </div>
             ) : (
-              <button onClick={() => startAddCard(col.id)} style={{ width: "100%", padding: "6px", borderRadius: 6, border: "1px dashed #2C2C2A", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11 }}>+ Add card</button>
+              <button onClick={() => startAddCard(col.id)} style={{ width: "100%", padding: "6px", borderRadius: 6, border: "1px dashed var(--line)", background: "transparent", color: "var(--muted)", cursor: "pointer", fontSize: 11 }}>+ Add card</button>
             )}
           </div>
         );
@@ -3754,35 +3759,35 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
   const planFields = (modal.type === "issue" || modal.type === "test") ? (<>
     {fid && <div style={{ display: "flex", gap: 8 }}>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Repo</div>
-        <input list="repo-list" value={rn} onChange={e => setRn(e.target.value)} placeholder="Select or type repo" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "'SF Mono', monospace" }} />
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Repo</div>
+        <input list="repo-list" value={rn} onChange={e => setRn(e.target.value)} placeholder="Select or type repo" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "var(--surface)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "'SF Mono', monospace" }} />
         <datalist id="repo-list">{(usedRepos || []).map(r => <option key={r} value={r} />)}</datalist>
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Branch</div>
-        <input list="branch-list" value={bn} onChange={e => setBn(e.target.value)} placeholder="Select or type branch" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "'SF Mono', monospace" }} />
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Branch</div>
+        <input list="branch-list" value={bn} onChange={e => setBn(e.target.value)} placeholder="Select or type branch" style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "var(--surface)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "'SF Mono', monospace" }} />
         <datalist id="branch-list">{(usedBranches || []).map(b => <option key={b} value={b} />)}</datalist>
       </div>
     </div>}
     <div style={{ display: "flex", gap: 8 }}>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Estimated pomodoros</div>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Estimated pomodoros</div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input type="range" min="0" max="12" step="1" value={ep} onChange={e => setEp(Number(e.target.value))} style={{ flex: 1 }} />
-          <span style={{ fontSize: 13, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: ep > 0 ? "#E24B4A" : "#5F5E5A", minWidth: 20, textAlign: "right" }}>{ep}</span>
+          <span style={{ fontSize: 13, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: ep > 0 ? "var(--red)" : "var(--muted)", minWidth: 20, textAlign: "right" }}>{ep}</span>
         </div>
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Due date</div>
-        <input type="date" value={dd} onChange={e => setDd(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "#1A1A18", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", width: "100%", boxSizing: "border-box" }} />
+        <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Due date</div>
+        <input type="date" value={dd} onChange={e => setDd(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, background: "var(--surface)", color: "var(--text)", border: "1px solid var(--line)", outline: "none", width: "100%", boxSizing: "border-box" }} />
       </div>
     </div>
     <div>
-      <div style={{ fontSize: 11, color: "#5F5E5A", marginBottom: 4 }}>Meeting tags</div>
-      {(meetingTags || []).length === 0 ? <div style={{ fontSize: 11, color: "#444441" }}>No meetings created yet</div> : (
+      <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Meeting tags</div>
+      {(meetingTags || []).length === 0 ? <div style={{ fontSize: 11, color: "var(--dim)" }}>No meetings created yet</div> : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
           {(meetingTags || []).map(t => { const on = mtag.includes(t); return (
-            <button key={t} onClick={() => setMtag(on ? mtag.filter(x => x !== t) : [...mtag, t])} style={{ padding: "4px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer", border: on ? "1px solid #7F77DD" : "1px solid #2C2C2A", background: on ? "#1A0A29" : "#1A1A18", color: on ? "#AFA9EC" : "#5F5E5A" }}>{on ? "✓ " : ""}{t}</button>
+            <button key={t} onClick={() => setMtag(on ? mtag.filter(x => x !== t) : [...mtag, t])} style={{ padding: "4px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer", border: on ? "1px solid #7F77DD" : "1px solid var(--line)", background: on ? "var(--tint-purple-bg)" : "var(--surface)", color: on ? "var(--purple)" : "var(--muted)" }}>{on ? "✓ " : ""}{t}</button>
           ); })}
         </div>
       )}
@@ -3790,19 +3795,19 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
   </>) : null;
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 440, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", overflowY: "auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}><span style={{ fontSize: 15, fontWeight: 500 }}>{titles[modal.type]}</span><button onClick={onClose} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button></div>
+      <div onClick={e => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, padding: "20px 24px", width: 440, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}><span style={{ fontSize: 15, fontWeight: 500 }}>{titles[modal.type]}</span><button onClick={onClose} style={{ background: "none", border: "none", color: "var(--sub)", cursor: "pointer", fontSize: 16 }}>✕</button></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {modal.type === "project" && <>
             <Input value={n} onChange={setN} placeholder="Name (e.g. ETL Pipeline or AI Summit 2026)" />
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button onClick={() => setCat("project")} style={{ flex: 1, padding: "10px", borderRadius: 8, border: cat === "project" ? "2px solid #7F77DD" : "1px solid #2C2C2A", background: cat === "project" ? "#1A0A29" : "#161615", color: cat === "project" ? "#AFA9EC" : "#5F5E5A", cursor: "pointer", fontSize: 12 }}>⚑ Project<br /><span style={{ fontSize: 10, opacity: 0.7 }}>Tasks, tests, focus timer</span></button>
-              <button onClick={() => setCat("workshop")} style={{ flex: 1, padding: "10px", borderRadius: 8, border: cat === "workshop" ? "2px solid #D85A30" : "1px solid #2C2C2A", background: cat === "workshop" ? "#2A1209" : "#161615", color: cat === "workshop" ? "#F0997B" : "#5F5E5A", cursor: "pointer", fontSize: 12 }}>◎ Workshop<br /><span style={{ fontSize: 10, opacity: 0.7 }}>Sessions, notes, people</span></button>
+              <button onClick={() => setCat("project")} style={{ flex: 1, padding: "10px", borderRadius: 8, border: cat === "project" ? "2px solid #7F77DD" : "1px solid var(--line)", background: cat === "project" ? "var(--tint-purple-bg)" : "var(--side)", color: cat === "project" ? "var(--purple)" : "var(--muted)", cursor: "pointer", fontSize: 12 }}>⚑ Project<br /><span style={{ fontSize: 10, opacity: 0.7 }}>Tasks, tests, focus timer</span></button>
+              <button onClick={() => setCat("workshop")} style={{ flex: 1, padding: "10px", borderRadius: 8, border: cat === "workshop" ? "2px solid #D85A30" : "1px solid var(--line)", background: cat === "workshop" ? "var(--tint-orange-bg)" : "var(--side)", color: cat === "workshop" ? "var(--orange)" : "var(--muted)", cursor: "pointer", fontSize: 12 }}>◎ Workshop<br /><span style={{ fontSize: 10, opacity: 0.7 }}>Sessions, notes, people</span></button>
             </div>
           </>}
           {modal.type === "file" && <><Input value={n} onChange={setN} placeholder="filename.py" mono /><Select value={cat} onChange={setCat} options={CATEGORIES} style={{ width: "100%" }} /></>}
           {modal.type === "issue" && <><Select value={fid} onChange={setFid} options={[{ value: "", label: "No file (general task)" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Task title" /><div style={{ display: "flex", gap: 8 }}><Select value={ty} onChange={setTy} options={ISSUE_TYPES} style={{ flex: 1 }} /><Select value={pr} onChange={setPr} options={PRIORITIES} style={{ flex: 1 }} /></div><TextArea value={desc} onChange={setDesc} placeholder="Description (optional)" />{planFields}</>}
-          {modal.type === "test" && <><Select value={fid} onChange={setFid} options={[{ value: "", label: "No file (general task)" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Test case title" /><TextArea value={pre} onChange={setPre} placeholder="Precondition (optional)" rows={1} />{planFields}<div style={{ fontSize: 11, fontWeight: 500, color: "#888780", marginTop: 4 }}>STEPS</div>{steps.map((s, i) => (<div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><span style={{ fontSize: 11, color: "#5F5E5A", marginTop: 8, fontFamily: "'SF Mono', monospace", minWidth: 16 }}>{i + 1}.</span><div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}><Input value={s.step} onChange={v => updStep(i, "step", v)} placeholder="What to do" /><Input value={s.expected} onChange={v => updStep(i, "expected", v)} placeholder="Expected result" /></div>{steps.length > 1 && <button onClick={() => setSteps(steps.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", marginTop: 6 }}>✕</button>}</div>))}<button onClick={addStep} style={{ background: "none", border: "1px dashed #2C2C2A", color: "#5F5E5A", cursor: "pointer", padding: 6, borderRadius: 6, fontSize: 12, width: "100%" }}>+ Add step</button></>}
+          {modal.type === "test" && <><Select value={fid} onChange={setFid} options={[{ value: "", label: "No file (general task)" }, ...files.map(f => ({ value: f.id, label: f.name }))]} style={{ width: "100%" }} /><Input value={n} onChange={setN} placeholder="Test case title" /><TextArea value={pre} onChange={setPre} placeholder="Precondition (optional)" rows={1} />{planFields}<div style={{ fontSize: 11, fontWeight: 500, color: "var(--sub)", marginTop: 4 }}>STEPS</div>{steps.map((s, i) => (<div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start" }}><span style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, fontFamily: "'SF Mono', monospace", minWidth: 16 }}>{i + 1}.</span><div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}><Input value={s.step} onChange={v => updStep(i, "step", v)} placeholder="What to do" /><Input value={s.expected} onChange={v => updStep(i, "expected", v)} placeholder="Expected result" /></div>{steps.length > 1 && <button onClick={() => setSteps(steps.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", marginTop: 6 }}>✕</button>}</div>))}<button onClick={addStep} style={{ background: "none", border: "1px dashed var(--line)", color: "var(--muted)", cursor: "pointer", padding: 6, borderRadius: 6, fontSize: 12, width: "100%" }}>+ Add step</button></>}
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}><Btn onClick={onClose}>Cancel</Btn><Btn primary onClick={submit} style={{ opacity: saving ? 0.6 : 1 }}>{saving ? "Saving..." : isEdit ? "Save" : "Create"}</Btn></div>
       </div>
@@ -3815,15 +3820,15 @@ function LinkModal({ lm, issues, tests, links, lnk, onClose }) {
   const isI = !!lm.issueId; const title = isI ? "Link a test case" : "Link a task";
   let items = [];
   if (isI) { const a = links.filter(l => l.issue_id === lm.issueId).map(l => l.test_case_id); items = tests.filter(t => !a.includes(t.id)).map(t => ({ id: t.id, l: t.title, s: t.status, ic: "▷", c: TC[t.status] })); }
-  else { const a = links.filter(l => l.test_case_id === lm.testId).map(l => l.issue_id); items = issues.filter(i => !a.includes(i.id)).map(i => ({ id: i.id, l: i.title, s: i.type, ic: i.type === "bug" ? "◉" : "○", c: i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" } })); }
+  else { const a = links.filter(l => l.test_case_id === lm.testId).map(l => l.issue_id); items = issues.filter(i => !a.includes(i.id)).map(i => ({ id: i.id, l: i.title, s: i.type, ic: i.type === "bug" ? "◉" : "○", c: i.type === "bug" ? { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" } : { bg: "var(--tint-blue-bg)", text: "var(--blue)", border: "var(--tint-blue-bd)" } })); }
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onMouseDown={onClose}>
-      <div onMouseDown={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 380, maxWidth: "calc(100vw - 32px)", maxHeight: "60vh", display: "flex", flexDirection: "column", boxSizing: "border-box", overflow: "hidden" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}><span style={{ fontSize: 15, fontWeight: 500 }}>{title}</span><button onClick={onClose} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button></div>
-        {err && <div style={{ padding: "8px 12px", borderRadius: 6, marginBottom: 10, fontSize: 12, background: "#2D0A0A", color: "#F09595" }}>{err}</div>}
+      <div onMouseDown={e => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12, padding: "20px 24px", width: 380, maxWidth: "calc(100vw - 32px)", maxHeight: "60vh", display: "flex", flexDirection: "column", boxSizing: "border-box", overflow: "hidden" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}><span style={{ fontSize: 15, fontWeight: 500 }}>{title}</span><button onClick={onClose} style={{ background: "none", border: "none", color: "var(--sub)", cursor: "pointer", fontSize: 16 }}>✕</button></div>
+        {err && <div style={{ padding: "8px 12px", borderRadius: 6, marginBottom: 10, fontSize: 12, background: "var(--tint-red-bg)", color: "var(--pink)" }}>{err}</div>}
         <div style={{ flex: 1 }}>
-          {items.length === 0 && <div style={{ textAlign: "center", padding: 24, color: "#5F5E5A", fontSize: 13 }}>Nothing to link</div>}
-          {items.map(item => (<div key={item.id} role="button" tabIndex={0} onMouseDown={async e => { e.preventDefault(); e.stopPropagation(); if (saving) return; setSaving(true); setErr(null); try { if (isI) await lnk(lm.issueId, item.id); else await lnk(item.id, lm.testId); onClose(); } catch (e) { setErr(e.message || "Failed"); setSaving(false); } }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 6, background: "transparent", color: "#F1EFE8", cursor: saving ? "wait" : "pointer", fontSize: 13, marginBottom: 2, opacity: saving ? 0.5 : 1 }} onMouseEnter={e => { if (!saving) e.currentTarget.style.background = "#2C2C2A"; }} onMouseLeave={e => e.currentTarget.style.background = "transparent"}><span style={{ fontSize: 14 }}>{item.ic}</span><span style={{ flex: 1 }}>{item.l}</span><Badge label={item.s} colors={item.c} small /></div>))}
+          {items.length === 0 && <div style={{ textAlign: "center", padding: 24, color: "var(--muted)", fontSize: 13 }}>Nothing to link</div>}
+          {items.map(item => (<div key={item.id} role="button" tabIndex={0} onMouseDown={async e => { e.preventDefault(); e.stopPropagation(); if (saving) return; setSaving(true); setErr(null); try { if (isI) await lnk(lm.issueId, item.id); else await lnk(item.id, lm.testId); onClose(); } catch (e) { setErr(e.message || "Failed"); setSaving(false); } }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 6, background: "transparent", color: "var(--text)", cursor: saving ? "wait" : "pointer", fontSize: 13, marginBottom: 2, opacity: saving ? 0.5 : 1 }} onMouseEnter={e => { if (!saving) e.currentTarget.style.background = "var(--line)"; }} onMouseLeave={e => e.currentTarget.style.background = "transparent"}><span style={{ fontSize: 14 }}>{item.ic}</span><span style={{ flex: 1 }}>{item.l}</span><Badge label={item.s} colors={item.c} small /></div>))}
         </div>
       </div>
     </div>

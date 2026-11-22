@@ -1,8 +1,18 @@
+import { isLightTheme } from '../theme'
+
 // Project colors: a fixed palette that reads on the dark theme. A project without a saved color
 // gets one picked from its id, so it stays the same across devices and reloads.
 export const PROJECT_COLORS = ['#AFA9EC', '#85B7EB', '#5DCAA5', '#FAC775', '#ED93B1', '#6FC3D8', '#F0997B', '#C0DD97', '#F09595', '#D3D1C7']
 
+// Light themes (Light, Blush) show a darker twin of each color so dots and bars stay visible
+const LIGHT_TWIN = { '#AFA9EC': '#6A5ACD', '#85B7EB': '#1F6FB2', '#5DCAA5': '#1E8A6A', '#FAC775': '#9A6A00', '#ED93B1': '#B8457A', '#6FC3D8': '#0F7C93', '#F0997B': '#B4532A', '#C0DD97': '#5A7D1E', '#F09595': '#B23B3B', '#D3D1C7': '#5F5E5A' }
+
 export function projectColor(p) {
+  const c = baseColor(p)
+  return isLightTheme() ? (LIGHT_TWIN[c.toUpperCase()] || c) : c
+}
+
+function baseColor(p) {
   if (p?.color) return p.color
   // FNV-1a, then a final mix so ids that differ only at the end ("projects-1", "projects-72") spread out
   const id = String(p?.id || '')

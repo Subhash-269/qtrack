@@ -7,7 +7,7 @@ import { TASK_STATUSES, TASK_STATUS_LABEL, normalizeTaskStatus } from "../../sup
 // Desktop: a panel on the right. Phone: a bottom sheet. Mount it with key={kind + id} so it starts
 // fresh for each item. See docs/proposals/today-task-details.
 
-const C = { side: "#161615", raise: "#1A1A18", line: "#2C2C2A", line2: "#222220", dim: "#444441", muted: "#5F5E5A", sub: "#888780", soft: "#B4B2A9", title: "#D3D1C7", text: "#F1EFE8", green: "#5DCAA5", blue: "#85B7EB", amber: "#FAC775", pink: "#F09595", orange: "#F0997B", lime: "#C0DD97" };
+const C = { side: "var(--side)", raise: "var(--surface)", line: "var(--line)", line2: "var(--line2)", dim: "var(--dim)", muted: "var(--muted)", sub: "var(--sub)", soft: "var(--soft)", title: "var(--title)", text: "var(--text)", green: "var(--green)", blue: "var(--blue)", amber: "var(--amber)", pink: "var(--pink)", orange: "var(--orange)", lime: "var(--lime)" };
 const TEST_STATUSES = [{ value: "not_run", label: "Not run" }, { value: "pass", label: "Pass" }, { value: "fail", label: "Fail" }, { value: "blocked", label: "Blocked" }];
 const TASK_OPTIONS = TASK_STATUSES.map(v => ({ value: v, label: TASK_STATUS_LABEL[v] }));
 const PRIORITIES = ["critical", "high", "medium", "low"];
@@ -33,7 +33,7 @@ const sh = { fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpa
 const field = { background: C.raise, border: `1px solid ${C.line}`, borderRadius: 6, padding: "4px 8px", minWidth: 0 };
 const fieldLabel = { display: "block", fontSize: 9.5, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 };
 const control = { width: "100%", background: "transparent", border: "none", outline: "none", fontSize: 12, padding: "1px 0", cursor: "pointer", colorScheme: "dark", fontFamily: "inherit" };
-const btn = (primary) => ({ padding: "7px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500, background: primary ? "#D3D1C7" : "transparent", color: primary ? "#1A1A18" : C.soft, border: primary ? "1px solid #D3D1C7" : `1px solid ${C.dim}`, cursor: "pointer", whiteSpace: "nowrap" });
+const btn = (primary) => ({ padding: "7px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500, background: primary ? "var(--title)" : "transparent", color: primary ? "var(--surface)" : C.soft, border: primary ? "1px solid var(--title)" : `1px solid ${C.dim}`, cursor: "pointer", whiteSpace: "nowrap" });
 const linkBtn = { background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6, padding: 0 };
 
 export default function TaskDetailsPanel({ item, projects, inQueue, mobile, focusing, onClose, onPrev, onNext, onStart, onFinish, onOpenInProject, onChanged }) {
@@ -204,7 +204,7 @@ export default function TaskDetailsPanel({ item, projects, inQueue, mobile, focu
       {/* Actions */}
       <div style={{ padding: mobile ? "10px 12px 14px" : "12px 16px", borderTop: `1px solid ${C.line}`, display: "flex", gap: 6, alignItems: "center" }}>
         {focusing
-          ? <span style={{ ...btn(false), color: "#E24B4A", borderColor: "#4A1B1B", cursor: "default", flex: mobile ? 1 : "none", textAlign: "center" }}>● Focusing</span>
+          ? <span style={{ ...btn(false), color: "var(--red)", borderColor: "var(--tint-red-bd)", cursor: "default", flex: mobile ? 1 : "none", textAlign: "center" }}>● Focusing</span>
           : <button onClick={() => onStart(row.kind, row)} style={{ ...btn(true), flex: mobile ? 1 : "none" }}>▶ Focus</button>}
         <button onClick={() => finish(isTest ? "pass" : "done")} style={{ ...btn(false), flex: mobile ? 1 : "none" }}>{isTest ? "✓ Pass" : "✓ Done"}</button>
         {!isTest && <button onClick={() => finish("skipped")} style={{ ...btn(false), flex: mobile ? 1 : "none" }}>Skip</button>}

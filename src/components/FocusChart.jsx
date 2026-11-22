@@ -7,7 +7,7 @@ import { rangeWindow, bucketFocus, niceMax, fmtDuration, ymd } from "./focusChar
 // project color, across all projects or a chosen few. Range and filter are remembered per device.
 // See docs/proposals/today-focus-chart.
 
-const C = { side: "#161615", raise: "#1A1A18", line: "#2C2C2A", line2: "#222220", dim: "#444441", muted: "#5F5E5A", sub: "#888780", soft: "#B4B2A9", title: "#D3D1C7", text: "#F1EFE8" };
+const C = { side: "var(--side)", raise: "var(--surface)", line: "var(--line)", line2: "var(--line2)", dim: "var(--dim)", muted: "var(--muted)", sub: "var(--sub)", soft: "var(--soft)", title: "var(--title)", text: "var(--text)" };
 const KEY = "qtrack_focus_chart";
 const RANGE_LABEL = { today: "Today", week: "Week", month: "Month", custom: "Custom" };
 const AXIS = 18; // room under the bars for labels
@@ -127,7 +127,7 @@ export default function FocusChart({ projects, mobile, refreshKey }) {
             <span style={{ position: "absolute", right: 0, top: -13, fontSize: 9.5, color: C.muted, fontFamily: "'SF Mono', monospace" }}>{fmtDuration(g)}</span>
           </div>
         ))}
-        {err && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontSize: 12, color: "#F09595" }}>{err}</div>}
+        {err && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontSize: 12, color: "var(--pink)" }}>{err}</div>}
         {sessions && !err && b.totalSeconds === 0 && <div style={{ position: "absolute", left: 0, right: 0, top: "35%", textAlign: "center", fontSize: 12, color: C.muted }}>{prefs.range === "today" ? "No focus yet today." : "No focus in this range."}</div>}
         {b.slots.map((s, i) => {
           const segs = Object.entries(s.byProject).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);
@@ -143,7 +143,7 @@ export default function FocusChart({ projects, mobile, refreshKey }) {
           );
         })}
         {hovered && hovered.seconds > 0 && (
-          <div style={{ position: "absolute", bottom: height - 8, left: `${Math.min(80, Math.max(0, ((hover + 0.5) / n) * 100 - 10))}%`, zIndex: 3, background: "#262624", border: `1px solid ${C.dim}`, borderRadius: 6, padding: "6px 9px", fontSize: 11, color: C.text, whiteSpace: "nowrap", boxShadow: "0 6px 18px rgba(0,0,0,0.4)", lineHeight: 1.5, pointerEvents: "none" }}>
+          <div style={{ position: "absolute", bottom: height - 8, left: `${Math.min(80, Math.max(0, ((hover + 0.5) / n) * 100 - 10))}%`, zIndex: 3, background: "var(--raise2)", border: `1px solid ${C.dim}`, borderRadius: 6, padding: "6px 9px", fontSize: 11, color: C.text, whiteSpace: "nowrap", boxShadow: "0 6px 18px rgba(0,0,0,0.4)", lineHeight: 1.5, pointerEvents: "none" }}>
             <span style={{ display: "block", fontSize: 10, color: C.muted }}>{hovered.title}</span>
             <b style={{ fontWeight: 500, fontFamily: "'SF Mono', monospace" }}>{fmtDuration(hovered.seconds)}</b>
             {" · "}{Object.entries(hovered.byProject).sort((x, y) => y[1] - x[1]).map(([pid, v]) => `${nameOf[pid] || "Project"} ${fmtDuration(v)}`).join(", ")}
@@ -165,7 +165,7 @@ export default function FocusChart({ projects, mobile, refreshKey }) {
   );
 }
 
-const totalStyle = { fontFamily: "'SF Mono', monospace", fontSize: 20, fontWeight: 500, letterSpacing: -0.3, color: "#F1EFE8" };
+const totalStyle = { fontFamily: "'SF Mono', monospace", fontSize: 20, fontWeight: 500, letterSpacing: -0.3, color: "var(--text)" };
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const fmtDay = (d) => `${MON[d.getMonth()]} ${d.getDate()}`;
 
@@ -174,7 +174,7 @@ function Option({ on, onClick, label, color, value }) {
     <button role="menuitemcheckbox" aria-checked={on} onClick={onClick}
       style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "6px 8px", borderRadius: 5, fontSize: 12, color: on ? C.text : C.soft, background: "transparent", border: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
       onMouseEnter={e => { e.currentTarget.style.background = C.line2; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-      <span style={{ width: 13, height: 13, borderRadius: 3, border: `1px solid ${on ? C.title : C.dim}`, background: on ? C.title : "transparent", display: "grid", placeItems: "center", fontSize: 9, color: "#111110", flexShrink: 0 }}>{on ? "✓" : ""}</span>
+      <span style={{ width: 13, height: 13, borderRadius: 3, border: `1px solid ${on ? C.title : C.dim}`, background: on ? C.title : "transparent", display: "grid", placeItems: "center", fontSize: 9, color: "var(--bg)", flexShrink: 0 }}>{on ? "✓" : ""}</span>
       {color && <i style={{ width: 7, height: 7, borderRadius: "50%", background: color, flexShrink: 0 }} />}
       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
       {value && <em style={{ fontStyle: "normal", fontFamily: "'SF Mono', monospace", fontSize: 10.5, color: C.muted }}>{value}</em>}
