@@ -81,6 +81,16 @@ function Ring({ size, stroke, timeLeft, totalTime, color }) {
   return (<svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}><circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#2C2C2A" strokeWidth={stroke} /><circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={c} strokeDashoffset={c * (1 - p)} strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s linear" }} /></svg>);
 }
 
+// Phone-width layout switch. Below this width the sidebar becomes a bottom tab bar.
+const MOBILE_QUERY = "(max-width: 640px)";
+function useIsMobile() {
+  const [m, setM] = useState(() => typeof window !== "undefined" && window.matchMedia(MOBILE_QUERY).matches);
+  useEffect(() => { const mq = window.matchMedia(MOBILE_QUERY); const on = () => setM(mq.matches); mq.addEventListener("change", on); return () => mq.removeEventListener("change", on); }, []);
+  return m;
+}
+// Inline styles can't be overridden per breakpoint, so on phones collapse multi-column grids with a scoped rule.
+const MOBILE_CSS = `.qt-mobile [style*="grid-template-columns: 1fr 1fr"], .qt-mobile [style*="grid-template-columns: repeat(3, 1fr)"], .qt-mobile [style*="grid-template-columns: repeat(5, 1fr)"] { grid-template-columns: 1fr !important; }`;
+
 export default function App({ session }) {
   const [projects, setProjects] = useState([]); const [files, setFiles] = useState([]); const [issues, setIssues] = useState([]); const [testCases, setTestCases] = useState([]); const [links, setLinks] = useState([]); const [activeProjectId, setActiveProjectId] = useState(null);
   const [view, setView] = useState("dashboard"); const [modal, setModal] = useState(null); const [linkModal, setLinkModal] = useState(null); const [sb, setSb] = useState(() => { try { return localStorage.getItem("qtrack_sb") !== "0"; } catch { return true; } });
@@ -104,6 +114,7 @@ export default function App({ session }) {
   const [people, setPeople] = useState([]);
   const [newsCache, setNewsCache] = useState([]);
   const [userTier, setUserTier] = useState("free");
+  const mobile = useIsMobile(); const [moreOpen, setMoreOpen] = useState(false);
 
   // Show tutorial once per browser
   useEffect(() => {
@@ -303,9 +314,10 @@ export default function App({ session }) {
   const taskName = tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId)?.title : tmr.tType === "test" ? testCases.find(t => t.id === tmr.tId)?.title : tmr.tType === "study" ? `📚 ${tmr.studyTopic}` : null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#111110", color: "#F1EFE8", fontFamily: "'DM Sans', -apple-system, sans-serif", fontSize: 13 }}>
+    <div className={mobile ? "qt-mobile" : undefined} style={{ minHeight: "100vh", background: "#111110", color: "#F1EFE8", fontFamily: "'DM Sans', -apple-system, sans-serif", fontSize: 13 }}>
+      {mobile && <style>{MOBILE_CSS}</style>}
       {/* Sidebar — fixed */}
-      <div style={{ width: sb ? 220 : 54, borderRight: "1px solid #2C2C2A", display: "flex", flexDirection: "column", flexShrink: 0, background: "#161615", transition: "width 0.2s ease", position: "fixed", top: 0, left: 0, height: "100vh", overflowY: "auto", zIndex: 50 }}>
+      {!mobile && <div style={{ width: sb ? 220 : 54, borderRight: "1px solid #2C2C2A", display: "flex", flexDirection: "column", flexShrink: 0, background: "#161615", transition: "width 0.2s ease", position: "fixed", top: 0, left: 0, height: "100vh", overflowY: "auto", zIndex: 50 }}>
         <div style={{ padding: sb ? "14px 18px" : "14px 0", borderBottom: "1px solid #2C2C2A", display: "flex", alignItems: "center", justifyContent: sb ? "space-between" : "center" }}>
           {sb ? (<div style={{ fontSize: 15, fontWeight: 500, letterSpacing: -0.5, display: "flex", alignItems: "center", gap: 8 }}><span style={{ background: "#D3D1C7", color: "#111110", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>QTrack</div>) : (<span style={{ background: "#D3D1C7", color: "#111110", width: 22, height: 22, borderRadius: 5, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>Q</span>)}
           <button onClick={() => { const v = !sb; setSb(v); try { localStorage.setItem("qtrack_sb", v ? "1" : "0"); } catch {} }} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px", display: sb ? "block" : "none" }}>{sb ? "◂" : "▸"}</button>
@@ -339,26 +351,26 @@ export default function App({ session }) {
         <div style={{ padding: sb ? "8px 10px" : "8px 4px", borderTop: "1px solid #2C2C2A" }}>
           {sb && <button onClick={() => setShowTutorial(true)} style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: "left", marginBottom: 2 }}>? Replay tutorial</button>}
           <button onClick={() => supabase.auth.signOut()} title="Sign out" style={{ display: "block", width: "100%", padding: "6px 10px", borderRadius: 5, border: "none", background: "transparent", color: "#5F5E5A", cursor: "pointer", fontSize: 11, textAlign: sb ? "left" : "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sb ? (isDemo ? "Exit demo · sign up" : `Sign out (${session.user.email})`) : "↗"}</button></div>
-      </div>
+      </div>}
 
       {/* Main */}
-      <div style={{ marginLeft: sb ? 220 : 54, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh", transition: "margin-left 0.2s ease" }}>
-        <div style={{ padding: "12px 28px", borderBottom: "1px solid #2C2C2A", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {!sb && <button onClick={() => setSb(true)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 16 }}>☰</button>}
-            <span style={{ fontSize: 16, fontWeight: 500 }}>{nav.find(n => n.id === view)?.l || ""}</span>
+      <div style={{ marginLeft: mobile ? 0 : sb ? 220 : 54, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh", transition: "margin-left 0.2s ease", paddingBottom: mobile ? 64 : 0 }}>
+        <div style={{ padding: mobile ? "12px 16px" : "12px 28px", borderBottom: "1px solid #2C2C2A", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            {!sb && !mobile && <button onClick={() => setSb(true)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 16 }}>☰</button>}
+            <span style={{ fontSize: mobile ? 17 : 16, fontWeight: mobile ? 600 : 500 }}>{view === "log" ? "Focus log" : nav.find(n => n.id === view)?.l || ""}</span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {(view === "issues" || view === "tests") && <Input value={searchQ} onChange={setSearchQ} placeholder="Search..." style={{ width: 180, fontSize: 12 }} />}
+            {(view === "issues" || view === "tests") && <Input value={searchQ} onChange={setSearchQ} placeholder="Search..." style={{ width: mobile ? 120 : 180, fontSize: 12 }} />}
             {view === "issues" && <Btn primary onClick={() => setModal({ type: "issue" })}>+ Issue</Btn>}
             {view === "tests" && <Btn primary onClick={() => setModal({ type: "test" })}>+ Test case</Btn>}
             {view === "files" && <Btn primary onClick={() => setModal({ type: "file" })}>+ File</Btn>}
           </div>
         </div>
-        <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
+        <div style={{ flex: 1, padding: mobile ? "16px 16px 24px" : "24px 28px", overflowY: "auto", minWidth: 0 }}>
           {view === "dashboard" && !isWorkshop && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} todaySessions={todaySessions} projectId={activeProjectId} />}
           {view === "dashboard" && isWorkshop && <WorkshopDashboard meetings={meetings} notes={notes} people={people} onNav={setView} />}
-          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} markDone={async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } }} />}
+          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} mobile={mobile} markDone={async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } }} />}
           {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
           {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
@@ -367,19 +379,63 @@ export default function App({ session }) {
           {view === "board" && <BoardView columns={columns} cards={cards} projectId={activeProjectId} reload={reload} issues={issues} files={files} addIssue={addIssue} />}
           {view === "people" && <PeopleView people={people} meetings={meetings} projectId={activeProjectId} reload={reload} />}
           {view === "news" && <NewsView project={activeProject} newsCache={newsCache} projectId={activeProjectId} reload={reload} />}
+          {view === "log" && <FocusLogView allSessions={allSessions} issues={issues} tests={testCases} logManual={logManual} />}
         </div>
         {/* Music dock */}
-        {!meetingFocus && <div style={{ background: "#161615", borderTop: "1px solid #1A1A18", padding: "4px 20px", flexShrink: 0 }}>
+        {!meetingFocus && !mobile && <div style={{ background: "#161615", borderTop: "1px solid #1A1A18", padding: "4px 20px", flexShrink: 0 }}>
           <MediaPlayer />
         </div>}
       </div>
+
+      {/* Mobile: running-timer chip + bottom tabs + "More" sheet */}
+      {mobile && !meetingFocus && (() => {
+        const tabs = isWorkshop
+          ? [{ id: "dashboard", l: "Home", ic: "⊞" }, { id: "calendar", l: "Sessions", ic: "▦" }, { id: "notes", l: "Notes", ic: "≡" }]
+          : [{ id: "focus", l: "Focus", ic: "◎" }, { id: "log", l: "Log", ic: "◷" }, { id: "issues", l: "Tasks", ic: "⚑" }, { id: "notes", l: "Notes", ic: "≡" }];
+        const go = (id) => { setView(id); setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all"); setMoreOpen(false); };
+        const inTabs = tabs.some(t => t.id === view);
+        const rest = nav.filter(n => !tabs.some(t => t.id === n.id) && (n.id === "dashboard" || !hiddenTabs.includes(n.id)));
+        const rowBtn = { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "11px 4px", border: "none", background: "transparent", fontSize: 14, textAlign: "left", cursor: "pointer" };
+        return (<>
+          {tmr.st !== "idle" && view !== "focus" && (
+            <div onClick={() => go("focus")} style={{ position: "fixed", left: 16, right: 16, bottom: 72, zIndex: 55, display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, cursor: "pointer" }}>
+              <Ring size={26} stroke={3} timeLeft={tmr.left} totalTime={tmr.total} color={SC[tmr.type]} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "#B4B2A9", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{taskName || (tmr.type === "work" ? "Focusing" : "Break")}{tmr.st === "paused" ? " · paused" : ""}</span>
+              <span style={{ fontFamily: "'SF Mono', monospace", fontSize: 15, color: SC[tmr.type] }}>{FMT(tmr.left)}</span>
+            </div>
+          )}
+          <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 56, display: "flex", background: "#161615", borderTop: "1px solid #2C2C2A", paddingBottom: "env(safe-area-inset-bottom)" }}>
+            {[...tabs, { id: "__more", l: "More", ic: "⋯" }].map(t => {
+              const on = t.id === "__more" ? (moreOpen || !inTabs) : view === t.id && !moreOpen;
+              return (<button key={t.id} onClick={() => t.id === "__more" ? setMoreOpen(!moreOpen) : go(t.id)} style={{ flex: 1, padding: "8px 0 10px", border: "none", background: "transparent", color: on ? "#F1EFE8" : "#5F5E5A", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 10 }}>
+                <span style={{ fontSize: 16, lineHeight: 1.2 }}>{t.ic}</span>{t.l}
+              </button>);
+            })}
+          </div>
+          {moreOpen && (
+            <div onClick={() => setMoreOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 54, background: "rgba(0,0,0,0.55)" }}>
+              <div onClick={e => e.stopPropagation()} style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "80vh", overflowY: "auto", background: "#161615", borderTop: "1px solid #2C2C2A", borderRadius: "18px 18px 0 0", padding: "10px 20px 84px" }}>
+                <div style={{ width: 36, height: 4, borderRadius: 2, background: "#2C2C2A", margin: "0 auto 12px" }} />
+                {rest.map(n => (<button key={n.id} onClick={() => go(n.id)} style={{ ...rowBtn, color: view === n.id ? "#F1EFE8" : "#B4B2A9" }}><span style={{ width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span><span style={{ flex: 1 }}>{n.l}</span>{n.cnt ? <span style={{ fontSize: 10, color: "#888780" }}>{n.cnt}</span> : null}</button>))}
+                <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, margin: "14px 0 4px" }}>Projects</div>
+                {projects.map(p => (<button key={p.id} onClick={() => { setActiveProjectId(p.id); setMoreOpen(false); }} style={{ ...rowBtn, color: activeProjectId === p.id ? "#F1EFE8" : "#888780" }}>{activeProjectId === p.id ? "● " : ""}{p.name}</button>))}
+                <button onClick={() => { setModal({ type: "project" }); setMoreOpen(false); }} style={{ ...rowBtn, color: "#5F5E5A", fontSize: 13 }}>+ New project</button>
+                <div style={{ borderTop: "1px solid #2C2C2A", marginTop: 8, paddingTop: 4 }}>
+                  <button onClick={() => { setShowTutorial(true); setMoreOpen(false); }} style={{ ...rowBtn, color: "#5F5E5A", fontSize: 13 }}>? Replay tutorial</button>
+                  <button onClick={() => supabase.auth.signOut()} style={{ ...rowBtn, color: "#5F5E5A", fontSize: 13 }}>{isDemo ? "Exit demo · sign up" : `Sign out (${session.user.email})`}</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>);
+      })()}
 
       {showTutorial && <Tutorial onClose={closeTutorial} />}
       {modal && <Modal modal={modal} files={files} onClose={() => setModal(null)} addProject={addProject} addFile={addFile} addIssue={addIssue} addTest={addTest} editIssue={editIssue} editTest={editTest} usedRepos={[...new Set([...issues, ...testCases].map(x => x.repo_name).filter(Boolean))]} usedBranches={[...new Set([...issues, ...testCases].map(x => x.branch_name).filter(Boolean))]} meetingTags={[...new Set(meetings.map(m => m.title))]} />}
       {linkModal && <LinkModal lm={linkModal} issues={issues} tests={testCases} links={links} lnk={lnk} onClose={() => setLinkModal(null)} />}
       {viewingNoteId && (() => { const n = notes.find(x => x.id === viewingNoteId); if (!n) return null; const cc = NOTE_CAT_COLORS[n.category] || NOTE_CAT_COLORS.scratch; const li = issues.find(i => i.id === n.linked_issue_id); const lt = testCases.find(t => t.id === n.linked_test_id); const lf = files.find(f => f.id === n.linked_file_id); return (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 110 }} onClick={() => setViewingNoteId(null)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 640, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 640, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexShrink: 0 }}>
               <Badge label={n.category} colors={cc} />
               {n.title && <span style={{ fontSize: 15, fontWeight: 500, flex: 1 }}>{n.title}</span>}
@@ -401,7 +457,7 @@ export default function App({ session }) {
   );
 }
 
-function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions, todaySessions, logManual, allNotes, markDone }) {
+function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions, todaySessions, logManual, allNotes, markDone, mobile }) {
   const [picking, setPicking] = useState(false);
   const [breakTipBump, setBreakTipBump] = useState(0);
   const [breakLoc, setBreakLoc] = useState(() => { try { return localStorage.getItem("qtrack_break_loc") || "office"; } catch { return "office"; } });
@@ -553,21 +609,21 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   const drawer = hasTask && (
     <div style={{ position: "relative" }}>
       {/* Toggle tab */}
-      {!drawerOpen && (
+      {!drawerOpen && !mobile && (
         <button onClick={() => setDrawerOpen(true)} style={{ position: "absolute", right: 0, top: 80, background: "#161615", border: "1px solid #1A1A18", borderRight: "none", borderRadius: "6px 0 0 6px", padding: "8px 6px", cursor: "pointer", color: "#5F5E5A", fontSize: 11, writingMode: "vertical-rl" }}>
           {checkedCount > 0 ? `${checkedCount}/${checklist.length}` : "Notes"} ◂
         </button>
       )}
       {/* Panel */}
-      <div style={{ width: drawerOpen ? 300 : 0, overflow: "hidden", transition: "width 0.25s ease", flexShrink: 0, height: "100%" }}>
-        <div style={{ width: 300, height: "100%", display: "flex", flexDirection: "column", background: "#161615", borderRadius: 10, border: "1px solid #1A1A18" }}>
+      <div style={{ width: mobile ? "100%" : drawerOpen ? 300 : 0, overflow: "hidden", transition: "width 0.25s ease", flexShrink: 0, height: "100%" }}>
+        <div style={{ width: mobile ? "100%" : 300, height: "100%", display: "flex", flexDirection: "column", background: "#161615", borderRadius: 10, border: "1px solid #1A1A18" }}>
           {/* Header */}
           <div style={{ padding: "10px 14px", borderBottom: "1px solid #1A1A18", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               {task.repo_name && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "#0A1929", color: "#85B7EB", border: "1px solid #042C53", fontFamily: "'SF Mono', monospace" }}>{task.repo_name}</span>}
               <Badge label={task.status} colors={TC[task.status] || { bg: "#2C2C2A", text: "#888780", border: "#444441" }} small />
             </div>
-            <button onClick={() => setDrawerOpen(false)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 12 }}>▸</button>
+            {!mobile && <button onClick={() => setDrawerOpen(false)} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 12 }}>▸</button>}
           </div>
 
           {/* Checklist */}
@@ -675,9 +731,9 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   // ===============================
   if (hasTask) {
     return (
-      <div style={{ display: "flex", gap: 0, minHeight: "calc(100vh - 160px)" }}>
+      <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", gap: mobile ? 20 : 0, minHeight: mobile ? 0 : "calc(100vh - 160px)" }}>
         {/* 70%: Timer area */}
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", paddingRight: 16 }}>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", paddingRight: mobile ? 0 : 16 }}>
           {/* Goal bar */}
           <div style={{ width: "100%", maxWidth: 500, marginBottom: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
@@ -718,7 +774,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
             )}
           </div>
 
-          {timerSection(200)}
+          {timerSection(mobile ? 190 : 200)}
           {controls}
 
           {/* Pause reason */}
@@ -731,7 +787,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           )}
 
           {/* Compact stats + queue row */}
-          <div style={{ display: "flex", gap: 12, marginTop: 24, width: "100%", maxWidth: 500 }}>
+          <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", gap: 12, marginTop: 24, width: "100%", maxWidth: 500 }}>
             <div style={{ flex: 1, background: "#161615", borderRadius: 8, padding: "10px 12px", border: "1px solid #1A1A18", fontSize: 11 }}>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Focus</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#5DCAA5" }}>{FMTHR(Math.round(focusSec / 60))}</span></div>
               {waitSec > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span style={{ color: "#5F5E5A" }}>Waiting</span><span style={{ fontFamily: "'SF Mono', monospace", color: "#378ADD" }}>{FMTHR(Math.round(waitSec / 60))}</span></div>}
@@ -784,7 +840,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
       )}
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 32 }}>
-        {timerSection(260)}
+        {timerSection(mobile ? 220 : 260)}
         {controls}
       </div>
 
@@ -832,6 +888,113 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Mobile "Log" tab: logged focus by day/week/month, plus a sheet to log past work
+function FocusLogView({ allSessions, issues, tests, logManual }) {
+  const [range, setRange] = useState("today");
+  const [sheet, setSheet] = useState(false);
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [form, setForm] = useState({ task: "", date: todayStr, startTime: "09:00", endTime: "09:25" });
+  const [err, setErr] = useState(null);
+  const isPause = (s) => s.subtype === "waiting" || s.subtype === "interrupted";
+  const isFocus = (s) => s.session_type === "work" && !isPause(s) && s.subtype !== "meeting";
+
+  const dayStart = (offset) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - offset); return d; };
+  const from = range === "today" ? dayStart(0) : range === "week" ? dayStart(6) : dayStart(29);
+  const work = (allSessions || []).filter(s => s.session_type === "work" && new Date(s.completed_at) >= from);
+  const focusSec = work.filter(isFocus).reduce((a, s) => a + s.duration_seconds, 0);
+  const pauseSec = work.filter(isPause).reduce((a, s) => a + s.duration_seconds, 0);
+  const taskKeys = new Set(work.filter(isFocus).map(s => s.issue_id || s.test_case_id || s.study_topic).filter(Boolean));
+
+  // Last 7 days of focus minutes, oldest first
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const start = dayStart(6 - i), end = new Date(start); end.setDate(end.getDate() + 1);
+    const min = (allSessions || []).filter(s => isFocus(s) && new Date(s.completed_at) >= start && new Date(s.completed_at) < end).reduce((a, s) => a + s.duration_seconds, 0) / 60;
+    return { label: start.toLocaleDateString("en-US", { weekday: "narrow" }), min, today: i === 6 };
+  });
+  const maxMin = Math.max(30, ...week.map(d => d.min));
+
+  const label = (s) => {
+    if (s.subtype === "meeting") return { name: s.study_topic || "Meeting", kind: "meeting", color: "#7F77DD" };
+    if (s.issue_id) { const i = issues.find(x => x.id === s.issue_id); return { name: i?.title || "Issue", kind: i?.type || "issue", color: i?.type === "todo" ? "#85B7EB" : "#E24B4A" }; }
+    if (s.test_case_id) return { name: tests.find(x => x.id === s.test_case_id)?.title || "Test case", kind: "test", color: "#5DCAA5" };
+    if (s.study_topic) return { name: s.study_topic, kind: "study", color: "#AFA9EC" };
+    return { name: "Focus", kind: "focus", color: "#888780" };
+  };
+  const hm = (d) => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+  const openTasks = [...issues.filter(i => !["fixed", "verified", "wont_fix"].includes(i.status)).map(i => ({ v: `issue:${i.id}`, l: i.title })), ...tests.filter(t => t.status !== "pass").map(t => ({ v: `test:${t.id}`, l: t.title }))];
+  const start = new Date(`${form.date}T${form.startTime}`), end = new Date(`${form.date}T${form.endTime}`);
+  const previewMin = Math.round((end - start) / 60000);
+  const save = async () => {
+    setErr(null);
+    if (!(previewMin > 0)) { setErr("End must be after start"); return; }
+    const [t, id] = form.task ? form.task.split(":") : ["", ""];
+    try { await logManual(t, id, start.toISOString(), end.toISOString()); setSheet(false); } catch (e) { setErr(e.message); }
+  };
+  const field = { width: "100%", padding: "10px 12px", borderRadius: 9, fontSize: 13, background: "#111110", color: "#F1EFE8", border: "1px solid #2C2C2A", outline: "none", boxSizing: "border-box" };
+  const lbl = { fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 };
+
+  return (
+    <div style={{ maxWidth: 560, margin: "0 auto" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ flex: 1, display: "flex", background: "#161615", border: "1px solid #1A1A18", borderRadius: 10, padding: 3 }}>
+          {["today", "week", "month"].map(r => (<button key={r} onClick={() => setRange(r)} style={{ flex: 1, padding: "6px 0", borderRadius: 7, border: "none", fontSize: 12, cursor: "pointer", background: range === r ? "#2C2C2A" : "transparent", color: range === r ? "#F1EFE8" : "#5F5E5A", textTransform: "capitalize" }}>{r}</button>))}
+        </div>
+        <Btn onClick={() => setSheet(true)} style={{ color: "#F1EFE8" }}>+ Log</Btn>
+      </div>
+
+      <div style={{ marginTop: 22, fontSize: 34, fontFamily: "'SF Mono', monospace", color: "#5DCAA5", letterSpacing: -1 }}>{FMTHR(Math.round(focusSec / 60))}</div>
+      <div style={{ display: "flex", gap: 16, fontSize: 12, color: "#888780", marginTop: 4 }}>
+        <span><b style={{ color: "#F1EFE8", fontWeight: 500 }}>{work.filter(isFocus).length}</b> sessions</span>
+        <span><b style={{ color: "#F1EFE8", fontWeight: 500 }}>{FMTHR(Math.round(pauseSec / 60))}</b> paused</span>
+        <span><b style={{ color: "#F1EFE8", fontWeight: 500 }}>{taskKeys.size}</b> tasks</span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 80, margin: "22px 0 6px" }}>
+        {week.map((d, i) => (<div key={i} style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", gap: 5 }}>
+          <div title={`${Math.round(d.min)}m`} style={{ width: "100%", height: `${Math.max(4, (d.min / maxMin) * 100)}%`, borderRadius: 4, background: d.today ? "#5DCAA5" : "#2C2C2A" }} />
+          <span style={{ fontSize: 9, color: "#5F5E5A" }}>{d.label}</span>
+        </div>))}
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        {work.length === 0 && <EmptyState icon="◷" title="Nothing logged yet" sub="Finish a focus session or log past work to see it here." />}
+        {work.map(s => {
+          const fin = new Date(s.completed_at), beg = s.started_at ? new Date(s.started_at) : new Date(fin - s.duration_seconds * 1000);
+          const l = isPause(s) ? { name: `Paused · ${s.subtype}`, kind: null, color: "#FAC775" } : label(s);
+          return (<div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #1A1A18" }}>
+            <div style={{ width: 3, alignSelf: "stretch", borderRadius: 2, background: l.color }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</div>
+              <div style={{ fontSize: 10, color: "#5F5E5A" }}>{range !== "today" && `${fin.toLocaleDateString("en-US", { month: "short", day: "numeric" })} · `}{hm(beg)} – {hm(fin)}{l.kind ? ` · ${l.kind}` : ""}{s.subtype === "manual" ? " · logged" : ""}</div>
+            </div>
+            <span style={{ fontFamily: "'SF Mono', monospace", fontSize: 12, color: isPause(s) ? "#FAC775" : "#888780" }}>{FMTHR(Math.round(s.duration_seconds / 60))}</span>
+          </div>);
+        })}
+      </div>
+
+      {sheet && (
+        <div onClick={() => setSheet(false)} style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.55)" }}>
+          <div onClick={e => e.stopPropagation()} style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxWidth: 560, margin: "0 auto", background: "#161615", borderTop: "1px solid #2C2C2A", borderRadius: "22px 22px 0 0", padding: "10px 20px calc(26px + env(safe-area-inset-bottom))" }}>
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: "#2C2C2A", margin: "0 auto 16px" }} />
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Log past work</div>
+            <div style={{ marginBottom: 12 }}><div style={lbl}>Task</div>
+              <select value={form.task} onChange={e => setForm({ ...form, task: e.target.value })} style={field}><option value="">No task</option>{openTasks.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}</select></div>
+            <div style={{ marginBottom: 12 }}><div style={lbl}>Date</div>
+              <input type="date" value={form.date} max={todayStr} onChange={e => setForm({ ...form, date: e.target.value })} style={field} /></div>
+            <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+              <div style={{ flex: 1 }}><div style={lbl}>Start</div><input type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} style={field} /></div>
+              <div style={{ flex: 1 }}><div style={lbl}>End</div><input type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} style={field} /></div>
+            </div>
+            <div style={{ fontSize: 11, color: err ? "#F09595" : "#5F5E5A", margin: "2px 0 14px" }}>{err || (previewMin > 0 ? <>Adds <b style={{ color: "#5DCAA5", fontWeight: 500 }}>{FMTHR(previewMin)}</b> of focus · about {Math.max(1, Math.round(previewMin / 25))} pomodoro{Math.round(previewMin / 25) > 1 ? "s" : ""}</> : "End must be after start")}</div>
+            <button onClick={save} style={{ width: "100%", padding: 12, borderRadius: 11, border: "none", background: "#F1EFE8", color: "#111110", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Save session</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1512,7 +1675,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
     const lt = ltIds(vi.id); const done = pomCount("issue", vi.id); const est = vi.estimated_pomodoros || 0; const due = fmtDue(vi.due_date); const inotes = notesByIssue(vi.id);
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setViewId(null)}>
-        <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 560, maxHeight: "80vh", overflowY: "auto" }}>
+        <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 560, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", overflowY: "auto" }}>
           {/* Header */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             <Badge label={vi.type} colors={vi.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} />
@@ -1549,8 +1712,8 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
 
   const IssueCard = ({ i, dimmed }) => { const lt = ltIds(i.id); const done = pomCount("issue", i.id); const est = i.estimated_pomodoros || 0; const due = fmtDue(i.due_date); return (
     <div onClick={() => !dimmed && setViewId(i.id)} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "12px 14px", marginBottom: 8, opacity: dimmed ? 0.6 : 1, cursor: dimmed ? "default" : "pointer" }} onMouseEnter={e => { if (!dimmed) e.currentTarget.style.borderColor = "#444441"; }} onMouseLeave={e => e.currentTarget.style.borderColor = "#2C2C2A"}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-        <div style={{ flex: 1 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} /><span style={{ fontSize: 13, fontWeight: 500, textDecoration: dimmed ? "line-through" : "none", color: dimmed ? "#888780" : "#F1EFE8" }}>{i.title}</span>{dimmed && <Badge label={i.status} colors={{ bg: "#081F12", text: "#5DCAA5", border: "#04342C" }} small />}</div>
           {!dimmed && i.description && <div style={{ fontSize: 12, color: "#888780", marginBottom: 6, lineHeight: 1.5 }}>{i.description}</div>}
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", flexWrap: "wrap" }}>
@@ -1652,7 +1815,7 @@ function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, u
     const li = liIds(vt.id); const done = pomCount("test", vt.id); const est = vt.estimated_pomodoros || 0; const due = fmtDue(vt.due_date); const tnotes = notesByTest(vt.id);
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setViewTid(null)}>
-        <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 560, maxHeight: "80vh", overflowY: "auto" }}>
+        <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 560, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", overflowY: "auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             <Badge label={vt.status} colors={TC[vt.status]} />
             <span style={{ fontSize: 16, fontWeight: 500, flex: 1 }}>{vt.title}</span>
@@ -1686,9 +1849,9 @@ function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, u
     {sorted.length === 0 && <EmptyState icon="▷" title="No test cases yet" sub="Write test cases to verify your code." action="New test case" onAction={onAdd} />}
     {viewMode === "card" && sorted.map(t => { const ex = exp === t.id; const li = liIds(t.id); const done = pomCount("test", t.id); const est = t.estimated_pomodoros || 0; const due = fmtDue(t.due_date); return (
       <div key={t.id} style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, marginBottom: 8 }}>
-        <div style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 8 }} onClick={() => setExp(ex ? null : t.id)}>
+        <div style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }} onClick={() => setExp(ex ? null : t.id)}>
           <span style={{ color: "#5F5E5A", fontSize: 12, marginTop: 2, transform: ex ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>▸</span>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}><span style={{ fontSize: 13, fontWeight: 500 }}>{t.title}</span><Badge label={t.status} colors={TC[t.status]} small /></div>
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#5F5E5A", flexWrap: "wrap" }}>
               <span style={{ fontFamily: "'SF Mono', monospace" }}>{fm[t.file_id]?.name || "—"}</span>
@@ -2439,7 +2602,7 @@ function NotesView({ notes, issues, files, testCases, projectId, reload, meeting
     const linkedTest = (testCases || []).find(t => t.id === n.linked_test_id);
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setViewing(null)}>
-        <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 640, maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 640, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexShrink: 0, flexWrap: "wrap" }}>
             {n.is_study && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "#1A0F2E", color: "#AFA9EC", border: "1px solid #534AB7" }}>★ Study</span>}
             {n.is_study && n.topic && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: "#1A0F2E", color: "#CECBF6" }}>📁 {n.topic}</span>}
@@ -3589,7 +3752,7 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
   </>) : null;
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 440, maxHeight: "80vh", overflowY: "auto" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 440, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", maxHeight: "80vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}><span style={{ fontSize: 15, fontWeight: 500 }}>{titles[modal.type]}</span><button onClick={onClose} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button></div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {modal.type === "project" && <>
@@ -3617,7 +3780,7 @@ function LinkModal({ lm, issues, tests, links, lnk, onClose }) {
   else { const a = links.filter(l => l.test_case_id === lm.testId).map(l => l.issue_id); items = issues.filter(i => !a.includes(i.id)).map(i => ({ id: i.id, l: i.title, s: i.type, ic: i.type === "bug" ? "◉" : "○", c: i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" } })); }
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onMouseDown={onClose}>
-      <div onMouseDown={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 380, maxHeight: "60vh", display: "flex", flexDirection: "column", boxSizing: "border-box", overflow: "hidden" }}>
+      <div onMouseDown={e => e.stopPropagation()} style={{ background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 12, padding: "20px 24px", width: 380, maxWidth: "calc(100vw - 32px)", maxHeight: "60vh", display: "flex", flexDirection: "column", boxSizing: "border-box", overflow: "hidden" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}><span style={{ fontSize: 15, fontWeight: 500 }}>{title}</span><button onClick={onClose} style={{ background: "none", border: "none", color: "#888780", cursor: "pointer", fontSize: 16 }}>✕</button></div>
         {err && <div style={{ padding: "8px 12px", borderRadius: 6, marginBottom: 10, fontSize: 12, background: "#2D0A0A", color: "#F09595" }}>{err}</div>}
         <div style={{ flex: 1 }}>

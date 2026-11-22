@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QTrack Mobile Mock</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Palette taken from the web app (src/App.jsx) */
+  :root {
+    --bg: #111110;
+    --surface: #161615;
+    --line: #1A1A18;
+    --line-2: #2C2C2A;
+    --dim: #444441;
+    --muted: #5F5E5A;
+    --sub: #888780;
+    --text: #F1EFE8;
+    --red: #E24B4A;
+    --green: #5DCAA5;
+    --blue: #85B7EB;
+    --purple: #AFA9EC;
+    --amber: #FAC775;
+    --mono: "DM Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0B0B0A;
+    color: var(--text);
+    font-family: "DM Sans", system-ui, sans-serif;
+    padding: 48px 16px 64px;
+  }
+  header { max-width: 1100px; margin: 0 auto 40px; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header p { color: var(--sub); font-size: 13px; margin-top: 6px; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 40px; justify-content: center; max-width: 1100px; margin: 0 auto; }
+  .frame { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .caption { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+
+  /* Phone shell */
+  .phone {
+    width: 300px; height: 630px;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    border-radius: 40px;
+    padding: 14px 20px 18px;
+    display: flex; flex-direction: column;
+    position: relative; overflow: hidden;
+  }
+  .status { display: flex; justify-content: space-between; font-size: 11px; color: var(--sub); padding: 2px 6px 0; }
+  .notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 84px; height: 22px; background: #000; border-radius: 12px; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin: 22px 0 14px; }
+  .topbar h2 { font-size: 17px; font-weight: 600; }
+  .icon-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line-2); display: grid; place-items: center; color: var(--sub); font-size: 13px; }
+
+  /* Bottom tabs */
+  .tabs { margin-top: auto; display: flex; justify-content: space-around; border-top: 1px solid var(--line); padding-top: 12px; }
+  .tab { font-size: 10px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .tab b { font-size: 15px; font-weight: 400; }
+  .tab.on { color: var(--text); }
+
+  /* Shared bits */
+  .chip { font-size: 10px; padding: 2px 7px; border-radius: 5px; border: 1px solid; }
+  .chip.bug { color: var(--red); border-color: #4A1B1B; background: #1F0E0E; }
+  .chip.test { color: var(--blue); border-color: #1B2F4A; background: #0A1929; }
+  .chip.study { color: var(--purple); border-color: #2E2950; background: #1A0A29; }
+  .mono { font-family: var(--mono); }
+  .label { font-size: 10px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+
+  /* Focus screen */
+  .progress { display: flex; gap: 4px; margin-bottom: 6px; margin-top: -4px; }
+  .progress i { flex: 1; height: 3px; border-radius: 2px; background: var(--line-2); }
+  .progress i.done { background: var(--green); }
+  .progress i.now { background: var(--red); }
+  .meta { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+  .task { text-align: center; margin: 18px 0 0; }
+  .task .chips { display: flex; gap: 5px; justify-content: center; margin-bottom: 8px; }
+  .task p { font-size: 14px; line-height: 1.35; }
+  .ring { position: relative; width: 170px; height: 170px; margin: 14px auto 0; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .center { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .ring .time { font-family: var(--mono); font-size: 44px; color: var(--red); letter-spacing: -1px; }
+  .ring .phase { font-size: 10px; color: var(--muted); letter-spacing: .15em; margin-top: 2px; }
+  .dots { display: flex; gap: 5px; justify-content: center; margin-top: 8px; }
+  .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--dim); }
+  .dots i.on { background: var(--red); }
+  .controls { display: flex; gap: 10px; justify-content: center; margin-top: 20px; }
+  .btn { font-size: 12px; padding: 9px 16px; border-radius: 10px; border: 1px solid var(--line-2); color: var(--sub); background: none; }
+  .btn.primary { color: var(--text); background: var(--surface); border-color: #3A3A37; padding: 9px 26px; }
+  .reasons { display: flex; gap: 8px; justify-content: center; margin-top: 8px; }
+  .reasons span { font-size: 10px; color: var(--muted); }
+  .next { margin-top: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .next li { list-style: none; font-size: 11px; color: var(--sub); display: flex; gap: 8px; align-items: center; margin-top: 7px; }
+  .next li::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--c, var(--red)); }
+
+  /* Logged screen */
+  .seg { display: flex; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 3px; font-size: 11px; }
+  .seg span { flex: 1; text-align: center; padding: 6px 0; color: var(--muted); border-radius: 7px; }
+  .seg span.on { background: var(--line-2); color: var(--text); }
+  .total { margin: 22px 0 4px; display: flex; align-items: baseline; gap: 8px; }
+  .total .mono { font-size: 34px; color: var(--green); }
+  .total small { font-size: 11px; color: var(--muted); }
+  .sub-stats { display: flex; gap: 16px; font-size: 11px; color: var(--sub); }
+  .sub-stats b { color: var(--text); font-weight: 500; }
+  .bars { display: flex; align-items: flex-end; gap: 10px; height: 70px; margin: 22px 0 6px; }
+  .bars div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; height: 100%; justify-content: flex-end; }
+  .bars i { width: 100%; border-radius: 4px; background: var(--line-2); }
+  .bars i.today { background: var(--green); }
+  .bars span { font-size: 9px; color: var(--muted); }
+  .list { margin-top: 18px; display: flex; flex-direction: column; }
+  .entry { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .entry .bar { width: 3px; align-self: stretch; border-radius: 2px; background: var(--c); }
+  .entry .what { flex: 1; min-width: 0; }
+  .entry .what p { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .entry .what small { font-size: 10px; color: var(--muted); }
+  .entry .dur { font-family: var(--mono); font-size: 12px; color: var(--sub); }
+  .entry.paused .dur { color: var(--amber); }
+
+  /* Log sheet */
+  .sheet-dim { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line-2); border-radius: 22px 22px 0 0; padding: 10px 20px 26px; }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--line-2); margin: 0 auto 16px; }
+  .sheet h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+  .field { margin-bottom: 12px; }
+  .field .label { margin-bottom: 6px; }
+  .input { background: var(--bg); border: 1px solid var(--line-2); border-radius: 9px; padding: 10px 12px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+  .input .caret { color: var(--muted); }
+  .two { display: flex; gap: 10px; }
+  .two .field { flex: 1; }
+  .hint { font-size: 10px; color: var(--muted); margin: 2px 0 14px; }
+  .hint b { color: var(--green); font-weight: 500; }
+  .save { width: 100%; padding: 12px; border-radius: 11px; background: var(--text); color: var(--bg); font-size: 13px; font-weight: 600; text-align: center; }
+
+  /* Home screen + widgets */
+  .home { background: radial-gradient(120% 80% at 20% 0%, #1E1E1C 0%, #0D0D0C 70%); }
+  .home .clock { text-align: center; margin: 40px 0 26px; }
+  .home .clock b { font-size: 54px; font-weight: 500; letter-spacing: -2px; }
+  .home .clock p { font-size: 12px; color: var(--sub); }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .widget { background: rgba(22,22,21,.92); border: 1px solid var(--line-2); border-radius: 22px; padding: 14px; aspect-ratio: 1; display: flex; flex-direction: column; }
+  .widget.wide { grid-column: span 2; aspect-ratio: auto; height: 122px; }
+  .w-head { display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--muted); }
+  .w-head .q { width: 14px; height: 14px; border-radius: 4px; background: var(--text); color: var(--bg); font-size: 9px; font-weight: 700; display: grid; place-items: center; }
+  .w-ring { position: relative; width: 78px; height: 78px; margin: 8px auto 0; }
+  .w-ring svg { transform: rotate(-90deg); }
+  .w-ring .mono { position: absolute; inset: 0; display: grid; place-items: center; font-size: 17px; color: var(--red); }
+  .w-task { font-size: 10px; color: var(--sub); text-align: center; margin-top: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .w-big { font-family: var(--mono); font-size: 22px; white-space: nowrap; letter-spacing: -1px; color: var(--green); margin-top: 14px; }
+  .w-small { font-size: 10px; color: var(--muted); }
+  .w-goal { height: 4px; border-radius: 2px; background: var(--line-2); margin-top: auto; overflow: hidden; }
+  .w-goal i { display: block; height: 100%; width: 62%; background: var(--green); }
+  .w-wide { display: flex; gap: 16px; margin-top: 10px; flex: 1; }
+  .w-wide .left { width: 96px; }
+  .w-wide .left .mono { font-size: 22px; color: var(--green); }
+  .w-wide ul { flex: 1; list-style: none; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid var(--line-2); padding-left: 14px; }
+  .w-wide li { font-size: 10px; color: var(--sub); display: flex; justify-content: space-between; gap: 8px; }
+  .w-wide li span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .w-wide li .mono { color: var(--muted); }
+  .play { width: 26px; height: 26px; border-radius: 50%; background: var(--red); display: grid; place-items: center; font-size: 10px; color: var(--bg); }
+  .dock { margin-top: auto; display: flex; justify-content: center; gap: 18px; background: rgba(255,255,255,.04); border-radius: 22px; padding: 12px; }
+  .dock i { width: 40px; height: 40px; border-radius: 12px; background: var(--line-2); }
+
+  /* Lock screen widget */
+  .lock .clock { margin-top: 56px; }
+  .lock .clock b { font-size: 64px; }
+  .lockw { display: flex; gap: 10px; justify-content: center; margin-top: 4px; }
+  .lockw > div { background: rgba(255,255,255,.06); border-radius: 14px; padding: 8px 12px; font-size: 11px; color: var(--sub); }
+  .lockw .mono { color: var(--text); font-size: 13px; }
+  .live { margin-top: auto; margin-bottom: 30px; background: rgba(22,22,21,.95); border: 1px solid var(--line-2); border-radius: 20px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
+  .live .what { flex: 1; min-width: 0; }
+  .live .what p { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .live .what small { font-size: 10px; color: var(--muted); }
+  .live .mono { font-size: 20px; color: var(--red); }
+  .live .lbar { height: 3px; background: var(--line-2); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+  .live .lbar i { display: block; height: 100%; width: 30%; background: var(--red); }
+
+  /* Streak widget (GitHub-style heatmap) */
+  .widget.tall { grid-column: span 2; aspect-ratio: auto; }
+  .streak-top { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; }
+  .streak-top .mono { font-size: 26px; color: var(--text); }
+  .streak-top small { font-size: 11px; color: var(--sub); }
+  .streak-top .flame { margin-left: auto; font-size: 10px; color: var(--amber); }
+  .heat { display: grid; gap: 3px; margin-top: 12px; }
+  .heat.cols { grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; grid-auto-columns: 1fr; }
+  .heat.rows { grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: auto; }
+  .heat.rows i, .w-wide .heat i { border-radius: 2px; }
+  .streak-top.s { margin-top: 6px; }
+  .streak-top.s .mono { font-size: 20px; }
+  .week { display: flex; justify-content: space-between; margin-top: auto; }
+  .week div { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 8px; color: var(--muted); }
+  .week i { width: 12px; height: 26px; border-radius: 4px; background: var(--line-2); }
+  .week i.l1 { background: #1F4A3D; } .week i.l2 { background: #2E7A62; } .week i.l3 { background: #46A887; } .week i.l4 { background: var(--green); }
+  .week i.today { outline: 1px solid var(--text); outline-offset: 1px; }
+  .lock-streak { display: flex; align-items: center; gap: 10px; justify-content: center; margin: 10px auto 0; background: rgba(255,255,255,.06); border-radius: 14px; padding: 8px 12px; font-size: 11px; color: var(--sub); width: fit-content; }
+  .lock-streak .mono { color: var(--text); font-size: 13px; }
+  .lock-streak .heat.rows { width: 84px; margin: 0; }
+  .heat i { aspect-ratio: 1; border-radius: 3px; background: var(--line-2); }
+  .heat i.l1 { background: #1F4A3D; }
+  .heat i.l2 { background: #2E7A62; }
+  .heat i.l3 { background: #46A887; }
+  .heat i.l4 { background: var(--green); }
+  .heat i.today { outline: 1px solid var(--text); outline-offset: 1px; }
+  .heat-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 9px; color: var(--muted); }
+  .legend { display: flex; align-items: center; gap: 3px; }
+  .legend i { width: 8px; height: 8px; border-radius: 2px; background: var(--line-2); }
+  .streak-stats { display: flex; justify-content: space-between; border-top: 1px solid var(--line-2); margin-top: 12px; padding-top: 10px; }
+  .streak-stats div { font-size: 9px; color: var(--muted); }
+  .streak-stats b { display: block; font-family: var(--mono); font-size: 13px; font-weight: 400; color: var(--text); margin-bottom: 2px; }
+
+  h2.section { max-width: 1100px; margin: 64px auto 24px; font-size: 13px; font-weight: 500; color: var(--sub); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>QTrack Mobile Mock</h1>
+  <p>Minimal mockups for the mobile focus timer, the focus log, and home and lock screen widgets. Colors match the web app.</p>
+</header>
+
+<h2 class="section">App screens</h2>
+<div class="row">
+
+  <!-- 1. Focus -->
+  <div class="frame">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="status"><span>9:41</span><span>● ● ▮</span></div>
+      <div class="topbar"><h2>Focus</h2><div class="icon-btn">≡</div></div>
+
+      <div class="progress"><i class="done"></i><i class="done"></i><i class="done"></i><i class="now"></i></div>
+      <div class="meta"><span>Session 4 · 3/4 pomodoros</span><span>1h 15m today</span></div>
+
+      <div class="task">
+        <div class="chips"><span class="chip bug">bug</span><span class="chip bug">critical</span></div>
+        <p>Hourly forecast shows UTC<br>instead of local time</p>
+      </div>
+
+      <div class="ring">
+        <svg width="170" height="170" viewBox="0 0 200 200">
+          <circle cx="100" cy="100" r="92" fill="none" stroke="#2C2C2A" stroke-width="3"/>
+          <circle cx="100" cy="100" r="92" fill="none" stroke="#E24B4A" stroke-width="3" stroke-linecap="round"
+                  stroke-dasharray="578" stroke-dashoffset="171"/>
+        </svg>
+        <div class="center">
+          <div class="time">17:34</div>
+          <div class="phase">FOCUS</div>
+          <div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <span class="btn">Stop</span>
+        <span class="btn primary">Pause</span>
+        <span class="btn">✓ Done</span>
+      </div>
+      <div class="reasons"><span>Hold pause for a reason: waiting · interrupted</span></div>
+
+      <ul class="next">
+        <span class="label">Up next</span>
+        <li>Cache never expires when offline</li>
+              </ul>
+
+      <div class="tabs">
+        <div class="tab on"><b>◎</b>Focus</div>
+        <div class="tab"><b>◷</b>Log</div>
+        <div class="tab"><b>⚑</b>Tasks</div>
+        <div class="tab"><b>≡</b>Notes</div>
+      </div>
+    </div>
+    <div class="caption">Focus</div>
+  </div>
+
+  <!-- 2. Logged focus -->
+  <div class="frame">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="status"><span>9:41</span><span>● ● ▮</span></div>
+      <div class="topbar"><h2>Focus log</h2><div class="icon-btn" style="width:auto;padding:0 10px;color:var(--text)">+ Log</div></div>
+
+      <div class="seg"><span class="on">Today</span><span>Week</span><span>Month</span></div>
+
+      <div class="total"><span class="mono">1h 15m</span><small>of 2h goal</small></div>
+      <div class="sub-stats"><span><b>3</b> sessions</span><span><b>12m</b> paused</span><span><b>2</b> tasks</span></div>
+
+      <div class="bars">
+        <div><i style="height:40%"></i><span>M</span></div>
+        <div><i style="height:75%"></i><span>T</span></div>
+        <div><i style="height:55%"></i><span>W</span></div>
+        <div><i style="height:90%"></i><span>T</span></div>
+        <div><i style="height:30%"></i><span>F</span></div>
+        <div><i style="height:10%"></i><span>S</span></div>
+        <div><i class="today" style="height:62%"></i><span>S</span></div>
+      </div>
+
+      <div class="list">
+        <div class="entry" style="--c: var(--red)">
+          <div class="bar"></div>
+          <div class="what"><p>Hourly forecast shows UTC</p><small>10:05 – 10:30 · bug</small></div>
+          <span class="dur">25m</span>
+        </div>
+        <div class="entry paused" style="--c: var(--amber)">
+          <div class="bar"></div>
+          <div class="what"><p>Paused · waiting on API review</p><small>10:30 – 10:42</small></div>
+          <span class="dur">12m</span>
+        </div>
+        <div class="entry" style="--c: var(--red)">
+          <div class="bar"></div>
+          <div class="what"><p>Hourly forecast shows UTC</p><small>10:42 – 11:07 · bug</small></div>
+          <span class="dur">25m</span>
+        </div>
+        <div class="entry" style="--c: var(--purple)">
+          <div class="bar"></div>
+          <div class="what"><p>Dynamic programming review</p><small>08:00 – 08:25 · study · logged</small></div>
+          <span class="dur">25m</span>
+        </div>
+      </div>
+
+      
+      <div class="tabs">
+        <div class="tab"><b>◎</b>Focus</div>
+        <div class="tab on"><b>◷</b>Log</div>
+        <div class="tab"><b>⚑</b>Tasks</div>
+        <div class="tab"><b>≡</b>Notes</div>
+      </div>
+    </div>
+    <div class="caption">Logged focus</div>
+  </div>
+
+  <!-- 3. Log past work sheet -->
+  <div class="frame">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="status"><span>9:41</span><span>● ● ▮</span></div>
+      <div class="topbar"><h2>Focus log</h2><div class="icon-btn">⌕</div></div>
+      <div class="seg"><span class="on">Today</span><span>Week</span><span>Month</span></div>
+      <div class="total"><span class="mono">1h 15m</span><small>of 2h goal</small></div>
+
+      <div class="sheet-dim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <h3>Log past work</h3>
+        <div class="field">
+          <div class="label">Task</div>
+          <div class="input"><span><span class="chip study" style="margin-right:6px">study</span>Dynamic programming</span><span class="caret">⌄</span></div>
+        </div>
+        <div class="field">
+          <div class="label">Date</div>
+          <div class="input"><span>Today, Nov 3</span><span class="caret">⌄</span></div>
+        </div>
+        <div class="two">
+          <div class="field"><div class="label">Start</div><div class="input mono"><span>14:00</span></div></div>
+          <div class="field"><div class="label">End</div><div class="input mono"><span>14:50</span></div></div>
+        </div>
+        <p class="hint">Adds <b>50m</b> of focus · counts as 2 pomodoros</p>
+        <div class="save">Save session</div>
+      </div>
+    </div>
+    <div class="caption">Log past work</div>
+  </div>
+</div>
+
+<h2 class="section">Widgets</h2>
+<div class="row">
+
+  <!-- 4. Home screen widgets -->
+  <div class="frame">
+    <div class="phone home">
+      <div class="notch"></div>
+      <div class="status"><span>9:41</span><span>● ● ▮</span></div>
+      <div class="clock"><b>9:41</b><p>Monday, November 3</p></div>
+
+      <div class="grid">
+        <!-- Small: running timer -->
+        <div class="widget">
+          <div class="w-head"><span>Focus</span><span class="q">Q</span></div>
+          <div class="w-ring">
+            <svg width="78" height="78" viewBox="0 0 78 78">
+              <circle cx="39" cy="39" r="34" fill="none" stroke="#2C2C2A" stroke-width="3"/>
+              <circle cx="39" cy="39" r="34" fill="none" stroke="#E24B4A" stroke-width="3" stroke-linecap="round"
+                      stroke-dasharray="214" stroke-dashoffset="63"/>
+            </svg>
+            <span class="mono">17:34</span>
+          </div>
+          <div class="w-task">UTC forecast bug</div>
+        </div>
+
+        <!-- Small: today logged -->
+        <div class="widget">
+          <div class="w-head"><span>Today</span><span class="q">Q</span></div>
+          <div class="w-big">1h 15m</div>
+          <div class="w-small">3 sessions · goal 2h</div>
+          <div class="w-goal"><i></i></div>
+        </div>
+
+        <!-- Medium: logged + quick start -->
+        <div class="widget wide">
+          <div class="w-head"><span>Focus log</span><span class="q">Q</span></div>
+          <div class="w-wide">
+            <div class="left">
+              <div class="mono">1h 15m</div>
+              <div class="w-small" style="margin-bottom:10px">today</div>
+              <div style="display:flex;align-items:center;gap:8px"><span class="play">▶</span><span class="w-small">Next up</span></div>
+            </div>
+            <ul>
+              <li><span>UTC forecast bug</span><span class="mono">50m</span></li>
+              <li><span>DP review</span><span class="mono">25m</span></li>
+              <li><span style="color:var(--amber)">Paused · waiting</span><span class="mono">12m</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="dock"><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="caption">Home screen</div>
+  </div>
+
+  <!-- 5. Lock screen + live activity -->
+  <div class="frame">
+    <div class="phone home lock">
+      <div class="notch"></div>
+      <div class="status"><span></span><span>● ● ▮</span></div>
+      <div class="clock"><p>Monday, November 3</p><b>9:41</b></div>
+
+      <div class="lockw">
+        <div>◎ <span class="mono">17:34</span></div>
+        <div>Today <span class="mono">1h 15m</span></div>
+      </div>
+      <div class="lock-streak"><span><span class="mono">12</span> day streak</span><div class="heat rows" data-days="7"></div></div>
+
+      <div class="live">
+        <span class="play">❚❚</span>
+        <div class="what">
+          <p>Hourly forecast shows UTC</p>
+          <small>Focus · 3/4 pomodoros</small>
+          <div class="lbar"><i></i></div>
+        </div>
+        <span class="mono">17:34</span>
+      </div>
+    </div>
+    <div class="caption">Lock screen · live activity</div>
+  </div>
+
+  <!-- 6. Streak widget in every size -->
+  <div class="frame">
+    <div class="phone home">
+      <div class="notch"></div>
+      <div class="status"><span>9:41</span><span>● ● ▮</span></div>
+
+      <div class="grid" style="margin-top:26px">
+        <!-- Small: last 4 weeks -->
+        <div class="widget">
+          <div class="w-head"><span>Streak</span><span class="q">Q</span></div>
+          <div class="streak-top s"><span class="mono">12</span><small>days</small></div>
+          <div class="heat rows" data-days="28"></div>
+        </div>
+
+        <!-- Small: this week, habit style -->
+        <div class="widget">
+          <div class="w-head"><span>This week</span><span class="q">Q</span></div>
+          <div class="streak-top s"><span class="mono">5/7</span><small>days</small></div>
+          <div class="week">
+            <div><i class="l3"></i>M</div><div><i class="l4"></i>T</div><div><i class="l2"></i>W</div><div><i class="l4"></i>T</div>
+            <div><i class="l1"></i>F</div><div><i></i>S</div><div><i class="l3 today"></i>S</div>
+          </div>
+        </div>
+
+        <!-- Medium: last 12 weeks -->
+        <div class="widget wide">
+          <div class="w-head"><span>Focus streak</span><span class="q">Q</span></div>
+          <div class="w-wide">
+            <div class="left">
+              <div class="mono" style="color:var(--text)">12 days</div>
+              <div class="w-small">in a row</div>
+              <div class="w-small" style="color:var(--amber);margin-top:10px">best 21</div>
+            </div>
+            <div class="heat cols" data-weeks="12" style="flex:1;margin-top:0"></div>
+          </div>
+        </div>
+
+        <!-- Large: last 16 weeks + totals -->
+        <div class="widget tall">
+          <div class="w-head"><span>Focus streak</span><span class="q">Q</span></div>
+          <div class="streak-top">
+            <span class="mono">12</span><small>days in a row</small>
+            <span class="flame">best 21</span>
+          </div>
+          <div class="heat cols" data-weeks="16"></div>
+          <div class="heat-foot">
+            <span>Last 16 weeks</span>
+            <span class="legend">less <i></i><i style="background:#1F4A3D"></i><i style="background:#2E7A62"></i><i style="background:#46A887"></i><i style="background:var(--green)"></i> more</span>
+          </div>
+          <div class="streak-stats">
+            <div><b>86h</b>focused</div>
+            <div><b>204</b>pomodoros</div>
+            <div><b>94</b>active days</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="caption">Streak · small, medium, large</div>
+  </div>
+</div>
+
+<script>
+  // Sample focus history shared by every streak widget: one level (0–4) per
+  // day for 16 weeks, ending today (a Monday) with a 12-day streak.
+  (function () {
+    const total = 16 * 7 - 6;
+    let seed = 7;
+    const rand = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+    const history = [];
+    for (let d = 0; d < total; d++) {
+      const r = rand();
+      const level = d >= total - 12 ? 1 + Math.floor(r * 4) : r < 0.3 ? 0 : 1 + Math.floor(r * r * 4);
+      history.push(Math.min(level, 4));
+    }
+
+    const cell = (level, isToday) => {
+      const i = document.createElement("i");
+      if (level) i.className = "l" + level;
+      if (isToday) i.classList.add("today");
+      return i;
+    };
+
+    document.querySelectorAll(".heat").forEach(el => {
+      if (el.dataset.days) {
+        // Calendar rows: last N days, oldest first.
+        history.slice(-el.dataset.days).forEach((lvl, i, a) => el.appendChild(cell(lvl, i === a.length - 1)));
+      } else {
+        // GitHub columns: one column per week, Monday on top.
+        const days = el.dataset.weeks * 7 - 6;
+        history.slice(-days).forEach((lvl, i) => el.appendChild(cell(lvl, i === days - 1)));
+        for (let k = 0; k < 6; k++) el.appendChild(document.createElement("i")).style.visibility = "hidden";
+      }
+    });
+  })();
+</script>
+
+</body>
+</html>
