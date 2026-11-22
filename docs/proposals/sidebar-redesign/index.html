@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QTrack Sidebar Redesign</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Palette from the web app (src/App.jsx) */
+  :root {
+    --bg: #111110; --side: #161615; --raise: #1A1A18; --line: #2C2C2A; --line-2: #222220;
+    --dim: #444441; --muted: #5F5E5A; --sub: #888780; --soft: #B4B2A9; --text: #F1EFE8;
+    --red: #E24B4A; --green: #5DCAA5; --blue: #85B7EB; --purple: #AFA9EC; --amber: #FAC775; --pink: #ED93B1; --teal: #6FC3D8; --orange: #F0997B; --lime: #C0DD97;
+    --mono: "DM Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B0B0A; color: var(--text); font-family: "DM Sans", system-ui, sans-serif; font-size: 13px; padding: 44px 24px 56px; }
+  header { max-width: 1240px; margin: 0 auto 30px; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header p { color: var(--sub); font-size: 13px; margin-top: 6px; max-width: 820px; line-height: 1.55; }
+
+  .grid { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
+  .frame { display: flex; flex-direction: column; gap: 10px; }
+  .cap { font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  .cap b { color: var(--soft); font-weight: 500; letter-spacing: .04em; }
+  .note { font-size: 11.5px; color: var(--sub); line-height: 1.5; }
+
+  /* Sidebar shell */
+  .sb { width: 100%; height: 620px; background: var(--side); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+  .brand { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .brand span { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; letter-spacing: -.3px; }
+  .logo { width: 22px; height: 22px; border-radius: 5px; background: #D3D1C7; color: var(--bg); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+  .brand i { color: var(--muted); font-style: normal; font-size: 12px; }
+
+  .sec { padding: 10px; }
+  .sec + .sec { border-top: 1px solid var(--line); }
+  .item { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 6px; color: var(--sub); font-size: 13px; }
+  .item .ic { width: 18px; text-align: center; opacity: .75; font-size: 13px; }
+  .item .grow { flex: 1; }
+  .item.on { background: var(--line); color: var(--text); }
+  .cnt { font-size: 10px; background: var(--line); color: var(--sub); padding: 1px 6px; border-radius: 4px; }
+  .item.on .cnt { background: var(--dim); color: var(--soft); }
+  .timer { font-family: var(--mono); font-size: 11px; color: var(--red); display: flex; align-items: center; gap: 5px; }
+  .timer::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+  .timer.paused { color: var(--amber); }
+  .timer.paused::before { background: var(--amber); }
+
+  /* Project switcher header */
+  .proj { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--raise); margin-bottom: 6px; }
+  .proj.open { border-color: var(--dim); }
+  .dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+  .proj .name { flex: 1; font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proj .chev { color: var(--muted); font-size: 10px; }
+  .sub .item { padding-left: 14px; }
+  .kicker { font-size: 9.5px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; padding: 4px 10px 6px; }
+
+  /* Account row */
+  .acct { margin-top: auto; border-top: 1px solid var(--line); padding: 10px; }
+  .acct .item { padding: 7px 8px; }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; background: #2E2950; color: var(--purple); font-size: 11px; font-weight: 600; display: grid; place-items: center; }
+  .more { color: var(--muted); font-size: 14px; letter-spacing: 1px; }
+
+  /* Popovers */
+  .pop { position: absolute; left: 10px; right: 10px; background: #1E1E1C; border: 1px solid var(--dim); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.55); padding: 8px; z-index: 5; }
+  .search { display: flex; align-items: center; gap: 7px; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .search kbd { margin-left: auto; font-family: var(--mono); font-size: 9.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  .prow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12.5px; color: var(--soft); }
+  .prow .pn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prow .meta { font-size: 10px; color: var(--muted); }
+  .prow.cur { background: var(--line); color: var(--text); }
+  .prow.hover { background: #262624; }
+  .prow .dots { color: var(--sub); font-size: 13px; padding: 0 3px; border-radius: 4px; }
+  .prow.hover .dots { background: var(--dim); color: var(--text); }
+  .prow.arch { color: var(--muted); font-style: italic; }
+  .sep { height: 1px; background: var(--line); margin: 6px 2px; }
+  .action { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; color: var(--sub); }
+  .action.danger { color: #F09595; }
+  .menu { position: absolute; width: 168px; background: #242422; border: 1px solid var(--dim); border-radius: 9px; box-shadow: 0 8px 24px rgba(0,0,0,.6); padding: 5px; z-index: 6; }
+  .menu .action { padding: 6px 8px; }
+  .menu .action span:first-child { width: 14px; text-align: center; opacity: .8; }
+  .hint { font-size: 10px; color: var(--muted); padding: 2px 8px 0; }
+
+  /* Collapsed rail */
+  .rail { width: 64px; height: 540px; position: relative; z-index: 2; background: var(--side); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; align-items: center; padding: 14px 0; gap: 6px; }
+  .rail .r { width: 38px; height: 34px; border-radius: 7px; display: grid; place-items: center; color: var(--sub); font-size: 14px; position: relative; }
+  .rail .r.on { background: var(--line); color: var(--text); }
+  .rail .pd { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; font-size: 10px; font-weight: 600; color: #111; }
+  .rail .badge { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+  .rail hr { width: 30px; border: none; border-top: 1px solid var(--line); margin: 6px 0; }
+  .tip { position: absolute; left: 50px; top: 4px; white-space: nowrap; background: #242422; border: 1px solid var(--dim); border-radius: 6px; padding: 4px 8px; font-size: 11px; color: var(--text); z-index: 3; }
+  .railwrap { display: flex; gap: 16px; align-items: flex-start; }
+  .railnote { flex: 1; display: flex; flex-direction: column; gap: 12px; padding-top: 6px; margin-left: 150px; }
+  .railnote div { background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 12px; color: var(--soft); line-height: 1.5; }
+  .railnote b { color: var(--text); font-weight: 500; }
+
+  /* Delete confirm */
+  .modal { position: absolute; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 7; padding: 14px; }
+  .dlg { background: var(--raise); border: 1px solid var(--line); border-radius: 12px; padding: 16px; width: 100%; }
+  .dlg h4 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .dlg p { font-size: 12px; color: var(--soft); line-height: 1.5; margin-bottom: 10px; }
+  .dlg .inp { background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 12px; color: var(--text); margin-bottom: 12px; font-family: var(--mono); }
+  .dlg .row { display: flex; gap: 8px; }
+  .btn { flex: 1; text-align: center; padding: 8px; border-radius: 7px; font-size: 12px; font-weight: 600; border: 1px solid var(--dim); color: var(--soft); }
+  .btn.alt { background: transparent; }
+  .btn.warn { background: #3A1414; border-color: #6B2222; color: #F09595; }
+  .btn.ok { background: #D3D1C7; border: none; color: var(--bg); }
+
+  .changes { max-width: 1240px; margin: 34px auto 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .changes div { background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .changes h3 { font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+  .changes li { font-size: 12px; color: var(--soft); line-height: 1.55; margin-left: 16px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>QTrack Sidebar Redesign</h1>
+  <p>Direction A: views that cover every project sit at the top, then a project switcher with that project's own views underneath, then one account menu. The project list moves into the switcher, so the sidebar stays the same height however many projects there are. Archive and delete move behind a ⋯ menu. Project names here are sample data.</p>
+</header>
+
+<div class="grid">
+
+  <!-- 1. Default -->
+  <section class="frame">
+    <div class="cap"><b>1</b> · Default</div>
+    <div class="sb">
+      <div class="brand"><span><span class="logo">Q</span>QTrack</span><i>◂</i></div>
+      <div class="sec">
+        <div class="item"><span class="ic">☀</span><span class="grow">Today</span></div>
+        <div class="item on"><span class="ic">◎</span><span class="grow">Focus</span><span class="timer">18:41</span></div>
+      </div>
+      <div class="sec">
+        <div class="proj"><span class="dot" style="background:var(--purple)"></span><span class="name">CS 5800 · Algorithms</span><span class="chev">▾</span></div>
+        <div class="sub">
+          <div class="item"><span class="ic">⊞</span><span class="grow">Dashboard</span></div>
+          <div class="item"><span class="ic">⚑</span><span class="grow">Tasks</span><span class="cnt">4</span></div>
+          <div class="item"><span class="ic">✓</span><span class="grow">Test cases</span><span class="cnt">2</span></div>
+          <div class="item"><span class="ic">≡</span><span class="grow">Notes</span><span class="cnt">6</span></div>
+          <div class="item"><span class="ic">▦</span><span class="grow">Calendar</span><span class="cnt">3</span></div>
+          <div class="item"><span class="ic">⊟</span><span class="grow">Board</span></div>
+        </div>
+      </div>
+      <div class="acct"><div class="item"><span class="avatar">J</span><span class="grow">Jordan</span><span class="more">⋯</span></div></div>
+    </div>
+    <p class="note">The running timer sits on Focus, always in view. Counts under the switcher clearly belong to the selected project.</p>
+  </section>
+
+  <!-- 2. Switcher open -->
+  <section class="frame">
+    <div class="cap"><b>2</b> · Project switcher</div>
+    <div class="sb">
+      <div class="brand"><span><span class="logo">Q</span>QTrack</span><i>◂</i></div>
+      <div class="sec">
+        <div class="item"><span class="ic">☀</span><span class="grow">Today</span></div>
+        <div class="item on"><span class="ic">◎</span><span class="grow">Focus</span><span class="timer">18:41</span></div>
+      </div>
+      <div class="sec">
+        <div class="proj open"><span class="dot" style="background:var(--purple)"></span><span class="name">CS 5800 · Algorithms</span><span class="chev">▴</span></div>
+      </div>
+      <div class="pop" style="top: 176px;">
+        <div class="search">⌕ Find a project… <kbd>Ctrl K</kbd></div>
+        <div class="kicker">Recent</div>
+        <div class="prow cur"><span class="dot" style="background:var(--purple)"></span><span class="pn">CS 5800 · Algorithms</span><span class="meta">✓</span></div>
+        <div class="prow"><span class="dot" style="background:var(--blue)"></span><span class="pn">Weather App</span><span class="meta">4 open</span></div>
+        <div class="prow"><span class="dot" style="background:var(--green)"></span><span class="pn">Capstone</span><span class="meta">7 open</span></div>
+        <div class="kicker" style="padding-top:8px">All projects</div>
+        <div class="prow"><span class="dot" style="background:var(--amber)"></span><span class="pn">Job Search</span><span class="meta">3 open</span></div>
+        <div class="prow hover"><span class="dot" style="background:var(--pink)"></span><span class="pn">Personal</span><span class="dots">⋯</span></div>
+        <div class="prow"><span class="dot" style="background:var(--teal)"></span><span class="pn">Reading list</span><span class="meta">12 open</span></div>
+        <div class="prow"><span class="dot" style="background:var(--orange)"></span><span class="pn">Freelance</span><span class="meta">1 open</span></div>
+        <div class="sep"></div>
+        <div class="prow arch"><span class="meta" style="width:9px">▸</span><span class="pn">Archived (2)</span></div>
+        <div class="sep"></div>
+        <div class="action">＋ New project</div>
+      </div>
+    </div>
+    <p class="note">Search, recent projects first, open-task counts per project. ⋯ only appears on hover. Archived projects stay tucked away.</p>
+  </section>
+
+  <!-- 3. Project menu + delete confirm -->
+  <section class="frame">
+    <div class="cap"><b>3</b> · ⋯ menu and safe delete</div>
+    <div class="sb">
+      <div class="brand"><span><span class="logo">Q</span>QTrack</span><i>◂</i></div>
+      <div class="sec">
+        <div class="item"><span class="ic">☀</span><span class="grow">Today</span></div>
+        <div class="item on"><span class="ic">◎</span><span class="grow">Focus</span><span class="timer">18:41</span></div>
+      </div>
+      <div class="sec">
+        <div class="proj open"><span class="dot" style="background:var(--purple)"></span><span class="name">CS 5800 · Algorithms</span><span class="chev">▴</span></div>
+      </div>
+      <div class="pop" style="top: 176px;">
+        <div class="search">⌕ Find a project… <kbd>Ctrl K</kbd></div>
+        <div class="prow"><span class="dot" style="background:var(--amber)"></span><span class="pn">Job Search</span><span class="meta">3 open</span></div>
+        <div class="prow hover"><span class="dot" style="background:var(--pink)"></span><span class="pn">Personal</span><span class="dots">⋯</span></div>
+        <div class="prow"><span class="dot" style="background:var(--teal)"></span><span class="pn">Reading list</span><span class="meta">12 open</span></div>
+      </div>
+      <div class="menu" style="top: 262px; right: 4px;">
+        <div class="action"><span>✎</span><span>Rename</span></div>
+        <div class="action"><span>●</span><span>Change color</span></div>
+        <div class="action"><span>⊟</span><span>Archive</span></div>
+        <div class="sep"></div>
+        <div class="action danger"><span>✕</span><span>Delete…</span></div>
+      </div>
+      <div class="modal" style="top: 360px; inset: auto 0 0 0; height: 260px; background: rgba(0,0,0,.0);">
+        <div class="dlg">
+          <h4>Delete "Personal"?</h4>
+          <p>This deletes its 9 tasks, 14 notes and focus history for good. Archive keeps everything and just hides it.</p>
+          <div class="inp">Personal</div>
+          <div class="row"><span class="btn alt">Archive instead</span><span class="btn warn">Delete</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="note">Delete is never a single click: the confirm dialog names what's lost, asks you to type the project name, and offers Archive instead.</p>
+  </section>
+
+  <!-- 4. Account menu -->
+  <section class="frame">
+    <div class="cap"><b>4</b> · Account menu</div>
+    <div class="sb">
+      <div class="brand"><span><span class="logo">Q</span>QTrack</span><i>◂</i></div>
+      <div class="sec">
+        <div class="item on"><span class="ic">☀</span><span class="grow">Today</span></div>
+        <div class="item"><span class="ic">◎</span><span class="grow">Focus</span><span class="timer paused">II 12:05</span></div>
+      </div>
+      <div class="sec">
+        <div class="proj"><span class="dot" style="background:var(--purple)"></span><span class="name">CS 5800 · Algorithms</span><span class="chev">▾</span></div>
+        <div class="sub">
+          <div class="item"><span class="ic">⊞</span><span class="grow">Dashboard</span></div>
+          <div class="item"><span class="ic">⚑</span><span class="grow">Tasks</span><span class="cnt">4</span></div>
+          <div class="item"><span class="ic">≡</span><span class="grow">Notes</span><span class="cnt">6</span></div>
+          <div class="item"><span class="ic">▦</span><span class="grow">Calendar</span><span class="cnt">3</span></div>
+        </div>
+      </div>
+      <div class="menu" style="left: 10px; right: 10px; width: auto; bottom: 58px;">
+        <div class="hint">jordan@example.com</div>
+        <div class="sep"></div>
+        <div class="action"><span>⚙</span><span>Show / hide views</span></div>
+        <div class="action"><span>✦</span><span>Assistant access</span></div>
+        <div class="action"><span>?</span><span>Replay tutorial</span></div>
+        <div class="sep"></div>
+        <div class="action"><span>↗</span><span>Sign out</span></div>
+      </div>
+      <div class="acct"><div class="item on"><span class="avatar">J</span><span class="grow">Jordan</span><span class="more">⋯</span></div></div>
+    </div>
+    <p class="note">Settings, Assistant access, the tutorial and sign-out fold into one menu. Your email shows only here. The paused timer turns amber.</p>
+  </section>
+
+</div>
+
+<!-- 5. Collapsed -->
+<div style="max-width:1240px;margin:34px auto 0;">
+  <div class="cap" style="margin-bottom:10px"><b>5</b> · Collapsed</div>
+  <div class="railwrap">
+    <div class="rail">
+      <div class="logo" style="margin-bottom:8px">Q</div>
+      <div class="r">☀</div>
+      <div class="r on">◎<span class="badge"></span></div>
+      <hr>
+      <div class="r"><span class="pd" style="background:var(--purple)">CS</span><span class="tip">CS 5800 · Algorithms</span></div>
+      <div class="r">⊞</div>
+      <div class="r">⚑</div>
+      <div class="r">≡</div>
+      <div class="r">▦</div>
+      <div style="margin-top:auto" class="r"><span class="avatar">J</span></div>
+    </div>
+    <div class="railnote">
+      <div><b>Same three parts, folded.</b> Today and Focus on top (a red dot while the timer runs), then the current project as a colored badge with initials. Clicking it opens the same switcher. The project's views follow, and the account sits at the bottom.</div>
+      <div><b>Hover shows names.</b> Every icon has a tooltip, so nothing is lost when folded.</div>
+      <div><b>Phone:</b> the bottom tab bar stays as it is. The project switcher replaces the "Projects" list in the More sheet.</div>
+    </div>
+  </div>
+</div>
+
+<div class="changes">
+  <div>
+    <h3>What changes</h3>
+    <ul>
+      <li>Global views (Today, Focus) are separated from per-project views</li>
+      <li>The project list moves into a switcher with search and recent projects</li>
+      <li>Each project gets a color, auto-assigned and changeable</li>
+      <li>The timer sits on Focus instead of in a separate card</li>
+    </ul>
+  </div>
+  <div>
+    <h3>Safety</h3>
+    <ul>
+      <li>No always-visible ✕: archive and delete sit behind ⋯</li>
+      <li>Delete names what's lost, needs the project name typed, and offers Archive instead</li>
+      <li>Archived projects stay one click away in the switcher</li>
+    </ul>
+  </div>
+  <div>
+    <h3>Stays the same</h3>
+    <ul>
+      <li>All existing views, counts and the show/hide-views setting</li>
+      <li>Double-click to rename still works, and is also in ⋯</li>
+      <li>Phone bottom tabs; workshop projects keep their own view list</li>
+      <li>Only new data: a color per project (one column)</li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>
