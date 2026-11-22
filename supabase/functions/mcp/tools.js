@@ -5,7 +5,7 @@
 import { dayBounds, getToday, searchTasks, getFocusStats } from '../_shared/today.js'
 import {
   UserError, WRITE_LIMIT_PER_HOUR, getTimer, startFocus, pauseFocus, resumeFocus, stopFocus,
-  addTask, addToQueue, captureNote, deleteTask, updateTask, undoCall, writesAllowed, writesInLastHour,
+  addTask, addToQueue, captureNote, deleteTask, updateTask, logFocus, undoCall, writesAllowed, writesInLastHour,
   listProjects, setProjectArchived,
 } from '../_shared/actions.js'
 
@@ -196,6 +196,18 @@ export const TOOLS = {
       type: z.enum(['todo', 'bug']).optional(),
     }),
     run: ({ client, userId }, args) => updateTask(client, userId, args),
+  },
+
+  log_focus: {
+    scope: 'write',
+    title: 'Log pomodoros',
+    description: 'Record focus time the user did without the timer: a number of 25-min pomodoros on a task or test case, back to back, ending at ended_at (default now). Use start_focus instead for work that is about to start. Undo removes them.',
+    input: (z) => ({
+      task_id: z.string().describe('Id of the task or test case'),
+      pomodoros: z.number().int().min(1).max(8).optional().describe('How many, default 1'),
+      ended_at: z.string().optional().describe('When the last one ended, ISO 8601 with timezone. Default now'),
+    }),
+    run: ({ client, userId }, args) => logFocus(client, userId, args),
   },
 
   delete_task: {

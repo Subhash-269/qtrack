@@ -349,6 +349,28 @@ export async function deleteTask(client, userId, { task_id }, now = Date.now()) 
   }
 }
 
+// Log focus time after the fact (the user worked without the timer). Each pomodoro is its own
+// 25-min work session, back to back, ending at ended_at (default now), the way the timer logs them.
+export async function logFocus(client, userId, { task_id, pomodoros = 1, ended_at }, now = Date.now()) {
+  const item = await findItem(client, userId, task_id)
+  if (item.kind !== 'issue' && item.kind !== 'test') throw new UserError('Pomodoros can only be logged on a task or test case.')
+  const end = ended_at ? new Date(ended_at).getTime() : now
+  if (Number.isNaN(end)) throw new UserError(`"${ended_at}" isn't a date and time.`)
+  if (end > now + 60000) throw new UserError("Can't log focus time in the future.")
+  const rows = Array.from({ length: pomodoros }, (_, i) => ({
+    user_id: userId, project_id: item.project_id,
+    issue_id: item.kind === 'issue' ? item.id : null, test_case_id: item.kind === 'test' ? item.id : null,
+    session_type: 'work', duration_seconds: POMODORO, subtype: 'focus', study_topic: '', source: 'assistant',
+    completed_at: iso(end - (pomodoros - 1 - i) * POMODORO * 1000),
+  }))
+  const saved = many(await client.from('focus_sessions').insert(rows).select())
+  return {
+    summary: `Logged ${pomodoros} pomodoro${pomodoros === 1 ? '' : 's'} (${pomodoros * 25} min) on "${item.title}".`,
+    data: { task_id: item.id, title: item.title, kind: kindName(item.kind), pomodoros, minutes: pomodoros * 25, ended_at: iso(end) },
+    undo: saved.map(s => ({ op: 'delete', table: 'focus_sessions', id: s.id })),
+  }
+}
+
 // Change a task's status, priority, due date, title or type. "done" means "fixed", as in the app.
 // Moving to a finished status stamps resolved_at (the app's reports use it); reopening clears it.
 export const TASK_STATUSES = ['open', 'in_progress', 'fixed', 'verified', 'wont_fix']
