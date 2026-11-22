@@ -344,6 +344,26 @@ describe('log_focus', () => {
   })
 })
 
+describe('break_down_task', () => {
+  beforeEach(allowWrites)
+
+  it('appends steps to the checklist, can replace unticked ones, and undo restores it', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    const before = utc.scratch_checklist
+    const { data, summary } = await call('break_down_task', { task_id: utc.id, steps: [{ text: 'Find where dt is parsed', minutes: 10 }, { text: 'Apply timezone_offset', minutes: 20 }] })
+    expect(summary).toBe(`Added 2 steps to "${UTC_BUG}" (about 30 min).`)
+    const list = (await issueByTitle(UTC_BUG)).scratch_checklist
+    expect(list.length).toBe(before.length + 2)
+    expect(list.at(-1)).toMatchObject({ text: 'Apply timezone_offset', done: false, minutes: 20 })
+    await call('undo', { undo_id: data.undo_id })
+    expect((await issueByTitle(UTC_BUG)).scratch_checklist).toEqual(before)
+
+    await call('break_down_task', { task_id: utc.id, steps: [{ text: 'Only step' }], replace: true })
+    const replaced = (await issueByTitle(UTC_BUG)).scratch_checklist
+    expect(replaced.map(c => c.text)).toEqual([...before.filter(c => c.done).map(c => c.text), 'Only step'])
+  })
+})
+
 describe('replan_day', () => {
   beforeEach(allowWrites)
 

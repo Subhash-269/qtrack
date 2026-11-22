@@ -35,6 +35,7 @@ Tools:
 | `capture_note` | write | Save a scribble, optionally linked to a task |
 | `archive_project` / `restore_project` | write | Archive a project by name (data kept; hidden from the sidebar, Today, search and defaults) or bring it back. The last active project can't be archived |
 | `update_task` | write | Change a task's status (todo, in_progress, done, skipped; old words like fixed still accepted), priority, due date, title or type by id. Finishing stamps `resolved_at`; undo restores the old values |
+| `break_down_task` | write | Save small steps (with optional minutes) to a task's checklist; append or replace unticked; undo restores |
 | `replan_day` | write | Move leftovers in one go: today (+ Up next), tomorrow, later (no date) or let go (Skipped); undo restores all |
 | `log_focus` | write | Log 1–8 past pomodoros (25 min each) on a task or test case, ending at a given time; undo removes them |
 | `delete_task` | write | Delete a task by id (refused while it's being timed). Its sessions and notes stay, unlinked; undo restores the task and re-links them |

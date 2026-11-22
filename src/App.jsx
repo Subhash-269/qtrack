@@ -3787,8 +3787,10 @@ function Modal({ modal, files, onClose, addProject, addFile, addIssue, addTest, 
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>Estimated pomodoros</div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input type="range" min="0" max="12" step="1" value={ep} onChange={e => setEp(Number(e.target.value))} style={{ flex: 1 }} />
-          <span style={{ fontSize: 13, fontWeight: 500, fontFamily: "'SF Mono', monospace", color: ep > 0 ? "var(--red)" : "var(--muted)", minWidth: 20, textAlign: "right" }}>{ep}</span>
+          <button type="button" aria-label="Fewer pomodoros" onClick={() => setEp(v => Math.max(0, v - 1))} style={{ width: 30, height: 30, borderRadius: 6, border: "1px solid var(--dim)", background: "transparent", color: "var(--soft)", cursor: "pointer", fontSize: 15 }}>−</button>
+          <input type="number" min="0" max="20" value={ep} onChange={e => setEp(Math.max(0, Math.min(20, Number(e.target.value) || 0)))} aria-label="Estimated pomodoros"
+            style={{ width: 52, textAlign: "center", padding: "6px 4px", borderRadius: 6, fontSize: 13, fontFamily: "'SF Mono', monospace", background: "var(--surface)", color: "var(--text)", border: "1px solid var(--dim)", outline: "none" }} />
+          <button type="button" aria-label="More pomodoros" onClick={() => setEp(v => Math.min(20, v + 1))} style={{ width: 30, height: 30, borderRadius: 6, border: "1px solid var(--dim)", background: "transparent", color: "var(--soft)", cursor: "pointer", fontSize: 15 }}>+</button>
         </div>
       </div>
       <div style={{ flex: 1 }}>

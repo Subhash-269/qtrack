@@ -5,7 +5,7 @@
 import { dayBounds, getToday, searchTasks, getFocusStats } from '../_shared/today.js'
 import {
   UserError, WRITE_LIMIT_PER_HOUR, getTimer, startFocus, pauseFocus, resumeFocus, stopFocus,
-  addTask, addToQueue, captureNote, deleteTask, updateTask, logFocus, replanDay, undoCall, writesAllowed, writesInLastHour,
+  addTask, addToQueue, captureNote, deleteTask, updateTask, logFocus, replanDay, breakDownTask, undoCall, writesAllowed, writesInLastHour,
   listProjects, setProjectArchived,
 } from '../_shared/actions.js'
 
@@ -196,6 +196,21 @@ export const TOOLS = {
       type: z.enum(['todo', 'bug']).optional(),
     }),
     run: ({ client, userId }, args) => updateTask(client, userId, args),
+  },
+
+  break_down_task: {
+    scope: 'write',
+    title: 'Break task into steps',
+    description: 'Split a task or test case into small, concrete steps and save them as its checklist (shown in QTrack Focus and the task panel). Write the steps yourself: 3-8 steps, each doable in 5-30 minutes, starting with an easy first step; give minutes when you can. By default steps are appended; set replace to swap out the unticked ones. Undo restores the old checklist.',
+    input: (z) => ({
+      task_id: z.string().describe('Id from search_tasks or get_today'),
+      steps: z.array(z.object({
+        text: z.string().min(1).max(200),
+        minutes: z.number().int().min(1).max(240).optional().describe('Rough estimate'),
+      })).min(1).max(20),
+      replace: z.boolean().optional().describe('Replace unticked checklist items instead of appending'),
+    }),
+    run: ({ client, userId }, args) => breakDownTask(client, userId, args),
   },
 
   replan_day: {

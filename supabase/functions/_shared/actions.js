@@ -412,6 +412,25 @@ export async function updateTask(client, userId, { task_id, status, priority, du
   }
 }
 
+// Split a task or test case into small steps: appends them to its checklist (or replaces the
+// unticked ones), the same checklist the app shows in Focus and the details panel.
+export async function breakDownTask(client, userId, { task_id, steps, replace = false }) {
+  const item = await findItem(client, userId, task_id)
+  const table = item.kind === 'test' ? 'test_cases' : 'issues'
+  const before = Array.isArray(item.scratch_checklist) ? item.scratch_checklist : (() => { try { return JSON.parse(item.scratch_checklist || '[]') } catch { return [] } })()
+  const clean = steps.map(s => ({ text: String(s.text).trim(), done: false, ...(s.minutes ? { minutes: s.minutes } : {}) })).filter(s => s.text)
+  if (!clean.length) throw new UserError('No steps to add.')
+  const kept = replace ? before.filter(c => c.done) : before
+  const next = [...kept, ...clean]
+  one(await client.from(table).update({ scratch_checklist: next }).eq('id', item.id).eq('user_id', userId))
+  const total = clean.reduce((a, s) => a + (s.minutes || 0), 0)
+  return {
+    summary: `Added ${clean.length} step${clean.length === 1 ? '' : 's'} to "${item.title}"${total ? ` (about ${total} min)` : ''}${replace && before.length !== kept.length ? `, replacing ${before.length - kept.length} unticked` : ''}.`,
+    data: { task_id: item.id, title: item.title, kind: kindName(item.kind), checklist: next },
+    undo: [{ op: 'update', table, id: item.id, values: { scratch_checklist: before } }],
+  }
+}
+
 // Replan leftovers: move each task or test case to today (and Up next), tomorrow, later (no date)
 // or let it go (Skipped; tasks only). `today` is the user's local date, YYYY-MM-DD.
 export const REPLAN_TARGETS = ['today', 'tomorrow', 'later', 'let_go']
