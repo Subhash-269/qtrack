@@ -66,6 +66,7 @@ class Query {
   eq(k, v) { this.filters.push(r => readField(this.name, r, k) === v); return this }
   neq(k, v) { this.filters.push(r => readField(this.name, r, k) !== v); return this }
   gte(k, v) { this.filters.push(r => readField(this.name, r, k) != null && compare(readField(this.name, r, k), v) >= 0); return this }
+  lt(k, v) { this.filters.push(r => readField(this.name, r, k) != null && compare(readField(this.name, r, k), v) < 0); return this }
   lte(k, v) { this.filters.push(r => readField(this.name, r, k) != null && compare(readField(this.name, r, k), v) <= 0); return this }
   // Postgres ILIKE: % = any run, _ = one char, backslash escapes; case-insensitive
   ilike(k, pattern) {
@@ -84,6 +85,7 @@ class Query {
   in(k, vs) { this.filters.push(r => vs.includes(readField(this.name, r, k))); return this }
   order(k, { ascending = true } = {}) { this.orders.push([k, ascending]); return this }
   limit(n) { this.max = n; return this }
+  range(from, to) { this.skip = from; this.max = to - from + 1; return this }
   single() { this.mode = 'single'; return this }
   maybeSingle() { this.mode = 'maybe'; return this }
 
@@ -98,6 +100,7 @@ class Query {
         for (const [k, asc] of this.orders) { const c = compare(a[k], b[k]); if (c) return asc ? c : -c }
         return 0
       })
+      if (this.skip) out = out.slice(this.skip)
       if (this.max != null) out = out.slice(0, this.max)
     } else if (this.op === 'insert') {
       out = [].concat(this.payload).map(r => withDefaults(this.name, r))

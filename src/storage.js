@@ -837,6 +837,23 @@ export async function getTodayAcrossProjects() {
   return getToday(supabase, user_id, { date, startOfDayISO: start.toISOString() })
 }
 
+// Focus sessions across all projects between two instants, for the Today focus chart.
+// Pages past the 1000-row limit so a long custom range still adds up.
+export async function getFocusSessionsBetween(startISO, endISO) {
+  const user_id = await uid()
+  const out = []
+  for (let from = 0; from < 20000; from += 1000) {
+    const { data, error } = await supabase.from('focus_sessions')
+      .select('project_id, completed_at, duration_seconds, session_type, subtype')
+      .eq('user_id', user_id).gte('completed_at', startISO).lt('completed_at', endISO)
+      .order('completed_at', { ascending: true }).range(from, from + 999)
+    if (error) throw error
+    out.push(...(data || []))
+    if (!data || data.length < 1000) break
+  }
+  return out
+}
+
 // Everything the Today details panel shows for one task or test case: the fresh row, focus time,
 // linked test cases / tasks and linked notes.
 export async function getTaskDetails(kind, id) {
