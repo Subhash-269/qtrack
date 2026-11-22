@@ -49,6 +49,8 @@ Gaps to close along the way:
 
 ## P1: MCP server with read tools
 
+> **Status (2026-11-21):** code done on this branch: `supabase/functions/mcp`, the shared queries in `supabase/functions/_shared/today.js` (the Today view uses them too), the `mcp_calls` migration, the `/oauth/consent` page, and 16 Vitest tests (`npm test`). **Not done yet:** 1.1's schema pull and the deploy. Both need the Supabase CLI linked to the project; steps are in `supabase/README.md`. Built on `@supabase/server` (`withOAuthProtectedResource` + `withSupabase`), which settles D2: OAuth through Supabase Auth's OAuth 2.1 server. The token fallback isn't needed unless a client can't do OAuth.
+
 **Goal:** connect an MCP client to QTrack and run `get_today`, `search_tasks` and `get_focus_stats` as yourself.
 
 | # | Task | Notes |

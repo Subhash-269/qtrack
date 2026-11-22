@@ -67,6 +67,20 @@ class Query {
   neq(k, v) { this.filters.push(r => readField(this.name, r, k) !== v); return this }
   gte(k, v) { this.filters.push(r => readField(this.name, r, k) != null && compare(readField(this.name, r, k), v) >= 0); return this }
   lte(k, v) { this.filters.push(r => readField(this.name, r, k) != null && compare(readField(this.name, r, k), v) <= 0); return this }
+  // Postgres ILIKE: % = any run, _ = one char, backslash escapes; case-insensitive
+  ilike(k, pattern) {
+    let src = ''
+    for (let i = 0; i < pattern.length; i++) {
+      const c = pattern[i]
+      if (c === '\\' && i + 1 < pattern.length) src += pattern[++i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      else if (c === '%') src += '.*'
+      else if (c === '_') src += '.'
+      else src += c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    }
+    const re = new RegExp(`^${src}$`, 'is')
+    this.filters.push(r => re.test(String(readField(this.name, r, k) ?? '')))
+    return this
+  }
   in(k, vs) { this.filters.push(r => vs.includes(readField(this.name, r, k))); return this }
   order(k, { ascending = true } = {}) { this.orders.push([k, ascending]); return this }
   limit(n) { this.max = n; return this }

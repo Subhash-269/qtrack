@@ -1,6 +1,7 @@
 // storage.js — Supabase-backed data layer for QTrack
 // Replaces the old localStorage polyfill
 import { supabase } from './supabaseClient'
+import { getToday } from '../supabase/functions/_shared/today.js'
 
 const uid = async () => {
   const { data: { user } } = await supabase.auth.getUser()
@@ -788,45 +789,11 @@ export async function deleteNewsItem(id) {
 // Today (cross-project)
 // ============================================
 
-const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-const TASK_DONE = ['fixed', 'verified', 'wont_fix']
-const TEST_DONE = ['pass']
-
-// Everything the Today view shows, across every project the user owns.
-// Rows keep their project_id so the UI can label them and switch project before starting focus.
+// Same query the MCP server's get_today tool uses, so the screen and the assistant agree
 export async function getTodayAcrossProjects() {
   const user_id = await uid()
-  const today = localDate()
-  const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0)
-  const q = (t) => supabase.from(t).select('*').eq('user_id', user_id)
-  const [tasks, tests, meetings, queue, scribbles] = await Promise.all([
-    q('issues').lte('due_date', today).order('due_date', { ascending: true }),
-    q('test_cases').lte('due_date', today).order('due_date', { ascending: true }),
-    q('meetings').eq('meeting_date', today).order('start_time', { ascending: true }),
-    q('task_queue').order('position', { ascending: true }),
-    q('notes').eq('category', 'scratch').gte('created_at', startOfDay.toISOString()).order('created_at', { ascending: false }),
-  ])
-  for (const r of [tasks, tests, meetings, queue, scribbles]) if (r.error) throw r.error
-
-  // Resolve queue items to their task / test rows (any project)
-  const ids = (type) => [...new Set(queue.data.filter(x => x.item_type === type).map(x => x.item_id))]
-  const [qTasks, qTests] = await Promise.all([
-    ids('issue').length ? q('issues').in('id', ids('issue')) : { data: [] },
-    ids('test').length ? q('test_cases').in('id', ids('test')) : { data: [] },
-  ])
-  if (qTasks.error) throw qTasks.error
-  if (qTests.error) throw qTests.error
-  const byId = Object.fromEntries([...qTasks.data.map(r => [r.id, { ...r, kind: 'issue' }]), ...qTests.data.map(r => [r.id, { ...r, kind: 'test' }])])
-  const isOpen = (r) => r.kind === 'test' ? !TEST_DONE.includes(r.status) : !TASK_DONE.includes(r.status)
-
-  return {
-    today,
-    due: [
-      ...tasks.data.filter(r => !TASK_DONE.includes(r.status)).map(r => ({ ...r, kind: 'issue' })),
-      ...tests.data.filter(r => !TEST_DONE.includes(r.status)).map(r => ({ ...r, kind: 'test' })),
-    ].sort((a, b) => a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0),
-    meetings: meetings.data.filter(m => !m.cancelled),
-    queue: queue.data.map(x => ({ ...x, item: byId[x.item_id] })).filter(x => x.item && isOpen(x.item)),
-    scribbles: scribbles.data,
-  }
+  const now = new Date()
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const start = new Date(now); start.setHours(0, 0, 0, 0)
+  return getToday(supabase, user_id, { date, startOfDayISO: start.toISOString() })
 }
