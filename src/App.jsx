@@ -21,6 +21,7 @@ const PC = { critical: { bg: "var(--tint-red-bg)", text: "var(--pink)", border: 
 const parseMtags = (v) => { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return v ? [v] : []; } };
 const TC = { not_run: { bg: "var(--surface)", text: "var(--soft)", border: "var(--line)" }, pass: { bg: "var(--tint-green-bg)", text: "var(--lime)", border: "var(--tint-green-bd)" }, fail: { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" }, blocked: { bg: "var(--tint-amber-bg)", text: "var(--amber)", border: "var(--tint-amber-bd)" } };
 const SC = { work: "#E24B4A", short_break: "#5DCAA5", long_break: "#378ADD" };
+const goalBtn = { width: 18, height: 18, borderRadius: 4, border: "1px solid var(--dim)", background: "transparent", color: "var(--soft)", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: 0, display: "inline-grid", placeItems: "center" };
 
 const BREAK_TIPS = {
   office: {
@@ -126,6 +127,9 @@ export default function App({ session }) {
   const [deletingProject, setDeletingProject] = useState(null);
   const [theme, setTheme] = useState(getThemePref); // re-renders everything when the theme changes
   const changeTheme = (t) => { setThemePref(t); setTheme(t); };
+  const [daySessions, setDaySessions] = useState([]); // today's sessions across all projects (local day)
+  const [dailyGoal, setDailyGoalState] = useState(db.DEFAULT_DAILY_GOAL);
+  const changeDailyGoal = async (n) => { const prev = dailyGoal; setDailyGoalState(n); try { await db.setDailyGoal(n); } catch (e) { setDailyGoalState(prev); alert("Couldn't save the goal: " + (e.message || e)); } };
   const openOnMount = useRef(null); // item id the Tasks / Test cases view opens when it mounts
 
   // Show tutorial once per browser
@@ -266,7 +270,7 @@ export default function App({ session }) {
     if (Notification.permission === "default") Notification.requestPermission();
   };
 
-  useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); db.getUserProfile().then(p => {
+  useEffect(() => { if (!initRef.current) { initRef.current = true; loadProjects(); db.getDailyGoal().then(setDailyGoalState).catch(() => {}); loadDay(); db.getUserProfile().then(p => {
     setUserTier(p.tier || "free");
     if (p.settings && typeof p.settings === "object") {
       if (p.settings.hiddenTabs) setHiddenTabsMap(p.settings.hiddenTabs);
@@ -277,7 +281,8 @@ export default function App({ session }) {
 
   async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId((p.find(x => x.id === timerPidRef.current) || p.find(x => !x.archived_at) || p[0]).id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); } } catch (e) { console.error(e); } setLoading(false); }
   async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } try { setMeetings(await db.getMeetings(pid)); } catch { setMeetings([]); } try { setPeople(await db.getPeople(pid)); } catch { setPeople([]); } try { setNewsCache(await db.getNewsCache(pid)); } catch { setNewsCache([]); } } catch (e) { console.error(e); } }
-  async function loadToday() { if (!activeProjectId) return; try { setTodaySessions(await db.getTodaySessions(activeProjectId)); } catch { setTodaySessions([]); } try { setAllSessions(await db.getAllSessions(activeProjectId)); } catch { setAllSessions([]); } }
+  async function loadDay() { const start = new Date(); start.setHours(0, 0, 0, 0); try { setDaySessions(await db.getFocusSessionsBetween(start.toISOString(), new Date(start.getTime() + 86400000).toISOString())); } catch { setDaySessions([]); } }
+  async function loadToday() { loadDay(); if (!activeProjectId) return; try { setTodaySessions(await db.getTodaySessions(activeProjectId)); } catch { setTodaySessions([]); } try { setAllSessions(await db.getAllSessions(activeProjectId)); } catch { setAllSessions([]); } }
   async function reload() { if (activeProjectId) await loadData(activeProjectId); }
 
   const fm = useMemo(() => Object.fromEntries(files.map(f => [f.id, f])), [files]);
@@ -416,7 +421,7 @@ export default function App({ session }) {
           {view === "today" && <TodayView projects={projects} activeProjectId={activeProjectId} tmr={tmr} taskName={taskName} onStart={startFromToday} onPause={pauseTmr} onResume={resumeTmr} onDone={markDone} onOpenFocus={() => setView("focus")} onFocusMeeting={focusMeetingFromToday} onAddScribble={async (text) => { await db.createNote(activeProjectId, { content: text, category: "scratch" }); await reload(); }} onOpenItem={openItemInProject} onReload={reload} onQuickStart={quickStart} onKeepGoing={keepGoing} onQuickStop={quickStop} mobile={mobile} refreshOn={[projects, issues, testCases, queue, notes, meetings, tmr.st, tmr.tId]} />}
           {view === "dashboard" && !isWorkshop && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} todaySessions={todaySessions} projectId={activeProjectId} />}
           {view === "dashboard" && isWorkshop && <WorkshopDashboard meetings={meetings} notes={notes} people={people} onNav={setView} />}
-          {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} mobile={mobile} markDone={markDone} />}
+          {view === "focus" && <FocusView daySessions={daySessions} dailyGoal={dailyGoal} onDailyGoal={changeDailyGoal} tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} mobile={mobile} markDone={markDone} />}
           {view === "issues" && <IssuesView takeOpenId={takeOpenOnMount} issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
           {view === "tests" && <TestsView takeOpenId={takeOpenOnMount} tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
@@ -513,24 +518,24 @@ export default function App({ session }) {
   );
 }
 
-function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tfm, tw, queue, projectId, reload, allSessions, todaySessions, logManual, allNotes, markDone, mobile }) {
+function FocusView({ daySessions, dailyGoal, onDailyGoal, tmr, taskName, issues, tests, start, pause, pauseWith, resume, reset, focusOn, tw, queue, projectId, reload, allSessions, todaySessions, logManual, allNotes, markDone, mobile }) {
   const [picking, setPicking] = useState(false);
   const [breakTipBump, setBreakTipBump] = useState(0);
   const [breakLoc, setBreakLoc] = useState(() => { try { return localStorage.getItem("qtrack_break_loc") || "office"; } catch { return "office"; } });
+  const [editingGoal, setEditingGoal] = useState(false);
   const setBreakLocPersist = (loc) => { setBreakLoc(loc); try { localStorage.setItem("qtrack_break_loc", loc); } catch {} };
-  // Goal: sum of estimated_pomodoros across tasks due today, overdue, or without a due date
-  const todayStr = new Date().toISOString().split("T")[0];
-  const isRelevantForToday = (t) => !t.due_date || t.due_date <= todayStr;
-  const openIssues = issues.filter(i => !isTaskDone(i.status) && isRelevantForToday(i));
-  const openTests = tests.filter(t => t.status !== "pass" && isRelevantForToday(t));
-  const goalPoms = openIssues.reduce((a, i) => a + (i.estimated_pomodoros || 0), 0) + openTests.reduce((a, t) => a + (t.estimated_pomodoros || 0), 0) || 4;
+  // Daily goal: one number for the whole day across all projects (local midnight), in focus time.
+  // Pomodoros = focus minutes / 25, so a 2-minute restart doesn't count as a pomodoro.
+  const goalPoms = dailyGoal || 8;
   const goalMin = goalPoms * 25;
   const goalSessions = Math.ceil(goalPoms / 4);
-
-  // Today's completed sessions
-  const todayFocusSessions = (todaySessions || []).filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting" && s.duration_seconds >= 60);
+  const NOT_FOCUS_SUB = ["waiting", "interrupted", "meeting"];
+  const liveSec = tmr.st === "running" && tmr.type === "work" ? Math.max(0, tmr.total - tmr.left - (tmr.taskOffset || 0)) : 0;
+  const dayFocusSec = (daySessions || []).filter(s => s.session_type === "work" && !NOT_FOCUS_SUB.includes(s.subtype)).reduce((a, s) => a + (s.duration_seconds || 0), 0) + liveSec;
+  const dayFocusMin = Math.round(dayFocusSec / 60);
+  const focusDone = Math.floor(dayFocusSec / 1500);
+  const goalReached = dayFocusSec >= goalPoms * 1500;
   const todayBreakSessions = (todaySessions || []).filter(s => s.session_type === "short_break" || s.session_type === "long_break");
-  const focusDone = todayFocusSessions.length;
   const breakDone = todayBreakSessions.length;
   const sessionsDone = Math.floor(focusDone / 4);
   const pomsInCurrent = focusDone % 4;
@@ -634,7 +639,27 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
 
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0);
   const daysWithToday = new Set([...(allSessions || []).filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting" && new Date(s.completed_at) >= weekAgo).map(s => new Date(s.completed_at).toDateString()), ...(tw.length > 0 || (tmr.st === "running" && tmr.type === "work") ? [new Date().toDateString()] : [])]).size;
-  const goalPct = Math.min(100, Math.round((tfm / goalMin) * 100));
+  const goalPct = Math.min(100, Math.round((dayFocusMin / goalMin) * 100));
+  const goalBar = (<>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, gap: 8 }}>
+      <span style={{ fontSize: 10, color: "var(--muted)" }}>Session {sessionsDone + 1}/{goalSessions} · {pomsInCurrent}/4 pomodoros · all projects today</span>
+      {editingGoal
+        ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--sub)" }}>Daily goal
+            <button aria-label="Lower goal" onClick={() => onDailyGoal(Math.max(1, goalPoms - 1))} style={goalBtn}>−</button>
+            <b style={{ fontFamily: "'SF Mono', monospace", fontWeight: 500, color: "var(--text)", fontSize: 11 }}>{goalPoms}</b>
+            <button aria-label="Raise goal" onClick={() => onDailyGoal(Math.min(40, goalPoms + 1))} style={goalBtn}>+</button>
+            <span style={{ color: "var(--muted)" }}>pomodoros · {FMTHR(goalMin)}</span>
+            <button onClick={() => setEditingGoal(false)} style={{ ...goalBtn, width: "auto", padding: "0 6px" }}>Done</button></span>
+        : <button onClick={() => setEditingGoal(true)} title="Change your daily goal" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 10, color: goalReached ? "var(--green)" : "var(--sub)", fontFamily: "inherit" }}>
+            {goalReached ? `Goal reached ✓ · ${FMTHR(dayFocusMin)}` : `${FMTHR(dayFocusMin)} / ${FMTHR(goalMin)}`} <span style={{ color: "var(--muted)" }}>✎</span></button>}
+    </div>
+    <div style={{ display: "flex", gap: 2, height: 6 }}>
+      {Array.from({ length: goalPoms }).map((_, i) => (<Fragment key={i}>
+        <div style={{ flex: 1, borderRadius: 2, background: i < focusDone ? "var(--green)" : (i === focusDone && tmr.st !== "idle" && tmr.type === "work") ? color : "var(--surface)", transition: "background 0.3s" }} />
+        {i < goalPoms - 1 && <div style={{ width: ((i + 1) % 4 === 0) ? 8 : 4, borderRadius: 2, background: i < breakDone ? "#378ADD" : (i === breakDone && tmr.type !== "work" && tmr.st !== "idle") ? "#378ADD" : "var(--surface)" }} />}
+      </Fragment>))}
+    </div>
+  </>);
   const ts = todaySessions || [];
   const focusSec = ts.filter(s => s.session_type === "work" && s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting").reduce((a, s) => a + s.duration_seconds, 0);
   const waitSec = ts.filter(s => s.subtype === "waiting").reduce((a, s) => a + s.duration_seconds, 0);
@@ -792,18 +817,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
         {/* 70%: Timer area */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", paddingRight: mobile ? 0 : 16 }}>
           {/* Goal bar */}
-          <div style={{ width: "100%", maxWidth: 500, marginBottom: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ fontSize: 10, color: "var(--muted)" }}>Session {sessionsDone + 1}/{goalSessions} · {pomsInCurrent}/4 pomodoros</span>
-              <span style={{ fontSize: 10, color: focusDone >= goalPoms ? "var(--green)" : "var(--dim)" }}>{focusDone >= goalPoms ? "Goal reached ✓" : `${FMTHR(tfm)} / ${FMTHR(goalMin)}`}</span>
-            </div>
-            <div style={{ display: "flex", gap: 2, height: 6 }}>
-              {Array.from({ length: goalPoms }).map((_, i) => (<Fragment key={i}>
-                <div style={{ flex: 1, borderRadius: 2, background: i < focusDone ? "var(--green)" : (i === focusDone && tmr.st !== "idle" && tmr.type === "work") ? color : "var(--surface)", transition: "background 0.3s" }} />
-                {i < goalPoms - 1 && <div style={{ width: ((i + 1) % 4 === 0) ? 8 : 4, borderRadius: 2, background: i < breakDone ? "#378ADD" : (i === breakDone && tmr.type !== "work" && tmr.st !== "idle") ? "#378ADD" : "var(--surface)" }} />}
-              </Fragment>))}
-            </div>
-          </div>
+          <div style={{ width: "100%", maxWidth: 500, marginBottom: 20 }}>{goalBar}</div>
 
           {/* Task info bar — compact by default, expandable */}
           <div style={{ marginBottom: 16, width: "100%", maxWidth: 500 }}>
@@ -876,18 +890,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   // ===============================
   return (
     <div style={{ maxWidth: 720, margin: "0 auto" }}>
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-          <span style={{ fontSize: 10, color: "var(--muted)" }}>Session {sessionsDone + 1}/{goalSessions} · {pomsInCurrent}/4 pomodoros</span>
-          <span style={{ fontSize: 10, color: focusDone >= goalPoms ? "var(--green)" : "var(--dim)" }}>{focusDone >= goalPoms ? "Goal reached ✓" : `${FMTHR(tfm)} / ${FMTHR(goalMin)}`}</span>
-        </div>
-        <div style={{ display: "flex", gap: 2, height: 6 }}>
-          {Array.from({ length: goalPoms }).map((_, i) => (<Fragment key={i}>
-            <div style={{ flex: 1, borderRadius: 2, background: i < focusDone ? "var(--green)" : (i === focusDone && tmr.st !== "idle" && tmr.type === "work") ? color : "var(--surface)", transition: "background 0.3s" }} />
-            {i < goalPoms - 1 && <div style={{ width: ((i + 1) % 4 === 0) ? 8 : 4, borderRadius: 2, background: i < breakDone ? "#378ADD" : (i === breakDone && tmr.type !== "work" && tmr.st !== "idle") ? "#378ADD" : "var(--surface)" }} />}
-          </Fragment>))}
-        </div>
-      </div>
+      <div style={{ marginBottom: 32 }}>{goalBar}</div>
 
       {tmr.tType === "study" && tmr.studyTopic && (
         <div style={{ textAlign: "center", marginBottom: 16 }}>
