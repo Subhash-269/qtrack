@@ -72,7 +72,7 @@ describe('start_focus', () => {
     const { data, summary } = await call('start_focus', { title: 'Write the capstone report', project: 'weather' })
     expect(summary).toBe('Created task "Write the capstone report" in Weather App and started a 25-min focus on "Write the capstone report".')
     const created = await issueByTitle('Write the capstone report')
-    expect(created).toMatchObject({ type: 'todo', status: 'open', source: 'assistant', id: data.task_id })
+    expect(created).toMatchObject({ type: 'todo', status: 'todo', source: 'assistant', id: data.task_id })
     expect((await timer()).task_id).toBe(created.id)
 
     await call('undo', { undo_id: data.undo_id })
@@ -116,7 +116,7 @@ describe('start_focus', () => {
 
   it('rejects an id that is not the user\'s', async () => {
     const [p] = (await client.from('projects').insert({ user_id: 'other-user', name: 'Theirs' }).select()).data
-    const [t] = (await client.from('issues').insert({ user_id: 'other-user', project_id: p.id, title: 'Their task', status: 'open' }).select()).data
+    const [t] = (await client.from('issues').insert({ user_id: 'other-user', project_id: p.id, title: 'Their task', status: 'todo' }).select()).data
     await expect(call('start_focus', { task_id: t.id })).rejects.toThrow(/No task or test case/)
   })
 })
@@ -158,7 +158,7 @@ describe('pause, resume, stop', () => {
     const { data, summary } = await call('stop_focus', { mark_done: true })
     expect(summary).toBe(`Stopped "${CACHE_BUG}", logged 12 min, marked done.`)
     expect((await timer()).state).toBe('idle')
-    expect((await issueByTitle(CACHE_BUG)).status).toBe('fixed')
+    expect((await issueByTitle(CACHE_BUG)).status).toBe('done')
     expect((await rows('focus_sessions')).length).toBe(before + 1)
 
     await call('undo', { undo_id: data.undo_id })
@@ -253,7 +253,7 @@ describe('delete_task', () => {
 
   it("only deletes the user's own tasks, and needs changes turned on", async () => {
     const [p] = (await client.from('projects').insert({ user_id: 'other-user', name: 'Theirs' }).select()).data
-    const [t] = (await client.from('issues').insert({ user_id: 'other-user', project_id: p.id, title: 'Their task', status: 'open' }).select()).data
+    const [t] = (await client.from('issues').insert({ user_id: 'other-user', project_id: p.id, title: 'Their task', status: 'todo' }).select()).data
     await expect(call('delete_task', { task_id: t.id })).rejects.toThrow(/No task with id/)
     expect((await client.from('issues').select('*').eq('id', t.id)).data).toHaveLength(1)
 
@@ -261,6 +261,86 @@ describe('delete_task', () => {
     const utc = await issueByTitle(UTC_BUG)
     await expect(call('delete_task', { task_id: utc.id })).rejects.toThrow(/turned off/)
     expect(await issueByTitle(UTC_BUG)).toBeTruthy()
+  })
+})
+
+describe('update_task', () => {
+  beforeEach(allowWrites)
+
+  it('marks a task done with resolved_at, and undo reopens it', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    expect(utc.status).not.toBe('done')
+    const { data, summary } = await call('update_task', { task_id: utc.id, status: 'done' })
+    expect(summary).toBe(`"${UTC_BUG}": marked done.`)
+    expect(data).toMatchObject({ status: 'done', done: true, changed: ['status'] })
+    const after = await issueByTitle(UTC_BUG)
+    expect(after.status).toBe('done')
+    expect(after.resolved_at).toBeTruthy()
+    expect((await call('search_tasks', { query: 'Hourly forecast' })).data.results.map(r => r.id)).not.toContain(utc.id)
+
+    await call('undo', { undo_id: data.undo_id })
+    const back = await issueByTitle(UTC_BUG)
+    expect(back.status).toBe(utc.status)
+    expect(back.resolved_at ?? null).toBe(utc.resolved_at ?? null)
+  })
+
+  it('reopening clears resolved_at', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    await call('update_task', { task_id: utc.id, status: 'done' })
+    await call('update_task', { task_id: utc.id, status: 'todo' })
+    expect(await issueByTitle(UTC_BUG)).toMatchObject({ status: 'todo', resolved_at: null })
+  })
+
+  it('changes several fields at once and can clear the due date', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    await call('update_task', { task_id: utc.id, due_date: '2030-01-02' })
+    const { data, summary } = await call('update_task', { task_id: utc.id, priority: 'low', due_date: null, title: 'UTC bug', type: 'todo' })
+    expect(data.changed.sort()).toEqual(['due_date', 'priority', 'title', 'type'].filter(k => k !== 'type' || utc.type !== 'todo').sort())
+    expect(summary).toMatch(/^"UTC bug": .*priority low.*no due date/)
+    expect(await issueByTitle('UTC bug')).toMatchObject({ priority: 'low', due_date: null })
+    await call('undo', { undo_id: data.undo_id })
+    expect(await issueByTitle(UTC_BUG)).toMatchObject({ priority: utc.priority, due_date: '2030-01-02' })
+  })
+
+  it('reports no change without logging an undo', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    const { data } = await call('update_task', { task_id: utc.id, priority: utc.priority })
+    expect(data).toMatchObject({ changed: [] })
+    expect(data.undo_id).toBeUndefined()
+  })
+
+  it("only touches the user's own tasks, and needs changes turned on", async () => {
+    await expect(call('update_task', { task_id: 'nope', status: 'done' })).rejects.toThrow(/No task with id/)
+    await client.from('mcp_settings').update({ allow_writes: false }).eq('user_id', userId)
+    const utc = await issueByTitle(UTC_BUG)
+    await expect(call('update_task', { task_id: utc.id, status: 'done' })).rejects.toThrow(/turned off/)
+  })
+})
+
+describe('log_focus', () => {
+  beforeEach(allowWrites)
+
+  it('logs back-to-back pomodoros that count toward the task and the stats; undo removes them', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    const mine = async () => (await rows('focus_sessions')).filter(s => s.issue_id === utc.id)
+    const before = (await mine()).length
+    const end = new Date(Date.now() - 3600000).toISOString()
+    const { data, summary } = await call('log_focus', { task_id: utc.id, pomodoros: 2, ended_at: end })
+    expect(summary).toBe(`Logged 2 pomodoros (50 min) on "${UTC_BUG}".`)
+    const added = (await mine()).slice(before)
+    expect(added).toHaveLength(2)
+    expect(added.map(s => s.duration_seconds)).toEqual([1500, 1500])
+    expect(added[1].completed_at).toBe(end)
+    expect(new Date(end) - new Date(added[0].completed_at)).toBe(1500 * 1000)
+    expect(added[0]).toMatchObject({ session_type: 'work', project_id: utc.project_id, source: 'assistant' })
+    await call('undo', { undo_id: data.undo_id })
+    expect(await mine()).toHaveLength(before)
+  })
+
+  it('refuses future times and unknown ids', async () => {
+    const utc = await issueByTitle(UTC_BUG)
+    await expect(call('log_focus', { task_id: utc.id, ended_at: new Date(Date.now() + 3600000).toISOString() })).rejects.toThrow(/future/)
+    await expect(call('log_focus', { task_id: 'nope' })).rejects.toThrow()
   })
 })
 

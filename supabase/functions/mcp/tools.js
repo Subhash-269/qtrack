@@ -5,7 +5,7 @@
 import { dayBounds, getToday, searchTasks, getFocusStats } from '../_shared/today.js'
 import {
   UserError, WRITE_LIMIT_PER_HOUR, getTimer, startFocus, pauseFocus, resumeFocus, stopFocus,
-  addTask, addToQueue, captureNote, deleteTask, undoCall, writesAllowed, writesInLastHour,
+  addTask, addToQueue, captureNote, deleteTask, updateTask, logFocus, undoCall, writesAllowed, writesInLastHour,
   listProjects, setProjectArchived,
 } from '../_shared/actions.js'
 
@@ -143,7 +143,7 @@ export const TOOLS = {
   stop_focus: {
     scope: 'write',
     title: 'Stop focus',
-    description: 'End the current session and log the time spent. Set mark_done when the user says the task is finished (a task becomes "fixed", a test case "pass").',
+    description: 'End the current session and log the time spent. Set mark_done when the user says the task is finished (a task becomes "done", a test case "pass").',
     input: (z) => ({ mark_done: z.boolean().optional().describe('Also mark the task or test case as done') }),
     run: ({ client, userId }, args) => stopFocus(client, userId, args),
   },
@@ -181,6 +181,33 @@ export const TOOLS = {
       project: z.string().optional().describe('Project name, when not linking to a task'),
     }),
     run: ({ client, userId }, args) => captureNote(client, userId, args),
+  },
+
+  update_task: {
+    scope: 'write',
+    title: 'Update task',
+    description: 'Change the status, priority, due date, title or type of a task, by task_id from search_tasks or get_today (use include_done to find finished ones). Statuses: "todo", "in_progress", "done", "skipped" (closed without doing it). Moving back to "todo" reopens it. Pass due_date null to clear it. Only the fields you pass change. Undo puts the old values back.',
+    input: (z) => ({
+      task_id: z.string().describe('Id of the task'),
+      status: z.enum(['todo', 'in_progress', 'done', 'skipped', 'open', 'fixed', 'verified', 'wont_fix']).optional().describe('"todo", "in_progress", "done" or "skipped". Old words (open, fixed, verified, wont_fix) still work'),
+      priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
+      due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe('YYYY-MM-DD, or null to clear'),
+      title: z.string().min(1).max(200).optional().describe('New title'),
+      type: z.enum(['todo', 'bug']).optional(),
+    }),
+    run: ({ client, userId }, args) => updateTask(client, userId, args),
+  },
+
+  log_focus: {
+    scope: 'write',
+    title: 'Log pomodoros',
+    description: 'Record focus time the user did without the timer: a number of 25-min pomodoros on a task or test case, back to back, ending at ended_at (default now). Use start_focus instead for work that is about to start. Undo removes them.',
+    input: (z) => ({
+      task_id: z.string().describe('Id of the task or test case'),
+      pomodoros: z.number().int().min(1).max(8).optional().describe('How many, default 1'),
+      ended_at: z.string().optional().describe('When the last one ended, ISO 8601 with timezone. Default now'),
+    }),
+    run: ({ client, userId }, args) => logFocus(client, userId, args),
   },
 
   delete_task: {

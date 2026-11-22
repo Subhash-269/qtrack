@@ -4,7 +4,8 @@
 // Every action returns { summary, data, undo } where `undo` is a list of operations that put
 // things back the way they were. The caller stores it in mcp_calls.undo.
 
-import { TASK_DONE, TEST_DONE } from './today.js'
+import { TEST_DONE } from './today.js'
+import { TASK_STATUSES, TASK_STATUS_LABEL, LEGACY_TASK_STATUS, isTaskDone, normalizeTaskStatus } from './status.js'
 
 export const UNDO_WINDOW_MS = 10 * 60 * 1000
 export const WRITE_LIMIT_PER_HOUR = 60
@@ -168,7 +169,7 @@ async function resolveTarget(client, userId, { task_id, kind, title, project }) 
   const q = (t) => { let b = client.from(t).select('*').eq('user_id', userId).ilike('title', pattern); if (projectFilter) b = b.eq('project_id', projectFilter); return b }
   const [tasks, tests] = await Promise.all([q('issues').then(many), kind === 'task' ? [] : q('test_cases').then(many)])
   const open = [
-    ...tasks.filter(r => !TASK_DONE.includes(r.status)).map(r => ({ ...r, kind: 'issue' })),
+    ...tasks.filter(r => !isTaskDone(r.status)).map(r => ({ ...r, kind: 'issue' })),
     ...(kind === 'task' ? [] : tests.filter(r => !TEST_DONE.includes(r.status)).map(r => ({ ...r, kind: 'test' }))),
   ]
   const exact = open.filter(r => r.title.toLowerCase() === title.trim().toLowerCase())
@@ -256,7 +257,7 @@ export async function stopFocus(client, userId, { mark_done }, now = Date.now())
   if (mark_done && (row.task_type === 'issue' || row.task_type === 'test')) {
     const item = await findItem(client, userId, row.task_id)
     if (item.kind === 'issue') {
-      one(await client.from('issues').update({ status: 'fixed', resolved_at: iso(now) }).eq('id', item.id).eq('user_id', userId).select().single())
+      one(await client.from('issues').update({ status: 'done', resolved_at: iso(now) }).eq('id', item.id).eq('user_id', userId).select().single())
       undo.push({ op: 'update', table: 'issues', id: item.id, values: { status: item.status, resolved_at: item.resolved_at ?? null } })
     } else {
       one(await client.from('test_cases').update({ status: 'pass', last_run: iso(now) }).eq('id', item.id).eq('user_id', userId).select().single())
@@ -346,6 +347,68 @@ export async function deleteTask(client, userId, { task_id }, now = Date.now()) 
     summary: `Deleted task "${task.title}"${kept.length ? ` (its ${kept.join(' and ')} stay, unlinked)` : ''}. Undo within 10 minutes restores it.`,
     data: { task_id: task.id, title: task.title, removed_from_queue: queue.length > 0, unlinked: { focus_sessions: sessions.length, notes: notes.length, test_links: links.length } },
     undo,
+  }
+}
+
+// Log focus time after the fact (the user worked without the timer). Each pomodoro is its own
+// 25-min work session, back to back, ending at ended_at (default now), the way the timer logs them.
+export async function logFocus(client, userId, { task_id, pomodoros = 1, ended_at }, now = Date.now()) {
+  const item = await findItem(client, userId, task_id)
+  if (item.kind !== 'issue' && item.kind !== 'test') throw new UserError('Pomodoros can only be logged on a task or test case.')
+  const end = ended_at ? new Date(ended_at).getTime() : now
+  if (Number.isNaN(end)) throw new UserError(`"${ended_at}" isn't a date and time.`)
+  if (end > now + 60000) throw new UserError("Can't log focus time in the future.")
+  const rows = Array.from({ length: pomodoros }, (_, i) => ({
+    user_id: userId, project_id: item.project_id,
+    issue_id: item.kind === 'issue' ? item.id : null, test_case_id: item.kind === 'test' ? item.id : null,
+    session_type: 'work', duration_seconds: POMODORO, subtype: 'focus', study_topic: '', source: 'assistant',
+    completed_at: iso(end - (pomodoros - 1 - i) * POMODORO * 1000),
+  }))
+  const saved = many(await client.from('focus_sessions').insert(rows).select())
+  return {
+    summary: `Logged ${pomodoros} pomodoro${pomodoros === 1 ? '' : 's'} (${pomodoros * 25} min) on "${item.title}".`,
+    data: { task_id: item.id, title: item.title, kind: kindName(item.kind), pomodoros, minutes: pomodoros * 25, ended_at: iso(end) },
+    undo: saved.map(s => ({ op: 'delete', table: 'focus_sessions', id: s.id })),
+  }
+}
+
+// Change a task's status, priority, due date, title or type. The old bug-tracker words (fixed,
+// wont_fix, ...) are still accepted. Moving to done/skipped stamps resolved_at (the app's reports
+// use it); going back to todo/in_progress clears it.
+
+export async function updateTask(client, userId, { task_id, status, priority, due_date, title, type }, now = Date.now()) {
+  const task = one(await client.from('issues').select('*').eq('user_id', userId).eq('id', task_id).maybeSingle())
+  if (!task) throw new UserError(`No task with id ${task_id}. Use search_tasks to find its id.`)
+
+  const values = {}
+  if (status !== undefined) {
+    const s = LEGACY_TASK_STATUS[status] || status
+    if (!TASK_STATUSES.includes(s)) throw new UserError(`Unknown status "${status}". Use one of: ${TASK_STATUSES.join(', ')}.`)
+    if (s !== normalizeTaskStatus(task.status)) {
+      values.status = s
+      const wasDone = isTaskDone(task.status), isDone = isTaskDone(s)
+      if (isDone && !wasDone) values.resolved_at = iso(now)
+      else if (!isDone) values.resolved_at = null
+    }
+  }
+  if (priority !== undefined && priority !== task.priority) values.priority = priority
+  if (due_date !== undefined && (due_date || null) !== (task.due_date || null)) values.due_date = due_date || null
+  if (title !== undefined && title.trim() && title.trim() !== task.title) values.title = title.trim()
+  if (type !== undefined && type !== task.type) values.type = type
+
+  const fields = Object.keys(values).filter(k => k !== 'resolved_at')
+  if (!fields.length) return { summary: `"${task.title}" already looks like that; nothing changed.`, data: { task_id: task.id, title: task.title, changed: [] }, undo: null }
+
+  const after = one(await client.from('issues').update(values).eq('id', task.id).eq('user_id', userId).select().single())
+  const before = pick(task, Object.keys(values))
+  const label = (k) => k === 'status' ? (after.status === 'done' ? 'marked done' : after.status === 'skipped' ? 'skipped' : `moved to ${TASK_STATUS_LABEL[after.status].toLowerCase()}`)
+    : k === 'due_date' ? (after.due_date ? `due ${after.due_date}` : 'no due date')
+    : k === 'title' ? `renamed from "${task.title}"`
+    : `${k} ${after[k]}`
+  return {
+    summary: `"${after.title}": ${fields.map(label).join(', ')}.`,
+    data: { task_id: after.id, title: after.title, status: after.status, done: isTaskDone(after.status), priority: after.priority, due_date: after.due_date, type: after.type, changed: fields },
+    undo: [{ op: 'update', table: 'issues', id: task.id, values: before }],
   }
 }
 

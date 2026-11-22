@@ -2,6 +2,7 @@
 // Replaces the old localStorage polyfill
 import { supabase } from './supabaseClient'
 import { getToday } from '../supabase/functions/_shared/today.js'
+import { isTaskDone } from '../supabase/functions/_shared/status.js'
 import { undoCall } from '../supabase/functions/_shared/actions.js'
 
 const uid = async () => {
@@ -49,7 +50,7 @@ export async function getOpenTaskCounts() {
   const { data, error } = await supabase.from('issues').select('id, project_id, status').eq('user_id', user_id)
   if (error) throw error
   const out = {}
-  for (const r of data || []) if (!['fixed', 'verified', 'wont_fix'].includes(r.status)) out[r.project_id] = (out[r.project_id] || 0) + 1
+  for (const r of data || []) if (!isTaskDone(r.status)) out[r.project_id] = (out[r.project_id] || 0) + 1
   return out
 }
 
@@ -146,7 +147,7 @@ export async function createIssue(projectId, fileId, title, type, priority, desc
 
 export async function updateIssueStatus(id, status) {
   const fields = { status };
-  if (["fixed", "verified", "wont_fix"].includes(status)) fields.resolved_at = new Date().toISOString();
+  if (isTaskDone(status)) fields.resolved_at = new Date().toISOString();
   else fields.resolved_at = null;
   const { error } = await supabase.from('issues').update(fields).eq('id', id)
   if (error) throw error

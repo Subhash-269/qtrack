@@ -28,7 +28,7 @@ const uuid = () => crypto.randomUUID?.() || `id-${Date.now()}-${Math.random().to
 // Columns the real schema fills in with defaults
 const DEFAULTS = {
   projects: () => ({ type: 'project', settings: null, news_topics: [] }),
-  issues: () => ({ status: 'open', resolved_at: null, scratch_notes: '', scratch_checklist: [] }),
+  issues: () => ({ status: 'todo', resolved_at: null, scratch_notes: '', scratch_checklist: [] }),
   test_cases: () => ({ status: 'not_run', last_run: null, steps: [], scratch_notes: '', scratch_checklist: [] }),
   focus_sessions: (r) => ({ completed_at: new Date().toISOString(), started_at: new Date(Date.now() - (r.duration_seconds || 0) * 1000).toISOString() }),
   notes: () => ({ pinned: false, updated_at: new Date().toISOString(), tags: [] }),
