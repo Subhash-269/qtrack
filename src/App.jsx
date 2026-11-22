@@ -777,7 +777,8 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   // ===============================
   if (hasTask) {
     return (
-      <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", gap: mobile ? 20 : 0, minHeight: mobile ? 0 : "calc(100vh - 160px)" }}>
+      // Capped and centered so the notes drawer stays next to the timer on wide windows
+      <div style={{ display: "flex", flexDirection: mobile ? "column" : "row", gap: mobile ? 20 : 0, minHeight: mobile ? 0 : "calc(100vh - 160px)", width: "100%", maxWidth: mobile ? "none" : 1120, margin: "0 auto" }}>
         {/* 70%: Timer area */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", paddingRight: mobile ? 0 : 16 }}>
           {/* Goal bar */}
