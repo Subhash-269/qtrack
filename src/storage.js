@@ -837,6 +837,21 @@ export async function getTodayAcrossProjects() {
   return getToday(supabase, user_id, { date, startOfDayISO: start.toISOString() })
 }
 
+// Daily focus goal (pomodoros), saved to the account. 8 until the user changes it, or if the
+// settings table isn't there yet.
+export const DEFAULT_DAILY_GOAL = 8
+export async function getDailyGoal() {
+  const user_id = await uid()
+  const { data, error } = await supabase.from('user_settings').select('daily_goal_pomodoros').eq('user_id', user_id).maybeSingle()
+  if (error) { console.warn('Daily goal:', error.message); return DEFAULT_DAILY_GOAL }
+  return data?.daily_goal_pomodoros || DEFAULT_DAILY_GOAL
+}
+export async function setDailyGoal(pomodoros) {
+  const user_id = await uid()
+  const { error } = await supabase.from('user_settings').upsert({ user_id, daily_goal_pomodoros: pomodoros, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+  if (error) throw error
+}
+
 // Focus sessions across all projects between two instants, for the Today focus chart.
 // Pages past the 1000-row limit so a long custom range still adds up.
 export async function getFocusSessionsBetween(startISO, endISO) {
