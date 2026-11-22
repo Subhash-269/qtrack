@@ -4,7 +4,8 @@
 // Every action returns { summary, data, undo } where `undo` is a list of operations that put
 // things back the way they were. The caller stores it in mcp_calls.undo.
 
-import { TASK_DONE, TEST_DONE } from './today.js'
+import { TEST_DONE } from './today.js'
+import { TASK_STATUSES, TASK_STATUS_LABEL, LEGACY_TASK_STATUS, isTaskDone, normalizeTaskStatus } from './status.js'
 
 export const UNDO_WINDOW_MS = 10 * 60 * 1000
 export const WRITE_LIMIT_PER_HOUR = 60
@@ -168,7 +169,7 @@ async function resolveTarget(client, userId, { task_id, kind, title, project }) 
   const q = (t) => { let b = client.from(t).select('*').eq('user_id', userId).ilike('title', pattern); if (projectFilter) b = b.eq('project_id', projectFilter); return b }
   const [tasks, tests] = await Promise.all([q('issues').then(many), kind === 'task' ? [] : q('test_cases').then(many)])
   const open = [
-    ...tasks.filter(r => !TASK_DONE.includes(r.status)).map(r => ({ ...r, kind: 'issue' })),
+    ...tasks.filter(r => !isTaskDone(r.status)).map(r => ({ ...r, kind: 'issue' })),
     ...(kind === 'task' ? [] : tests.filter(r => !TEST_DONE.includes(r.status)).map(r => ({ ...r, kind: 'test' }))),
   ]
   const exact = open.filter(r => r.title.toLowerCase() === title.trim().toLowerCase())
@@ -256,7 +257,7 @@ export async function stopFocus(client, userId, { mark_done }, now = Date.now())
   if (mark_done && (row.task_type === 'issue' || row.task_type === 'test')) {
     const item = await findItem(client, userId, row.task_id)
     if (item.kind === 'issue') {
-      one(await client.from('issues').update({ status: 'fixed', resolved_at: iso(now) }).eq('id', item.id).eq('user_id', userId).select().single())
+      one(await client.from('issues').update({ status: 'done', resolved_at: iso(now) }).eq('id', item.id).eq('user_id', userId).select().single())
       undo.push({ op: 'update', table: 'issues', id: item.id, values: { status: item.status, resolved_at: item.resolved_at ?? null } })
     } else {
       one(await client.from('test_cases').update({ status: 'pass', last_run: iso(now) }).eq('id', item.id).eq('user_id', userId).select().single())
@@ -371,10 +372,9 @@ export async function logFocus(client, userId, { task_id, pomodoros = 1, ended_a
   }
 }
 
-// Change a task's status, priority, due date, title or type. "done" means "fixed", as in the app.
-// Moving to a finished status stamps resolved_at (the app's reports use it); reopening clears it.
-export const TASK_STATUSES = ['open', 'in_progress', 'fixed', 'verified', 'wont_fix']
-const STATUS_ALIASES = { done: 'fixed' }
+// Change a task's status, priority, due date, title or type. The old bug-tracker words (fixed,
+// wont_fix, ...) are still accepted. Moving to done/skipped stamps resolved_at (the app's reports
+// use it); going back to todo/in_progress clears it.
 
 export async function updateTask(client, userId, { task_id, status, priority, due_date, title, type }, now = Date.now()) {
   const task = one(await client.from('issues').select('*').eq('user_id', userId).eq('id', task_id).maybeSingle())
@@ -382,11 +382,11 @@ export async function updateTask(client, userId, { task_id, status, priority, du
 
   const values = {}
   if (status !== undefined) {
-    const s = STATUS_ALIASES[status] || status
-    if (!TASK_STATUSES.includes(s)) throw new UserError(`Unknown status "${status}". Use one of: done, ${TASK_STATUSES.join(', ')}.`)
-    if (s !== task.status) {
+    const s = LEGACY_TASK_STATUS[status] || status
+    if (!TASK_STATUSES.includes(s)) throw new UserError(`Unknown status "${status}". Use one of: ${TASK_STATUSES.join(', ')}.`)
+    if (s !== normalizeTaskStatus(task.status)) {
       values.status = s
-      const wasDone = TASK_DONE.includes(task.status), isDone = TASK_DONE.includes(s)
+      const wasDone = isTaskDone(task.status), isDone = isTaskDone(s)
       if (isDone && !wasDone) values.resolved_at = iso(now)
       else if (!isDone) values.resolved_at = null
     }
@@ -401,13 +401,13 @@ export async function updateTask(client, userId, { task_id, status, priority, du
 
   const after = one(await client.from('issues').update(values).eq('id', task.id).eq('user_id', userId).select().single())
   const before = pick(task, Object.keys(values))
-  const label = (k) => k === 'status' ? (TASK_DONE.includes(after.status) ? `marked ${after.status === 'fixed' ? 'done' : after.status.replace('_', ' ')}` : `status ${after.status.replace('_', ' ')}`)
+  const label = (k) => k === 'status' ? (after.status === 'done' ? 'marked done' : after.status === 'skipped' ? 'skipped' : `moved to ${TASK_STATUS_LABEL[after.status].toLowerCase()}`)
     : k === 'due_date' ? (after.due_date ? `due ${after.due_date}` : 'no due date')
     : k === 'title' ? `renamed from "${task.title}"`
     : `${k} ${after[k]}`
   return {
     summary: `"${after.title}": ${fields.map(label).join(', ')}.`,
-    data: { task_id: after.id, title: after.title, status: after.status, done: TASK_DONE.includes(after.status), priority: after.priority, due_date: after.due_date, type: after.type, changed: fields },
+    data: { task_id: after.id, title: after.title, status: after.status, done: isTaskDone(after.status), priority: after.priority, due_date: after.due_date, type: after.type, changed: fields },
     undo: [{ op: 'update', table: 'issues', id: task.id, values: before }],
   }
 }

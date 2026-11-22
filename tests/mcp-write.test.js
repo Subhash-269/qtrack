@@ -72,7 +72,7 @@ describe('start_focus', () => {
     const { data, summary } = await call('start_focus', { title: 'Write the capstone report', project: 'weather' })
     expect(summary).toBe('Created task "Write the capstone report" in Weather App and started a 25-min focus on "Write the capstone report".')
     const created = await issueByTitle('Write the capstone report')
-    expect(created).toMatchObject({ type: 'todo', status: 'open', source: 'assistant', id: data.task_id })
+    expect(created).toMatchObject({ type: 'todo', status: 'todo', source: 'assistant', id: data.task_id })
     expect((await timer()).task_id).toBe(created.id)
 
     await call('undo', { undo_id: data.undo_id })
@@ -116,7 +116,7 @@ describe('start_focus', () => {
 
   it('rejects an id that is not the user\'s', async () => {
     const [p] = (await client.from('projects').insert({ user_id: 'other-user', name: 'Theirs' }).select()).data
-    const [t] = (await client.from('issues').insert({ user_id: 'other-user', project_id: p.id, title: 'Their task', status: 'open' }).select()).data
+    const [t] = (await client.from('issues').insert({ user_id: 'other-user', project_id: p.id, title: 'Their task', status: 'todo' }).select()).data
     await expect(call('start_focus', { task_id: t.id })).rejects.toThrow(/No task or test case/)
   })
 })
@@ -158,7 +158,7 @@ describe('pause, resume, stop', () => {
     const { data, summary } = await call('stop_focus', { mark_done: true })
     expect(summary).toBe(`Stopped "${CACHE_BUG}", logged 12 min, marked done.`)
     expect((await timer()).state).toBe('idle')
-    expect((await issueByTitle(CACHE_BUG)).status).toBe('fixed')
+    expect((await issueByTitle(CACHE_BUG)).status).toBe('done')
     expect((await rows('focus_sessions')).length).toBe(before + 1)
 
     await call('undo', { undo_id: data.undo_id })
@@ -253,7 +253,7 @@ describe('delete_task', () => {
 
   it("only deletes the user's own tasks, and needs changes turned on", async () => {
     const [p] = (await client.from('projects').insert({ user_id: 'other-user', name: 'Theirs' }).select()).data
-    const [t] = (await client.from('issues').insert({ user_id: 'other-user', project_id: p.id, title: 'Their task', status: 'open' }).select()).data
+    const [t] = (await client.from('issues').insert({ user_id: 'other-user', project_id: p.id, title: 'Their task', status: 'todo' }).select()).data
     await expect(call('delete_task', { task_id: t.id })).rejects.toThrow(/No task with id/)
     expect((await client.from('issues').select('*').eq('id', t.id)).data).toHaveLength(1)
 
@@ -269,12 +269,12 @@ describe('update_task', () => {
 
   it('marks a task done with resolved_at, and undo reopens it', async () => {
     const utc = await issueByTitle(UTC_BUG)
-    expect(utc.status).not.toBe('fixed')
+    expect(utc.status).not.toBe('done')
     const { data, summary } = await call('update_task', { task_id: utc.id, status: 'done' })
     expect(summary).toBe(`"${UTC_BUG}": marked done.`)
-    expect(data).toMatchObject({ status: 'fixed', done: true, changed: ['status'] })
+    expect(data).toMatchObject({ status: 'done', done: true, changed: ['status'] })
     const after = await issueByTitle(UTC_BUG)
-    expect(after.status).toBe('fixed')
+    expect(after.status).toBe('done')
     expect(after.resolved_at).toBeTruthy()
     expect((await call('search_tasks', { query: 'Hourly forecast' })).data.results.map(r => r.id)).not.toContain(utc.id)
 
@@ -287,8 +287,8 @@ describe('update_task', () => {
   it('reopening clears resolved_at', async () => {
     const utc = await issueByTitle(UTC_BUG)
     await call('update_task', { task_id: utc.id, status: 'done' })
-    await call('update_task', { task_id: utc.id, status: 'open' })
-    expect(await issueByTitle(UTC_BUG)).toMatchObject({ status: 'open', resolved_at: null })
+    await call('update_task', { task_id: utc.id, status: 'todo' })
+    expect(await issueByTitle(UTC_BUG)).toMatchObject({ status: 'todo', resolved_at: null })
   })
 
   it('changes several fields at once and can clear the due date', async () => {

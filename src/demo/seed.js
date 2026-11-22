@@ -32,16 +32,16 @@ export function buildSeed() {
     cfg: row('files', { project_id: P, name: 'vite.config.js', category: 'config' }),
     readme: row('files', { project_id: P, name: 'README.md', category: 'other' }),
   }
-  const issue = (r) => row('issues', { project_id: P, type: 'bug', priority: 'medium', status: 'open', description: '', estimated_pomodoros: 2, due_date: null, repo_name: 'weather-app', branch_name: 'main', meeting_tag: null, resolved_at: null, scratch_notes: '', scratch_checklist: [], ...r })
+  const issue = (r) => row('issues', { project_id: P, type: 'bug', priority: 'medium', status: 'todo', description: '', estimated_pomodoros: 2, due_date: null, repo_name: 'weather-app', branch_name: 'main', meeting_tag: null, resolved_at: null, scratch_notes: '', scratch_checklist: [], ...r })
   const i1 = issue({ title: 'Hourly forecast shows UTC instead of local time', file_id: f.api.id, priority: 'critical', status: 'in_progress', branch_name: 'feat/hourly-forecast', due_date: day(-1), estimated_pomodoros: 3, meeting_tag: tags('Sprint sync'), description: 'API returns `dt` in UTC seconds. We render it without applying the city timezone offset.', scratch_checklist: [{ text: 'Reproduce with Tokyo', done: true }, { text: 'Use timezone_offset from response', done: false }, { text: 'Add test for DST boundary', done: false }], created_at: at(3) })
   const i2 = issue({ title: 'Cache never expires when offline', file_id: f.cache.id, priority: 'high', due_date: day(3), created_at: at(4) })
   const i3 = issue({ title: 'Add °C / °F toggle to settings', file_id: f.units.id, type: 'todo', priority: 'medium', branch_name: 'feat/hourly-forecast', due_date: day(5), created_at: at(5) })
   const i4 = issue({ title: 'City search drops results with accents (São Paulo)', file_id: f.picker.id, priority: 'high', created_at: at(6) })
   const i5 = issue({ title: 'Write README setup section', type: 'todo', priority: 'low', file_id: f.readme.id, created_at: at(2) })
-  issue({ title: 'Rate-limit forecast requests to 1/min per city', file_id: f.api.id, type: 'todo', priority: 'medium', status: 'fixed', resolved_at: at(2, 16), meeting_tag: tags('Sprint sync'), created_at: at(9) })
-  issue({ title: 'Wind speed rounded to 0 for light breeze', file_id: f.units.id, priority: 'medium', status: 'verified', resolved_at: at(3, 11), meeting_tag: tags('Sprint sync'), created_at: at(10) })
-  issue({ title: 'Upgrade to Vite 8', file_id: f.cfg.id, type: 'todo', priority: 'low', status: 'fixed', resolved_at: at(1, 15), created_at: at(8) })
-  issue({ title: 'Loading spinner flashes on cached data', file_id: f.picker.id, priority: 'low', status: 'fixed', branch_name: 'feat/hourly-forecast', resolved_at: at(0, 9, 30), created_at: at(4) })
+  issue({ title: 'Rate-limit forecast requests to 1/min per city', file_id: f.api.id, type: 'todo', priority: 'medium', status: 'done', resolved_at: at(2, 16), meeting_tag: tags('Sprint sync'), created_at: at(9) })
+  issue({ title: 'Wind speed rounded to 0 for light breeze', file_id: f.units.id, priority: 'medium', status: 'done', resolved_at: at(3, 11), meeting_tag: tags('Sprint sync'), created_at: at(10) })
+  issue({ title: 'Upgrade to Vite 8', file_id: f.cfg.id, type: 'todo', priority: 'low', status: 'done', resolved_at: at(1, 15), created_at: at(8) })
+  issue({ title: 'Loading spinner flashes on cached data', file_id: f.picker.id, priority: 'low', status: 'done', branch_name: 'feat/hourly-forecast', resolved_at: at(0, 9, 30), created_at: at(4) })
 
   const test = (r) => row('test_cases', { project_id: P, precondition: '', estimated_pomodoros: 1, due_date: null, repo_name: 'weather-app', branch_name: 'main', meeting_tag: null, status: 'not_run', last_run: null, scratch_notes: '', scratch_checklist: [], ...r })
   const t1 = test({ title: 'Hourly forecast renders in city local time', file_id: f.api.id, due_date: day(0), branch_name: 'feat/hourly-forecast', precondition: 'Device timezone set to America/New_York', status: 'fail', last_run: at(0, 9), steps: [{ step: 'Search for "Tokyo"', expected: 'Tokyo forecast loads' }, { step: 'Open the hourly tab', expected: 'First slot shows the current Tokyo hour' }, { step: 'Compare with timeanddate.com', expected: 'Times match' }] })
@@ -114,11 +114,11 @@ Next: hourly forecast, offline cache
   // ============================================
   const cs = row('projects', { name: 'CS 5800 · Algorithms', type: 'project', created_at: at(29) })
   const C = cs.id
-  const todo = (r) => row('issues', { project_id: C, file_id: null, type: 'todo', priority: 'medium', status: 'open', description: '', estimated_pomodoros: 2, due_date: null, repo_name: '', branch_name: '', meeting_tag: null, resolved_at: null, scratch_notes: '', scratch_checklist: [], ...r })
+  const todo = (r) => row('issues', { project_id: C, file_id: null, type: 'todo', priority: 'medium', status: 'todo', description: '', estimated_pomodoros: 2, due_date: null, repo_name: '', branch_name: '', meeting_tag: null, resolved_at: null, scratch_notes: '', scratch_checklist: [], ...r })
   const ps3 = todo({ title: 'Problem set 3 — shortest paths', priority: 'high', due_date: day(2), estimated_pomodoros: 6, scratch_checklist: [{ text: 'Q1 Dijkstra trace', done: true }, { text: 'Q2 negative cycles proof', done: false }, { text: 'Q3 Floyd-Warshall', done: false }] })
   todo({ title: 'Read CLRS ch. 15 (DP) before lecture', due_date: day(4), estimated_pomodoros: 3 })
   todo({ title: 'Midterm review sheet', priority: 'critical', due_date: day(9), estimated_pomodoros: 8 })
-  todo({ title: 'Problem set 2 — graph traversal', status: 'fixed', resolved_at: at(5, 20) })
+  todo({ title: 'Problem set 2 — graph traversal', status: 'done', resolved_at: at(5, 20) })
   row('task_queue', { project_id: C, item_type: 'issue', item_id: ps3.id, position: 0 })
 
   const GRAPHS = 'Graph Algorithms', DP = 'Dynamic Programming'

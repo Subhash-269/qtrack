@@ -143,7 +143,7 @@ export const TOOLS = {
   stop_focus: {
     scope: 'write',
     title: 'Stop focus',
-    description: 'End the current session and log the time spent. Set mark_done when the user says the task is finished (a task becomes "fixed", a test case "pass").',
+    description: 'End the current session and log the time spent. Set mark_done when the user says the task is finished (a task becomes "done", a test case "pass").',
     input: (z) => ({ mark_done: z.boolean().optional().describe('Also mark the task or test case as done') }),
     run: ({ client, userId }, args) => stopFocus(client, userId, args),
   },
@@ -186,10 +186,10 @@ export const TOOLS = {
   update_task: {
     scope: 'write',
     title: 'Update task',
-    description: 'Change the status, priority, due date, title or type of a task, by task_id from search_tasks or get_today (use include_done to find finished ones). Status "done" marks it finished (same as "fixed"); "open" reopens it. Pass due_date null to clear it. Only the fields you pass change. Undo puts the old values back.',
+    description: 'Change the status, priority, due date, title or type of a task, by task_id from search_tasks or get_today (use include_done to find finished ones). Statuses: "todo", "in_progress", "done", "skipped" (closed without doing it). Moving back to "todo" reopens it. Pass due_date null to clear it. Only the fields you pass change. Undo puts the old values back.',
     input: (z) => ({
       task_id: z.string().describe('Id of the task'),
-      status: z.enum(['done', 'open', 'in_progress', 'fixed', 'verified', 'wont_fix']).optional().describe('"done" = finished; "open" reopens; "wont_fix" closes without doing it'),
+      status: z.enum(['todo', 'in_progress', 'done', 'skipped', 'open', 'fixed', 'verified', 'wont_fix']).optional().describe('"todo", "in_progress", "done" or "skipped". Old words (open, fixed, verified, wont_fix) still work'),
       priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
       due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe('YYYY-MM-DD, or null to clear'),
       title: z.string().min(1).max(200).optional().describe('New title'),

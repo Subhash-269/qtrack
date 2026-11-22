@@ -45,7 +45,7 @@ describe('get_today', () => {
   it('leaves out finished tasks and cancelled meetings', async () => {
     const { data: before } = await run('get_today', { timezone: tz })
     const task = before.up_next[0]
-    await client.from('issues').update({ status: 'fixed' }).eq('id', task.id)
+    await client.from('issues').update({ status: 'done' }).eq('id', task.id)
     const m = before.meetings[0]
     await client.from('meetings').update({ cancelled: true }).eq('id', m.id)
 
@@ -65,7 +65,7 @@ describe('isolation between accounts', () => {
   const other = 'other-user'
   beforeEach(async () => {
     const [p] = (await client.from('projects').insert({ user_id: other, name: 'Secret project' }).select()).data
-    const [i] = (await client.from('issues').insert({ user_id: other, project_id: p.id, title: 'Hourly secret plan', type: 'todo', status: 'open', due_date: today() }).select()).data
+    const [i] = (await client.from('issues').insert({ user_id: other, project_id: p.id, title: 'Hourly secret plan', type: 'todo', status: 'todo', due_date: today() }).select()).data
     await client.from('task_queue').insert({ user_id: other, project_id: p.id, item_type: 'issue', item_id: i.id, position: 0 })
     await client.from('notes').insert({ user_id: other, project_id: p.id, category: 'scratch', content: 'other user scribble' })
     await client.from('focus_sessions').insert({ user_id: other, project_id: p.id, issue_id: i.id, session_type: 'work', subtype: 'focus', duration_seconds: 3600 })

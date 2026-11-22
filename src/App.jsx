@@ -3,6 +3,7 @@ import { supabase, isDemo } from "./supabaseClient";
 import * as db from "./storage";
 import TodayView from "./views/TodayView";
 import AssistantView from "./views/AssistantView";
+import { TASK_STATUSES, TASK_STATUS_LABEL, isTaskDone, normalizeTaskStatus, taskStatusLabel } from "../supabase/functions/_shared/status.js";
 import Sidebar, { ProjectList, DeleteProjectDialog } from "./components/Sidebar";
 
 const SHORT_DATE = (d) => { if (!d) return "—"; const dt = new Date(d); const diff = Date.now() - dt.getTime(); if (diff < 60000) return "just now"; if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`; if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`; return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
@@ -10,7 +11,7 @@ const FMT = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 
 const FMTHR = (m) => { if (m < 60) return `${m}m`; if (m < 2880) return `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ""}`; const d = Math.floor(m / 1440); const h = Math.floor((m % 1440) / 60); const rm = m % 60; return `${d}d${h > 0 ? ` ${h}h` : ""}${rm > 0 ? ` ${rm}m` : ""}`; };
 const CATEGORIES = ["extract", "transform", "load", "validate", "utils", "config", "api", "model", "other"];
 const PRIORITIES = ["critical", "high", "medium", "low"];
-const ISSUE_STATUSES = ["open", "in_progress", "fixed", "verified", "wont_fix"];
+const ISSUE_STATUSES = TASK_STATUSES.map(v => ({ value: v, label: TASK_STATUS_LABEL[v] }));
 const ISSUE_TYPES = ["bug", "todo"];
 const DUR = { work: 25 * 60, short_break: 5 * 60, long_break: 15 * 60 };
 // const DUR = { work: 5, short_break: 5 * 60, long_break: 15 * 60 };
@@ -274,7 +275,7 @@ export default function App({ session }) {
 
   if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#111110", color: "#888780" }}>Loading...</div>;
 
-  const stats = { ob: issues.filter(i => i.type === "bug" && !["fixed","verified","wont_fix"].includes(i.status)).length, ot: issues.filter(i => i.type === "todo" && !["fixed","verified","wont_fix"].includes(i.status)).length, tp: testCases.filter(t => t.status === "pass").length, tt: testCases.length, fc: files.length, cr: issues.filter(i => i.priority === "critical" && !["fixed","verified","wont_fix"].includes(i.status)).length };
+  const stats = { ob: issues.filter(i => i.type === "bug" && !isTaskDone(i.status)).length, ot: issues.filter(i => i.type === "todo" && !isTaskDone(i.status)).length, tp: testCases.filter(t => t.status === "pass").length, tt: testCases.length, fc: files.length, cr: issues.filter(i => i.priority === "critical" && !isTaskDone(i.status)).length };
   const tw = todaySessions.filter(s => s.session_type === "work");
   const focusWork = tw.filter(s => s.subtype !== "waiting" && s.subtype !== "interrupted" && s.subtype !== "meeting");
   const savedSeconds = focusWork.reduce((a, s) => a + s.duration_seconds, 0);
@@ -348,7 +349,7 @@ export default function App({ session }) {
   const lnk = async (iid, tid) => { await db.linkIssueToTest(iid, tid); await reload(); };
   const ulnk = async (iid, tid) => { await db.unlinkIssueFromTest(iid, tid); await reload(); };
 
-  const markDone = async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "fixed"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } };
+  const markDone = async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "done"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } };
   // Today rows can come from any project: switch to it first so the timer, task name and session log line up
   const switchTo = (pid) => { if (pid && pid !== activeProjectId) setActiveProjectId(pid); };
   const startFromToday = (kind, item) => { switchTo(item.project_id); focusOn(kind, item.id, item.project_id); };
@@ -492,7 +493,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   // Goal: sum of estimated_pomodoros across tasks due today, overdue, or without a due date
   const todayStr = new Date().toISOString().split("T")[0];
   const isRelevantForToday = (t) => !t.due_date || t.due_date <= todayStr;
-  const openIssues = issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status) && isRelevantForToday(i));
+  const openIssues = issues.filter(i => !isTaskDone(i.status) && isRelevantForToday(i));
   const openTests = tests.filter(t => t.status !== "pass" && isRelevantForToday(t));
   const goalPoms = openIssues.reduce((a, i) => a + (i.estimated_pomodoros || 0), 0) + openTests.reduce((a, t) => a + (t.estimated_pomodoros || 0), 0) || 4;
   const goalMin = goalPoms * 25;
@@ -519,7 +520,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   const setNote = (id) => { activeNoteRef.current = id; setActiveNoteId(id); };
   const color = SC[tmr.type];
   const isActive = tmr.st !== "idle";
-  const openTasks = [...issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status)).map(i => ({ id: i.id, t: "issue", l: i.title, p: i.priority })), ...tests.filter(t => t.status !== "pass").map(t => ({ id: t.id, t: "test", l: t.title, p: "medium" }))];
+  const openTasks = [...issues.filter(i => !isTaskDone(i.status)).map(i => ({ id: i.id, t: "issue", l: i.title, p: i.priority })), ...tests.filter(t => t.status !== "pass").map(t => ({ id: t.id, t: "test", l: t.title, p: "medium" }))];
   const queuedItems = queue.map(q => { const task = openTasks.find(t => t.id === q.item_id && t.t === q.item_type); return task ? { ...task, qid: q.id } : null; }).filter(Boolean);
   const notQueued = openTasks.filter(t => !queue.some(q => q.item_id === t.id));
 
@@ -618,7 +619,7 @@ function FocusView({ tmr, taskName, issues, tests, start, pause, pauseWith, resu
   const submitLog = async () => { setLogError(null); try { const s = new Date(`${logForm.date}T${logForm.startTime}`); const e = new Date(`${logForm.date}T${logForm.endTime}`); if (e <= s) { setLogError("End must be after start"); return; } await logManual(logForm.taskType, logForm.taskId, s.toISOString(), e.toISOString()); setShowLog(false); } catch (e) { setLogError(e.message); } };
 
   const task = tmr.tId ? (tmr.tType === "issue" ? issues.find(i => i.id === tmr.tId) : tests.find(t => t.id === tmr.tId)) : null;
-  const isDone = task ? (tmr.tType === "issue" ? ["fixed","verified","wont_fix"].includes(task.status) : task.status === "pass") : false;
+  const isDone = task ? (tmr.tType === "issue" ? isTaskDone(task.status) : task.status === "pass") : false;
   const linkedNotes = task ? (allNotes || []).filter(n => (tmr.tType === "issue" && n.linked_issue_id === tmr.tId) || (tmr.tType === "test" && n.linked_test_id === tmr.tId)) : [];
   const hasTask = !!task;
   const checkedCount = checklist.filter(c => c.done).length;
@@ -954,7 +955,7 @@ function FocusLogView({ allSessions, issues, tests, logManual }) {
   };
   const hm = (d) => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  const openTasks = [...issues.filter(i => !["fixed", "verified", "wont_fix"].includes(i.status)).map(i => ({ v: `issue:${i.id}`, l: i.title })), ...tests.filter(t => t.status !== "pass").map(t => ({ v: `test:${t.id}`, l: t.title }))];
+  const openTasks = [...issues.filter(i => !isTaskDone(i.status)).map(i => ({ v: `issue:${i.id}`, l: i.title })), ...tests.filter(t => t.status !== "pass").map(t => ({ v: `test:${t.id}`, l: t.title }))];
   const start = new Date(`${form.date}T${form.startTime}`), end = new Date(`${form.date}T${form.endTime}`);
   const previewMin = Math.round((end - start) / 60000);
   const save = async () => {
@@ -1297,10 +1298,10 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {sortedKeys.map(key => {
               const gi = groups[key];
-              const open = gi.filter(i => !["fixed","verified","wont_fix"].includes(i.status));
+              const open = gi.filter(i => !isTaskDone(i.status));
               const bugs = open.filter(i => i.type === "bug").length;
               const todos = open.filter(i => i.type === "todo").length;
-              const fixed = gi.filter(i => ["fixed","verified"].includes(i.status)).length;
+              const fixed = gi.filter(i => normalizeTaskStatus(i.status) === "done").length;
               const color = branchColorMap[key] || "#888780";
 
               // Hot files for this group
@@ -1321,7 +1322,7 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
                     <div style={{ display: "flex", gap: 6 }}>
                       {bugs > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "#2D0A0A", color: "#F09595" }}>{bugs} bug{bugs !== 1 ? "s" : ""}</span>}
                       {todos > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "#0A1929", color: "#85B7EB" }}>{todos} todo{todos !== 1 ? "s" : ""}</span>}
-                      {fixed > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "#081F12", color: "#5DCAA5" }}>{fixed} fixed</span>}
+                      {fixed > 0 && <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "#081F12", color: "#5DCAA5" }}>{fixed} done</span>}
                     </div>
                   </div>
 
@@ -1369,7 +1370,7 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 10, color: "#B4B2A9" }}>Hot files</div>
-            {(() => { const fic = {}; issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status)).forEach(i => { fic[i.file_id] = (fic[i.file_id] || 0) + 1; }); return Object.entries(fic).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([fid, c]) => (
+            {(() => { const fic = {}; issues.filter(i => !isTaskDone(i.status)).forEach(i => { fic[i.file_id] = (fic[i.file_id] || 0) + 1; }); return Object.entries(fic).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([fid, c]) => (
               <div key={fid} onClick={() => onNav("issues", fid)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 6, marginBottom: 2, cursor: "pointer", background: "#161615", border: "1px solid #1A1A18" }}>
                 <span style={{ fontSize: 12, fontFamily: "'SF Mono', monospace", flex: 1, color: "#D3D1C7" }}>{fm[fid]?.name || "?"}</span>
                 <span style={{ fontSize: 11, color: "#888780" }}>{c}</span>
@@ -1381,11 +1382,11 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
 
       {/* Recently resolved */}
       {(() => {
-        const resolved = issues.filter(i => ["fixed","verified","wont_fix"].includes(i.status)).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 6);
+        const resolved = issues.filter(i => isTaskDone(i.status)).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 6);
         if (resolved.length === 0) return null;
         return (<div style={{ marginBottom: 24 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "#5DCAA5" }}>Recently resolved</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "#5DCAA5" }}>Recently closed</span>
             <span style={{ fontSize: 11, color: "#5F5E5A" }}>({resolved.length})</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
@@ -1395,7 +1396,7 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
                   <span style={{ fontSize: 12, fontWeight: 500, color: "#888780", textDecoration: "line-through" }}>{i.title}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "#5F5E5A" }}>
-                  <span style={{ color: "#5DCAA5" }}>{i.status.replace(/_/g, " ")}</span>
+                  <span style={{ color: "#5DCAA5" }}>{taskStatusLabel(i.status)}</span>
                   <span>·</span>
                   <span style={{ fontFamily: "'SF Mono', monospace" }}>{fm[i.file_id]?.name?.split(".")[0] || "—"}</span>
                   {i.branch_name && <><span>·</span><span style={{ fontFamily: "'SF Mono', monospace" }}>{i.branch_name}</span></>}
@@ -1521,14 +1522,14 @@ function Dashboard({ stats, issues, tests, files, fm, onNav, tfm, tw, focusWork,
           <div style={{ background: "#161615", border: "1px solid #2C2C2A", borderRadius: 8, padding: "14px 16px" }}>
             {(() => {
               const today = new Date(); today.setHours(0,0,0,0);
-              const resolvedRecent = issues.filter(i => ["fixed","verified"].includes(i.status)).slice(-5);
+              const resolvedRecent = issues.filter(i => normalizeTaskStatus(i.status) === "done").slice(-5);
               const passedToday = tests.filter(t => t.status === "pass" && t.last_run && new Date(t.last_run) >= today);
               const notesToday = (notes || []).filter(n => new Date(n.created_at) >= today);
               const hasAnything = resolvedRecent.length || passedToday.length || notesToday.length || focusWork.length;
               if (!hasAnything) return <div style={{ fontSize: 12, color: "#5F5E5A", textAlign: "center", padding: "16px 0" }}>Day's just getting started.</div>;
               return (<div style={{ fontSize: 12, lineHeight: 1.8 }}>
                 {focusWork.length > 0 && <div style={{ color: "#E24B4A" }}>{focusWork.length} focus session{focusWork.length !== 1 ? "s" : ""} ({FMTHR(tfm)})</div>}
-                {resolvedRecent.map(i => <div key={i.id} style={{ color: "#5DCAA5" }}>Resolved: {i.title}</div>)}
+                {resolvedRecent.map(i => <div key={i.id} style={{ color: "#5DCAA5" }}>Done: {i.title}</div>)}
                 {passedToday.map(t => <div key={t.id} style={{ color: "#97C459" }}>Passed: {t.title}</div>)}
                 {notesToday.length > 0 && <div style={{ color: "#AFA9EC" }}>{notesToday.length} note{notesToday.length !== 1 ? "s" : ""} written</div>}
               </div>);
@@ -1694,8 +1695,8 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
     if (sortBy === "status") return a.status.localeCompare(b.status);
     return new Date(b.created_at) - new Date(a.created_at);
   };
-  const open = issues.filter(i => !["fixed","verified","wont_fix"].includes(i.status)).sort(sortFn);
-  const resolved = issues.filter(i => ["fixed","verified","wont_fix"].includes(i.status)).sort(sortFn);
+  const open = issues.filter(i => !isTaskDone(i.status)).sort(sortFn);
+  const resolved = issues.filter(i => isTaskDone(i.status)).sort(sortFn);
 
   // Detail modal
   const vi = viewId ? issues.find(x => x.id === viewId) : null;
@@ -1713,7 +1714,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
           </div>
           {/* Status + actions */}
           <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
-            <Select value={vi.status} onChange={s => { updS(vi.id, s); }} options={ISSUE_STATUSES} style={{ fontSize: 12 }} />
+            <Select value={normalizeTaskStatus(vi.status)} onChange={s => { updS(vi.id, s); }} options={ISSUE_STATUSES} style={{ fontSize: 12 }} />
             <Btn small onClick={() => { setViewId(null); focusOn("issue", vi.id); }}>▶ Focus</Btn>
             <Btn small onClick={() => { setViewId(null); onEdit(vi); }}>✎ Edit</Btn>
             <Btn small onClick={() => { if (confirm("Delete this task?")) { del(vi.id); setViewId(null); } }} style={{ color: "#F09595" }}>Delete</Btn>
@@ -1756,7 +1757,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
           {!dimmed && !inQueue(i.id) && <button onClick={() => addToQ("issue", i.id)} title="Add to queue" style={{ background: "none", border: "1px solid #2C2C2A", color: "#7F77DD", cursor: "pointer", fontSize: 9, padding: "3px 6px", borderRadius: 4 }}>+ Queue</button>}
           {!dimmed && inQueue(i.id) && <span style={{ fontSize: 9, padding: "3px 6px", borderRadius: 4, background: "#1A0A29", color: "#AFA9EC", border: "1px solid #26215C" }}>queued</span>}
           {!dimmed && <Badge label={i.priority} colors={PC[i.priority]} />}
-          <Select value={i.status} onChange={s => updS(i.id, s)} options={ISSUE_STATUSES} style={{ fontSize: 11, padding: "3px 6px" }} />
+          <Select value={normalizeTaskStatus(i.status)} onChange={s => updS(i.id, s)} options={ISSUE_STATUSES} style={{ fontSize: 11, padding: "3px 6px" }} />
           <button onClick={() => onEdit(i)} title="Edit" style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 12, padding: "2px 4px" }}>✎</button>
           <button onClick={() => del(i.id)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>
         </div>
@@ -1776,7 +1777,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
       {resolved.length > 0 && (<>
         <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "20px 0 10px" }}>
           <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
-          <span style={{ fontSize: 11, color: "#5DCAA5", fontWeight: 500 }}>Resolved ({resolved.length})</span>
+          <span style={{ fontSize: 11, color: "#5DCAA5", fontWeight: 500 }}>Closed ({resolved.length})</span>
           <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
         </div>
         {resolved.map(i => <IssueCard key={i.id} i={i} dimmed />)}
@@ -1792,7 +1793,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
             <span style={{ width: 50 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small /></span>
             <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#D3D1C7" }}>{i.title}</span>
             <span style={{ width: 70 }}><Badge label={i.priority} colors={PC[i.priority]} small /></span>
-            <span style={{ width: 90 }}><Badge label={i.status} colors={TC[i.status] || { bg: "#2C2C2A", text: "#888780", border: "#444441" }} small /></span>
+            <span style={{ width: 90 }}><Badge label={taskStatusLabel(i.status)} colors={TC[i.status] || { bg: "#2C2C2A", text: "#888780", border: "#444441" }} small /></span>
             <span style={{ width: 80, fontSize: 10, color: due?.color || "#5F5E5A" }}>{due?.text || "—"}</span>
             <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(i); }} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11 }}>✎</button></span>
           </div>
@@ -1801,7 +1802,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
       {resolved.length > 0 && (<>
         <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "20px 0 10px" }}>
           <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
-          <span style={{ fontSize: 11, color: "#5DCAA5", fontWeight: 500 }}>Resolved ({resolved.length})</span>
+          <span style={{ fontSize: 11, color: "#5DCAA5", fontWeight: 500 }}>Closed ({resolved.length})</span>
           <div style={{ height: 1, flex: 1, background: "#2C2C2A" }} />
         </div>
         <div style={{ border: "1px solid #2C2C2A", borderRadius: 8, overflow: "hidden", opacity: 0.5 }}>
@@ -1810,7 +1811,7 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
               <span style={{ width: 50 }}><Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small /></span>
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#888780", textDecoration: "line-through" }}>{i.title}</span>
               <span style={{ width: 70 }}><Badge label={i.priority} colors={PC[i.priority]} small /></span>
-              <span style={{ width: 90 }}><Badge label={i.status} colors={{ bg: "#081F12", text: "#5DCAA5", border: "#04342C" }} small /></span>
+              <span style={{ width: 90 }}><Badge label={taskStatusLabel(i.status)} colors={{ bg: "#081F12", text: "#5DCAA5", border: "#04342C" }} small /></span>
               <span style={{ width: 80, fontSize: 10, color: "#5F5E5A" }}>{due?.text || "—"}</span>
               <span style={{ width: 40, display: "flex", gap: 2 }}><button onClick={e => { e.stopPropagation(); onEdit(i); }} style={{ background: "none", border: "none", color: "#444441", cursor: "pointer", fontSize: 11 }}>✎</button></span>
             </div>
@@ -1931,7 +1932,7 @@ function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, u
 
 function FilesView({ files, issues, tests, del, onAdd, onNav }) {
   const g = {}; files.forEach(f => { if (!g[f.category]) g[f.category] = []; g[f.category].push(f); });
-  const ic = (fid) => issues.filter(i => i.file_id === fid && !["fixed","verified","wont_fix"].includes(i.status)).length;
+  const ic = (fid) => issues.filter(i => i.file_id === fid && !isTaskDone(i.status)).length;
   const tc = (fid) => tests.filter(t => t.file_id === fid).length;
   const tp = (fid) => tests.filter(t => t.file_id === fid && t.status === "pass").length;
   if (files.length === 0) return <EmptyState icon="⊞" title="No files yet" sub="Add files to attach tasks and tests" action="Add file" onAction={onAdd} />;
@@ -3000,9 +3001,9 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
                       const tt = (testCases || []).filter(t => parseMtags(t.meeting_tag).includes(mt.title));
                       const lastAtt = meetings.filter(m => m.title === mt.title && m.attended && m.meeting_date < mt.meeting_date).sort((a, b) => b.meeting_date.localeCompare(a.meeting_date))[0];
                       const since = lastAtt ? new Date(lastAtt.meeting_date + "T23:59:59") : new Date(0);
-                      const done = ti.filter(i => ["fixed","verified","wont_fix"].includes(i.status) && i.resolved_at && new Date(i.resolved_at) > since);
-                      const prog = ti.filter(i => ["in_progress","review"].includes(i.status));
-                      const opn = ti.filter(i => ["open","reopened"].includes(i.status));
+                      const done = ti.filter(i => isTaskDone(i.status) && i.resolved_at && new Date(i.resolved_at) > since);
+                      const prog = ti.filter(i => normalizeTaskStatus(i.status) === "in_progress");
+                      const opn = ti.filter(i => normalizeTaskStatus(i.status) === "todo");
                       const tpass = tt.filter(t => t.status === "pass" && t.last_run && new Date(t.last_run) > since);
                       const tother = tt.filter(t => t.status !== "pass");
                       const tn = (allNotes || []).filter(n => parseMtags(n.meeting_tag).includes(mt.title));
@@ -3053,7 +3054,7 @@ function CalendarView({ meetings, issues, testCases, projectId, reload, onFocusM
                   <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#161615", borderRadius: 6, marginBottom: 4, border: "1px solid #2C2C2A" }}>
                     <Badge label={i.type} colors={i.type === "bug" ? { bg: "#2D0A0A", text: "#F09595", border: "#501313" } : { bg: "#0A1929", text: "#85B7EB", border: "#042C53" }} small />
                     <span style={{ flex: 1, fontSize: 12, color: "#D3D1C7" }}>{i.title}</span>
-                    <Badge label={i.status} colors={["fixed","verified"].includes(i.status) ? { bg: "#081F12", text: "#5DCAA5", border: "#04342C" } : PC[i.priority]} small />
+                    <Badge label={taskStatusLabel(i.status)} colors={normalizeTaskStatus(i.status) === "done" ? { bg: "#081F12", text: "#5DCAA5", border: "#04342C" } : PC[i.priority]} small />
                   </div>
                 ))}
               </div>}
@@ -3126,9 +3127,9 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
   const sinceDate = lastAttended ? new Date(lastAttended.meeting_date + "T23:59:59") : new Date(0);
 
   // Group by status — completed only since last attended meeting
-  const completedIssues = taggedIssues.filter(i => ["fixed","verified","wont_fix"].includes(i.status) && i.resolved_at && new Date(i.resolved_at) > sinceDate);
-  const activeIssues = taggedIssues.filter(i => ["in_progress","review"].includes(i.status));
-  const openIssues = taggedIssues.filter(i => ["open","reopened"].includes(i.status));
+  const completedIssues = taggedIssues.filter(i => isTaskDone(i.status) && i.resolved_at && new Date(i.resolved_at) > sinceDate);
+  const activeIssues = taggedIssues.filter(i => normalizeTaskStatus(i.status) === "in_progress");
+  const openIssues = taggedIssues.filter(i => normalizeTaskStatus(i.status) === "todo");
   const passedTests = taggedTests.filter(t => t.status === "pass" && t.last_run && new Date(t.last_run) > sinceDate);
   const otherTests = taggedTests.filter(t => t.status !== "pass");
 
@@ -3162,8 +3163,8 @@ function MeetingFocusView({ meeting, projectId, onClose, issues, testCases, meet
     onClose();
   };
 
-  const STS = { fixed: { color: "#5DCAA5", icon: "✓" }, verified: { color: "#5DCAA5", icon: "✓✓" }, wont_fix: { color: "#5F5E5A", icon: "—" }, in_progress: { color: "#85B7EB", icon: "→" }, review: { color: "#AFA9EC", icon: "◎" }, open: { color: "#888780", icon: "○" }, reopened: { color: "#F09595", icon: "↺" }, pass: { color: "#5DCAA5", icon: "✓" }, fail: { color: "#F09595", icon: "✗" }, not_run: { color: "#888780", icon: "○" } };
-  const stsOf = (s) => STS[s] || { color: "#888780", icon: "·" };
+  const STS = { todo: { color: "#888780", icon: "○" }, done: { color: "#5DCAA5", icon: "✓" }, skipped: { color: "#5F5E5A", icon: "—" }, fixed: { color: "#5DCAA5", icon: "✓" }, verified: { color: "#5DCAA5", icon: "✓✓" }, wont_fix: { color: "#5F5E5A", icon: "—" }, in_progress: { color: "#85B7EB", icon: "→" }, review: { color: "#AFA9EC", icon: "◎" }, open: { color: "#888780", icon: "○" }, reopened: { color: "#F09595", icon: "↺" }, pass: { color: "#5DCAA5", icon: "✓" }, fail: { color: "#F09595", icon: "✗" }, not_run: { color: "#888780", icon: "○" } };
+  const stsOf = (s) => STS[s] || STS[normalizeTaskStatus(s)] || { color: "#888780", icon: "·" };
 
   const taggedTotal = taggedIssues.length + taggedTests.length + taggedNotes.length;
 

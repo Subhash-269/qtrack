@@ -2,7 +2,9 @@
 // Plain JS with no imports so it runs in the browser, in Deno and under Vitest.
 // Every query takes a Supabase client and the user's id, and filters on user_id on top of RLS.
 
-export const TASK_DONE = ['fixed', 'verified', 'wont_fix']
+import { TASK_DONE, isTaskDone, normalizeTaskStatus } from './status.js'
+
+export { TASK_DONE }
 export const TEST_DONE = ['pass']
 const NOT_FOCUS = ['waiting', 'interrupted', 'meeting']
 
@@ -55,12 +57,12 @@ export async function getToday(client, userId, { date, startOfDayISO }) {
     testIds.length ? q('test_cases').in('id', testIds) : { data: [] },
   ])).map(unwrap)
   const byId = Object.fromEntries([...qTasks.map(r => [r.id, { ...r, kind: 'issue' }]), ...qTests.map(r => [r.id, { ...r, kind: 'test' }])])
-  const isOpen = (r) => (r.kind === 'test' ? !TEST_DONE.includes(r.status) : !TASK_DONE.includes(r.status))
+  const isOpen = (r) => (r.kind === 'test' ? !TEST_DONE.includes(r.status) : !isTaskDone(r.status))
 
   return {
     today: date,
     due: [
-      ...tasks.filter(r => !TASK_DONE.includes(r.status)).map(r => ({ ...r, kind: 'issue' })),
+      ...tasks.filter(r => !isTaskDone(r.status)).map(r => ({ ...r, kind: 'issue' })),
       ...tests.filter(r => !TEST_DONE.includes(r.status)).map(r => ({ ...r, kind: 'test' })),
     ].sort(byDate),
     meetings: meetings.filter(m => !m.cancelled),
@@ -81,7 +83,7 @@ export async function searchTasks(client, userId, query, { includeDone = false, 
     q('notes', 'project_id, topic, is_study').eq('is_study', true).ilike('topic', pattern).then(unwrap),
   ])
   const rows = [
-    ...tasks.map(r => ({ kind: 'task', id: r.id, title: r.title, type: r.type, priority: r.priority, status: r.status, done: TASK_DONE.includes(r.status), due_date: r.due_date, project_id: r.project_id, created_at: r.created_at })),
+    ...tasks.map(r => ({ kind: 'task', id: r.id, title: r.title, type: r.type, priority: r.priority, status: normalizeTaskStatus(r.status), done: isTaskDone(r.status), due_date: r.due_date, project_id: r.project_id, created_at: r.created_at })),
     ...tests.map(r => ({ kind: 'test', id: r.id, title: r.title, status: r.status, done: TEST_DONE.includes(r.status), due_date: r.due_date, project_id: r.project_id, created_at: r.created_at })),
   ].filter(r => (includeDone || !r.done) && !archived.has(r.project_id))
   rows.sort((a, b) => (a.done - b.done) || (a.created_at < b.created_at ? 1 : -1))
