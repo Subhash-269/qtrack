@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import * as db from "../storage";
 import TaskDetailsPanel from "../components/TaskDetailsPanel";
+import FocusChart from "../components/FocusChart";
 
 // Today: the default screen. What's running, what's next, what's due, today's meetings
 // and quick scribbles, across every project.
@@ -120,6 +121,8 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
           </div>
         </>)}
       </div>
+
+      <FocusChart projects={projects} mobile={mobile} refreshKey={data} />
 
       {err && <div style={{ ...card, color: "#F09595", fontSize: 12 }}>Couldn't load Today: {err} <button onClick={load} style={{ ...btn(false), marginLeft: 8, padding: "2px 10px" }}>Retry</button></div>}
 
