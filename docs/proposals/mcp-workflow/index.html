@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QTrack MCP Workflow</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Palette taken from the web app (src/App.jsx), same as docs/mobile_app */
+  :root {
+    --bg: #111110; --surface: #161615; --line: #1A1A18; --line-2: #2C2C2A;
+    --dim: #444441; --muted: #5F5E5A; --sub: #888780; --text: #F1EFE8;
+    --red: #E24B4A; --green: #5DCAA5; --blue: #85B7EB; --purple: #AFA9EC; --amber: #FAC775;
+    --mono: "DM Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B0B0A; color: var(--text); font-family: "DM Sans", system-ui, sans-serif; padding: 48px 16px 64px; font-size: 12px; }
+  header { max-width: 1180px; margin: 0 auto 36px; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header p { color: var(--sub); font-size: 13px; margin-top: 6px; max-width: 760px; line-height: 1.5; }
+  .legend { display: flex; gap: 16px; margin-top: 14px; font-size: 11px; color: var(--sub); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* Storyboard step */
+  .step { max-width: 1180px; margin: 0 auto 44px; display: grid; grid-template-columns: 230px 1fr; gap: 32px; align-items: start; }
+  .step-info .num { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .step-info .time { font-family: var(--mono); font-size: 11px; color: var(--green); margin-left: 6px; }
+  .step-info h2 { font-size: 15px; font-weight: 600; margin: 6px 0 8px; }
+  .step-info p { font-size: 12px; color: var(--sub); line-height: 1.55; }
+  .step-info .tools { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 5px; }
+  .frames { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+
+  /* Window shell */
+  .win { background: var(--bg); border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; }
+  .win .bar { height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-bottom: 1px solid var(--line); background: #0E0E0D; }
+  .win .bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--line-2); }
+  .win .bar .url { margin-left: 12px; flex: 1; max-width: 300px; height: 18px; border-radius: 5px; background: var(--surface); font-size: 10px; color: var(--muted); display: flex; align-items: center; padding: 0 8px; font-family: var(--mono); }
+
+  /* QTrack app window */
+  .app { width: 640px; display: flex; min-height: 400px; }
+  .side { width: 46px; border-right: 1px solid var(--line-2); background: var(--surface); display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 12px; color: var(--muted); font-size: 14px; }
+  .side .logo { width: 22px; height: 22px; border-radius: 5px; background: #D3D1C7; color: var(--bg); font-size: 11px; font-weight: 600; display: grid; place-items: center; margin-bottom: 4px; }
+  .side .on { color: var(--text); }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .head { padding: 11px 18px; border-bottom: 1px solid var(--line-2); display: flex; justify-content: space-between; align-items: center; }
+  .head b { font-size: 14px; font-weight: 500; }
+  .head small { color: var(--muted); font-size: 11px; }
+  .content { padding: 14px 18px; display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,1fr); gap: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; }
+  .label { font-size: 9px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 11px; }
+  .row:last-child { border-bottom: none; }
+  .row .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .m { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c, var(--red)); flex-shrink: 0; }
+  .play { width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--line-2); display: grid; place-items: center; font-size: 8px; color: var(--sub); flex-shrink: 0; }
+  .chip { font-size: 9px; padding: 1px 6px; border-radius: 4px; border: 1px solid; white-space: nowrap; }
+  .chip.bug { color: var(--red); border-color: #4A1B1B; background: #1F0E0E; }
+  .chip.test { color: var(--blue); border-color: #1B2F4A; background: #0A1929; }
+  .chip.study { color: var(--purple); border-color: #2E2950; background: #1A0A29; }
+  .chip.over { color: var(--amber); border-color: #4A3A1B; background: #1F180E; }
+  .chip.read { color: var(--green); border-color: #1B4A3A; background: #0E1F18; }
+  .chip.write { color: var(--amber); border-color: #4A3A1B; background: #1F180E; }
+  .chip.ai { color: var(--purple); border-color: #2E2950; background: #1A0A29; }
+  .mono { font-family: var(--mono); }
+
+  /* Now card */
+  .now { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; }
+  .now .ring { width: 58px; height: 58px; position: relative; flex-shrink: 0; }
+  .now .ring svg { transform: rotate(-90deg); }
+  .now .ring span { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--mono); font-size: 12px; }
+  .now .info { flex: 1; min-width: 0; }
+  .now .info p { font-size: 13px; margin: 4px 0 3px; }
+  .now .info small { color: var(--muted); font-size: 10px; }
+  .now .btns { display: flex; gap: 6px; }
+  .btn { font-size: 10px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line-2); color: var(--sub); }
+  .btn.pri { color: var(--text); border-color: #3A3A37; background: #1E1E1C; }
+  .idle { color: var(--muted); font-size: 11px; }
+  .live { font-size: 9px; color: var(--green); display: inline-flex; align-items: center; gap: 4px; }
+  .live::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+  .scribble-in { margin-top: 7px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 8px; color: var(--muted); font-size: 10px; }
+  .scrib { font-size: 10px; color: var(--sub); padding: 6px 0; border-bottom: 1px solid var(--line); line-height: 1.4; }
+  .scrib:last-child { border-bottom: none; }
+  .scrib small { display: block; color: var(--muted); font-size: 9px; margin-top: 2px; }
+  .new { animation: none; background: linear-gradient(90deg, #1A0A2955, transparent); margin: 0 -6px; padding: 6px; border-radius: 5px; }
+
+  /* Assistant window (generic MCP client) */
+  .chat { width: 380px; min-height: 300px; display: flex; flex-direction: column; }
+  .chat .msgs { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+  .you { align-self: flex-end; background: #1E1E1C; border: 1px solid var(--line-2); border-radius: 12px 12px 3px 12px; padding: 8px 11px; font-size: 12px; max-width: 85%; }
+  .bot { font-size: 12px; color: #D3D1C7; line-height: 1.5; max-width: 95%; }
+  .bot a { color: var(--blue); text-decoration: none; font-family: var(--mono); font-size: 11px; }
+  .call { border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); font-size: 10px; overflow: hidden; }
+  .call .ch { display: flex; align-items: center; gap: 6px; padding: 6px 9px; }
+  .call .ch b { font-family: var(--mono); font-weight: 500; color: var(--text); font-size: 10px; }
+  .call .ch .srv { color: var(--muted); }
+  .call .ch .ok { margin-left: auto; color: var(--green); }
+  .call pre { font-family: var(--mono); font-size: 9.5px; color: var(--sub); padding: 6px 9px; border-top: 1px solid var(--line); white-space: pre-wrap; }
+  .chat .input { margin: 0 14px 14px; border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 11px; color: var(--muted); font-size: 11px; display: flex; justify-content: space-between; }
+
+  /* Phone (small) */
+  .phone { width: 190px; height: 400px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 30px; padding: 12px 14px; position: relative; display: flex; flex-direction: column; align-items: center; }
+  .phone .notch { width: 60px; height: 16px; background: #000; border-radius: 10px; margin-bottom: 18px; }
+  .phone h3 { align-self: flex-start; font-size: 13px; font-weight: 600; }
+  .phone .pt { font-size: 11px; text-align: center; margin: 16px 0 10px; line-height: 1.35; }
+  .phone .big { position: relative; width: 120px; height: 120px; }
+  .phone .big svg { transform: rotate(-90deg); }
+  .phone .big span { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--mono); font-size: 28px; color: var(--red); }
+  .phone .cap { margin-top: auto; font-size: 9px; color: var(--muted); text-align: center; }
+
+  /* Audit log */
+  .audit { width: 560px; }
+  .audit .content { display: block; }
+  .scopes { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; font-size: 11px; color: var(--sub); }
+  .toggle { display: inline-flex; border: 1px solid var(--line-2); border-radius: 7px; overflow: hidden; font-size: 10px; }
+  .toggle span { padding: 4px 10px; color: var(--muted); }
+  .toggle span.on { background: var(--line-2); color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  th { text-align: left; font-weight: 400; color: var(--muted); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; padding: 6px 6px; border-bottom: 1px solid var(--line-2); }
+  td { padding: 7px 6px; border-bottom: 1px solid var(--line); color: var(--sub); vertical-align: middle; }
+  td.tool { font-family: var(--mono); color: var(--text); }
+  td .undo { font-size: 9.5px; color: var(--blue); }
+  td .gone { font-size: 9.5px; color: var(--dim); }
+
+  .arrow { color: var(--dim); font-size: 18px; align-self: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>QTrack MCP Workflow</h1>
+  <p>A normal day with the QTrack MCP server and the Today view (see <span class="mono">docs/proposals/mcp-integration.md</span>). You talk to the assistant you already use; QTrack does the tracking. Every write goes through the user's own token and shows up in an activity log.</p>
+  <div class="legend">
+    <span><span class="chip read">read</span> tool only reads</span>
+    <span><span class="chip write">write</span> tool changes data, logged with undo</span>
+    <span><span class="live">live</span> pushed to every open device via Supabase Realtime</span>
+  </div>
+</header>
+
+<!-- 1. Morning: Today view -->
+<section class="step">
+  <div class="step-info">
+    <span class="num">01</span><span class="time">09:00</span>
+    <h2>Open QTrack, land on Today</h2>
+    <p>The new default screen. Queue, what's due, today's meetings and a scribble box, with nothing to set up. No timer running yet.</p>
+    <div class="tools"><span class="chip">P0 · frontend only</span></div>
+  </div>
+  <div class="frames">
+    <div class="win">
+      <div class="bar"><i></i><i></i><i></i><div class="url">qtrack.app/today</div></div>
+      <div class="app">
+        <div class="side"><div class="logo">Q</div><span class="on">☀</span><span>⊞</span><span>◎</span><span>⚠</span><span>☰</span><span>▦</span></div>
+        <div class="main">
+          <div class="head"><b>Today</b><small>Saturday, Nov 21 · All projects</small></div>
+          <div class="content">
+            <div class="card now">
+              <div class="ring"><svg width="58" height="58"><circle cx="29" cy="29" r="25" fill="none" stroke="#2C2C2A" stroke-width="4"/></svg><span style="color:var(--muted)">25:00</span></div>
+              <div class="info"><div class="label">Now</div><p class="idle">Nothing running. Pick something from Up next, or tell your assistant.</p></div>
+            </div>
+            <div class="card">
+              <div class="label">Up next <span>3</span></div>
+              <div class="row"><span class="play">▶</span><span class="t">Hourly forecast shows UTC instead of local time</span><span class="chip bug">bug</span></div>
+              <div class="row"><span class="play">▶</span><span class="t">Cache never expires when offline</span><span class="chip bug">bug</span></div>
+              <div class="row"><span class="play">▶</span><span class="t">Dynamic programming</span><span class="chip study">study</span></div>
+            </div>
+            <div class="card">
+              <div class="label">Due today &amp; overdue <span>3</span></div>
+              <div class="row"><span class="dot"></span><span class="t">Hourly forecast shows UTC</span><span class="chip over">1d over</span></div>
+              <div class="row"><span class="dot" style="--c:var(--blue)"></span><span class="t">Forecast renders across DST change</span><span class="m">today</span></div>
+              <div class="row"><span class="dot" style="--c:var(--purple)"></span><span class="t">DP: knapsack variants</span><span class="m">today</span></div>
+            </div>
+            <div class="card">
+              <div class="label">Meetings today</div>
+              <div class="row"><span class="m">14:00</span><span class="t">Capstone sync</span><span class="play">◎</span></div>
+              <div class="row"><span class="m">16:30</span><span class="t">Advisor 1:1</span><span class="play">◎</span></div>
+            </div>
+            <div class="card">
+              <div class="label">Scribbles</div>
+              <div class="scribble-in">Jot something…  ⏎ saves as a scratch note</div>
+              <div class="scrib">Ask Priya about the staging API key<small>yesterday · scratch</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. Tell the assistant -->
+<section class="step">
+  <div class="step-info">
+    <span class="num">02</span><span class="time">09:05</span>
+    <h2>“I'm working on the UTC bug”</h2>
+    <p>Say it in any MCP client connected to QTrack. The assistant finds the task, then starts a 25-minute focus session on it. It also gets a link back, in case QTrack isn't open anywhere.</p>
+    <div class="tools"><span class="chip read">search_tasks</span><span class="chip write">start_focus</span></div>
+  </div>
+  <div class="frames">
+    <div class="win">
+      <div class="bar"><i></i><i></i><i></i><div class="url">AI assistant · QTrack connected</div></div>
+      <div class="chat">
+        <div class="msgs">
+          <div class="you">I'm working on the UTC forecast bug</div>
+          <div class="call"><div class="ch"><span class="chip read">read</span><b>search_tasks</b><span class="srv">qtrack</span><span class="ok">✓</span></div><pre>{ "query": "UTC forecast" }
+→ 1 match · task "Hourly forecast shows UTC instead of local time"</pre></div>
+          <div class="call"><div class="ch"><span class="chip write">write</span><b>start_focus</b><span class="srv">qtrack</span><span class="ok">✓</span></div><pre>{ "task_type": "task", "task_id": "tsk_8f2c", "minutes": 25 }
+→ started 09:05 · ends 09:30 · undo_id u_41a</pre></div>
+          <div class="bot">Started a 25-min focus on <b>Hourly forecast shows UTC instead of local time</b>. It ends at 9:30.<br><a>qtrack.app/focus?task=tsk_8f2c</a></div>
+        </div>
+        <div class="input">Reply…<span>↵</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. Every device picks it up -->
+<section class="step">
+  <div class="step-info">
+    <span class="num">03</span><span class="time">09:05</span>
+    <h2>Every open device starts the timer</h2>
+    <p>The server writes one row to <span class="mono">timer_state</span> as you. Realtime pushes it to the laptop tab and the phone at once. Nothing new on the client side.</p>
+    <div class="tools"><span class="live">live · timer_state</span></div>
+  </div>
+  <div class="frames">
+    <div class="win">
+      <div class="bar"><i></i><i></i><i></i><div class="url">qtrack.app/today</div></div>
+      <div class="app">
+        <div class="side"><div class="logo">Q</div><span class="on">☀</span><span>⊞</span><span>◎</span><span>⚠</span><span>☰</span><span>▦</span></div>
+        <div class="main">
+          <div class="head"><b>Today</b><span class="live">started from assistant · 09:05</span></div>
+          <div class="content">
+            <div class="card now">
+              <div class="ring"><svg width="58" height="58"><circle cx="29" cy="29" r="25" fill="none" stroke="#2C2C2A" stroke-width="4"/><circle cx="29" cy="29" r="25" fill="none" stroke="#E24B4A" stroke-width="4" stroke-dasharray="157" stroke-dashoffset="4" stroke-linecap="round"/></svg><span style="color:var(--red)">24:52</span></div>
+              <div class="info"><div class="label">Now · Focus 1 of 4</div><p>Hourly forecast shows UTC instead of local time</p><small><span class="chip bug">bug</span> &nbsp;critical · src/forecast/hourly.js</small></div>
+              <div class="btns"><span class="btn pri">Pause</span><span class="btn">✓ Done</span></div>
+            </div>
+            <div class="card">
+              <div class="label">Up next <span>2</span></div>
+              <div class="row"><span class="play">▶</span><span class="t">Cache never expires when offline</span><span class="chip bug">bug</span></div>
+              <div class="row"><span class="play">▶</span><span class="t">Dynamic programming</span><span class="chip study">study</span></div>
+            </div>
+            <div class="card">
+              <div class="label">Meetings today</div>
+              <div class="row"><span class="m">14:00</span><span class="t">Capstone sync</span><span class="play">◎</span></div>
+              <div class="row"><span class="m">16:30</span><span class="t">Advisor 1:1</span><span class="play">◎</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <h3>Focus</h3>
+      <p class="pt"><span class="chip bug">bug</span><br><br>Hourly forecast shows UTC instead of local time</p>
+      <div class="big"><svg width="120" height="120"><circle cx="60" cy="60" r="54" fill="none" stroke="#2C2C2A" stroke-width="5"/><circle cx="60" cy="60" r="54" fill="none" stroke="#E24B4A" stroke-width="5" stroke-dasharray="339" stroke-dashoffset="8" stroke-linecap="round"/></svg><span>24:52</span></div>
+      <p class="cap"><span class="live">same session, synced</span></p>
+    </div>
+  </div>
+</section>
+
+<!-- 4. Pause with a reason -->
+<section class="step">
+  <div class="step-info">
+    <span class="num">04</span><span class="time">09:31</span>
+    <h2>Pause with a reason</h2>
+    <p>Blocked on someone else? Say so. The pause is logged as <span class="mono">waiting</span>, so the focus log shows where the time went, not just that it stopped.</p>
+    <div class="tools"><span class="chip write">pause_focus</span></div>
+  </div>
+  <div class="frames">
+    <div class="win">
+      <div class="bar"><i></i><i></i><i></i><div class="url">AI assistant · QTrack connected</div></div>
+      <div class="chat" style="min-height:0">
+        <div class="msgs">
+          <div class="you">pause it, waiting on the API review</div>
+          <div class="call"><div class="ch"><span class="chip write">write</span><b>pause_focus</b><span class="srv">qtrack</span><span class="ok">✓</span></div><pre>{ "reason": "waiting", "note": "API review" }
+→ paused 09:31 · 26m focused so far</pre></div>
+          <div class="bot">Paused. You've put 26 minutes into the UTC bug today. Say “resume” when the review is back.</div>
+        </div>
+        <div class="input">Reply…<span>↵</span></div>
+      </div>
+    </div>
+    <span class="arrow">→</span>
+    <div class="win">
+      <div class="bar"><i></i><i></i><i></i><div class="url">qtrack.app/today</div></div>
+      <div style="width:330px;padding:14px">
+        <div class="card now" style="display:flex">
+          <div class="ring"><svg width="58" height="58"><circle cx="29" cy="29" r="25" fill="none" stroke="#2C2C2A" stroke-width="4"/><circle cx="29" cy="29" r="25" fill="none" stroke="#FAC775" stroke-width="4" stroke-dasharray="157" stroke-dashoffset="150" stroke-linecap="round"/></svg><span style="color:var(--amber)">II</span></div>
+          <div class="info"><div class="label">Now · paused</div><p style="font-size:12px">Hourly forecast shows UTC…</p><small style="color:var(--amber)">waiting · API review · 0:04</small></div>
+        </div>
+        <div class="card" style="margin-top:10px">
+          <div class="label">Focus log · today</div>
+          <div class="row"><span class="dot"></span><span class="t">Hourly forecast shows UTC</span><span class="m">09:05–09:31</span><span class="m" style="color:var(--text)">26m</span></div>
+          <div class="row"><span class="dot" style="--c:var(--amber)"></span><span class="t" style="color:var(--amber)">Paused · waiting on API review</span><span class="m">09:31–</span><span class="m" style="color:var(--amber)">…</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. Scribble -->
+<section class="step">
+  <div class="step-info">
+    <span class="num">05</span><span class="time">10:12</span>
+    <h2>Capture a thought mid-task</h2>
+    <p>Anything starting with “note:” lands in Scribbles as a scratch note in the current project, tagged as coming from the assistant.</p>
+    <div class="tools"><span class="chip write">capture_note</span></div>
+  </div>
+  <div class="frames">
+    <div class="win">
+      <div class="bar"><i></i><i></i><i></i><div class="url">AI assistant · QTrack connected</div></div>
+      <div class="chat" style="min-height:0">
+        <div class="msgs">
+          <div class="you">note: API sends tz offset in seconds, not hours</div>
+          <div class="call"><div class="ch"><span class="chip write">write</span><b>capture_note</b><span class="srv">qtrack</span><span class="ok">✓</span></div><pre>{ "text": "API sends tz offset in seconds, not hours",
+  "category": "scratch", "link_task": "tsk_8f2c" }</pre></div>
+          <div class="bot">Saved to Scribbles and linked to the UTC bug.</div>
+        </div>
+        <div class="input">Reply…<span>↵</span></div>
+      </div>
+    </div>
+    <span class="arrow">→</span>
+    <div class="win">
+      <div class="bar"><i></i><i></i><i></i><div class="url">qtrack.app/today</div></div>
+      <div style="width:330px;padding:14px">
+        <div class="card">
+          <div class="label">Scribbles</div>
+          <div class="scribble-in">Jot something…  ⏎ saves as a scratch note</div>
+          <div class="scrib new">API sends tz offset in seconds, not hours<small><span class="chip ai">via assistant</span> &nbsp;10:12 · linked to “Hourly forecast shows UTC”</small></div>
+          <div class="scrib">Ask Priya about the staging API key<small>yesterday · scratch</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. Wrap up + audit -->
+<section class="step">
+  <div class="step-info">
+    <span class="num">06</span><span class="time">17:30</span>
+    <h2>Wrap up, and check what the assistant did</h2>
+    <p>Ask for the day's numbers. Settings shows every tool call with its arguments, so you can check what actually happened. Writes can be undone for 10 minutes. Access is read-only until you turn on write.</p>
+    <div class="tools"><span class="chip read">get_focus_stats</span><span class="chip">mcp_calls table</span></div>
+  </div>
+  <div class="frames">
+    <div class="win">
+      <div class="bar"><i></i><i></i><i></i><div class="url">AI assistant · QTrack connected</div></div>
+      <div class="chat" style="min-height:0;width:330px">
+        <div class="msgs">
+          <div class="you">how did today go?</div>
+          <div class="call"><div class="ch"><span class="chip read">read</span><b>get_focus_stats</b><span class="srv">qtrack</span><span class="ok">✓</span></div><pre>{ "range": "today" } → 3h 10m · 7 pomodoros · goal 2h</pre></div>
+          <div class="bot">3h 10m of focus across 7 pomodoros, past your 2h goal. Most of it went to the UTC bug (1h 50m), plus 40 min paused waiting on review.</div>
+        </div>
+      </div>
+    </div>
+    <div class="win audit">
+      <div class="bar"><i></i><i></i><i></i><div class="url">qtrack.app/settings/assistant</div></div>
+      <div class="main">
+        <div class="head"><b>Settings · Assistant access</b><small>1 client connected</small></div>
+        <div class="content">
+          <div class="scopes">Access <span class="toggle"><span>Read only</span><span class="on">Read + write</span></span><span style="margin-left:auto;color:var(--muted)">Write limit: 60 calls / hour</span></div>
+          <table>
+            <tr><th>Time</th><th>Tool</th><th></th><th>Details</th><th></th></tr>
+            <tr><td class="mono">17:30</td><td class="tool">get_focus_stats</td><td><span class="chip read">read</span></td><td>range: today</td><td></td></tr>
+            <tr><td class="mono">17:24</td><td class="tool">stop_focus</td><td><span class="chip write">write</span></td><td>logged 25m · Cache never expires</td><td><span class="undo">Undo</span></td></tr>
+            <tr><td class="mono">10:12</td><td class="tool">capture_note</td><td><span class="chip write">write</span></td><td>“API sends tz offset in seconds…”</td><td><span class="gone">expired</span></td></tr>
+            <tr><td class="mono">09:31</td><td class="tool">pause_focus</td><td><span class="chip write">write</span></td><td>reason: waiting · API review</td><td><span class="gone">expired</span></td></tr>
+            <tr><td class="mono">09:05</td><td class="tool">start_focus</td><td><span class="chip write">write</span></td><td>task tsk_8f2c · 25m</td><td><span class="gone">expired</span></td></tr>
+            <tr><td class="mono">09:05</td><td class="tool">search_tasks</td><td><span class="chip read">read</span></td><td>query: “UTC forecast”</td><td></td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

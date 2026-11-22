@@ -32,7 +32,7 @@ Add a remote MCP server as a Supabase Edge Function (`mcp`), using the MCP Strea
 | Tool | What it does | Writes? |
 |---|---|---|
 | `get_today` | Queue, items due today, today's meetings, pinned and recent notes | no |
-| `search_tasks` | Find an issue, test case or study topic by name | no |
+| `search_tasks` | Find a task, test case or study topic by name | no |
 | `start_focus` | Start a Pomodoro on a task (or a free-text title), 25 min by default | yes |
 | `pause_focus` / `stop_focus` | Pause with a reason (`waiting`, `interrupted`), or end and log the session | yes |
 | `add_task` | Create a todo in a project and optionally queue it | yes |
@@ -47,7 +47,7 @@ Add a remote MCP server as a Supabase Edge Function (`mcp`), using the MCP Strea
 A new default screen that aggregates, across projects:
 - **Now:** the running timer and its task
 - **Up next:** the queue
-- **Due today and overdue:** issues, test cases, topics
+- **Due today and overdue:** tasks, test cases, topics
 - **Meetings today**, with the auto-filled agenda that already exists
 - **Scribbles:** a quick-capture box that saves as a `scratch` note
 
@@ -85,6 +85,6 @@ P0 is useful on its own, so it goes first.
 ## Open questions
 
 1. Which clients to test against first. Claude Desktop and Claude Code support remote MCP servers. Support in other assistants (OpenAI, Gemini) changes quickly, so check it when P1 lands rather than promise it here.
-2. Should `start_focus` on a free-text title create an issue, or a lighter "ad-hoc" session with no task?
+2. ~~Should `start_focus` on a free-text title create a task, or a lighter "ad-hoc" session with no task?~~ Decided: create a task (see `mcp-plan.md`, D3).
 3. Does the demo mode (`/demo`) need a fake MCP endpoint so people can try this without an account?
 4. When focus time is logged, should it be written back to the Notion task (P3)?
