@@ -68,6 +68,8 @@ Gaps to close along the way:
 
 ## P2: Write tools, audit view, undo
 
+> **Status (2026-11-22):** done on this branch, waiting on deploy (migration `20261122000000_mcp_write.sql` + redeploy `mcp`). Differences from the plan below: 2.1 is a per-user switch in `mcp_settings` instead of OAuth scopes, because Supabase's OAuth server only offers its standard sign-in scopes. Its RLS rejects tokens that carry a `client_id`, so only the app can flip it. `get_timer` was added as a read tool. 2.7 also lists connected apps with a Disconnect button.
+
 | # | Task | Notes |
 |---|---|---|
 | 2.1 | Scopes: `qtrack:read` (default) and `qtrack:write`. Write tools check the scope before doing anything. | Shown on the connect screen |

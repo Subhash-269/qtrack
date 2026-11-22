@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import { supabase, isDemo } from "./supabaseClient";
 import * as db from "./storage";
 import TodayView from "./views/TodayView";
+import AssistantView from "./views/AssistantView";
 
 const SHORT_DATE = (d) => { if (!d) return "—"; const dt = new Date(d); const diff = Date.now() - dt.getTime(); if (diff < 60000) return "just now"; if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`; if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`; return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
 const FMT = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -131,6 +132,11 @@ export default function App({ session }) {
   };
   const tRef = useRef(null); const initRef = useRef(false); const syncRef = useRef(false); const loadedTimerRef = useRef(false);
 
+  // When the timer runs a task from another project (e.g. started by an assistant), switch to that
+  // project so the task name and session log line up. Functional update: called from stale closures.
+  const timerPidRef = useRef(null);
+  const followTimerProject = (row) => { if (row?.project_id && row.task_type && row.state !== "idle") { timerPidRef.current = row.project_id; setActiveProjectId(cur => cur && cur !== row.project_id ? row.project_id : cur); } };
+
   // Load timer from Supabase on mount
   useEffect(() => {
     (async () => {
@@ -144,7 +150,8 @@ export default function App({ session }) {
             if (left <= 0) { st = "idle"; left = DUR.work; startedAt = null; }
           }
           syncRef.current = true;
-          setTmr({ st, left, total: saved.total_seconds, type: saved.session_type, done: saved.sessions_completed, tType: saved.task_type, tId: saved.task_id, studyTopic: saved.study_topic || "", startedAt });
+          setTmr({ st, left, total: saved.total_seconds, type: saved.session_type, done: saved.sessions_completed, tType: saved.task_type, tId: saved.task_id, studyTopic: saved.study_topic || "", startedAt, pid: saved.project_id || null, pauseReason: saved.pause_reason || null, pausedAt: saved.paused_at || null });
+          followTimerProject(saved);
           setTimeout(() => { syncRef.current = false; }, 200);
         }
         loadedTimerRef.current = true;
@@ -156,7 +163,7 @@ export default function App({ session }) {
   useEffect(() => {
     if (!loadedTimerRef.current || syncRef.current) return;
     db.saveTimerState(tmr).catch(e => console.error("Timer save:", e));
-  }, [tmr.st, tmr.type, tmr.done, tmr.tType, tmr.tId, tmr.studyTopic, tmr.startedAt]);
+  }, [tmr.st, tmr.type, tmr.done, tmr.tType, tmr.tId, tmr.studyTopic, tmr.startedAt, tmr.pid, tmr.pauseReason]);
 
   // Subscribe to realtime for cross-device sync
   useEffect(() => {
@@ -169,7 +176,8 @@ export default function App({ session }) {
         left = Math.max(0, row.total_seconds - elapsed);
         if (left <= 0) { st = "idle"; left = DUR.work; startedAt = null; }
       }
-      setTmr({ st, left, total: row.total_seconds, type: row.session_type, done: row.sessions_completed, tType: row.task_type, tId: row.task_id, studyTopic: row.study_topic || "", startedAt });
+      setTmr({ st, left, total: row.total_seconds, type: row.session_type, done: row.sessions_completed, tType: row.task_type, tId: row.task_id, studyTopic: row.study_topic || "", startedAt, pid: row.project_id || null, pauseReason: row.pause_reason || null, pausedAt: row.paused_at || null });
+      followTimerProject(row);
       setTimeout(() => { syncRef.current = false; }, 200);
     });
     return () => { supabase.removeChannel(channel); };
@@ -254,7 +262,7 @@ export default function App({ session }) {
   }).catch(() => {}); } }, []);
   useEffect(() => { if (activeProjectId) { loadData(activeProjectId); loadToday(); } }, [activeProjectId]);
 
-  async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId(p[0].id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); } } catch (e) { console.error(e); } setLoading(false); }
+  async function loadProjects() { setLoading(true); try { const p = await db.getProjects(); setProjects(p); if (p.length > 0) setActiveProjectId((p.find(x => x.id === timerPidRef.current) || p[0]).id); else { const n = await db.createProject("My first project"); setProjects([n]); setActiveProjectId(n.id); } } catch (e) { console.error(e); } setLoading(false); }
   async function loadData(pid) { try { const [f, i, t] = await Promise.all([db.getFiles(pid), db.getIssues(pid), db.getTestCases(pid)]); setFiles(f); setIssues(i); setTestCases(t); try { setLinks(await db.getLinks(pid)); } catch { setLinks([]); } try { setNotes(await db.getNotes(pid)); } catch { setNotes([]); } try { const [co, ca] = await Promise.all([db.getColumns(pid), db.getCards(pid)]); setColumns(co); setCards(ca); } catch { setColumns([]); setCards([]); } try { setQueue(await db.getQueue(pid)); } catch { setQueue([]); } try { setMeetings(await db.getMeetings(pid)); } catch { setMeetings([]); } try { setPeople(await db.getPeople(pid)); } catch { setPeople([]); } try { setNewsCache(await db.getNewsCache(pid)); } catch { setNewsCache([]); } } catch (e) { console.error(e); } }
   async function loadToday() { if (!activeProjectId) return; try { setTodaySessions(await db.getTodaySessions(activeProjectId)); } catch { setTodaySessions([]); } try { setAllSessions(await db.getAllSessions(activeProjectId)); } catch { setAllSessions([]); } }
   async function reload() { if (activeProjectId) await loadData(activeProjectId); }
@@ -342,6 +350,7 @@ export default function App({ session }) {
             {showNavSettings && (
               <div style={{ position: "absolute", bottom: 40, left: sb ? 10 : 54, background: "#1A1A18", border: "1px solid #2C2C2A", borderRadius: 8, padding: "10px 12px", width: 180, zIndex: 60, boxShadow: "0 4px 12px rgba(0,0,0,0.4)" }}>
                 <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Show in sidebar</div>
+                <button onClick={() => { setView("assistant"); setShowNavSettings(false); }} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "6px 0 10px", marginBottom: 8, border: "none", borderBottom: "1px solid #2C2C2A", background: "transparent", color: "#D3D1C7", cursor: "pointer", fontSize: 12, textAlign: "left" }}><span style={{ opacity: 0.7 }}>✦</span><span style={{ flex: 1 }}>Assistant access</span><span style={{ color: "#5F5E5A" }}>›</span></button>
                 {nav.filter(n => !ALWAYS_TABS.includes(n.id)).map(n => (
                   <label key={n.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12, color: hiddenTabs.includes(n.id) ? "#444441" : "#D3D1C7", cursor: "pointer" }}>
                     <input type="checkbox" checked={!hiddenTabs.includes(n.id)} onChange={() => toggleTab(n.id)} style={{ cursor: "pointer" }} />
@@ -370,7 +379,7 @@ export default function App({ session }) {
         <div style={{ padding: mobile ? "12px 16px" : "12px 28px", borderBottom: "1px solid #2C2C2A", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             {!sb && !mobile && <button onClick={() => setSb(true)} style={{ background: "none", border: "none", color: "#5F5E5A", cursor: "pointer", fontSize: 16 }}>☰</button>}
-            <span style={{ fontSize: mobile ? 17 : 16, fontWeight: mobile ? 600 : 500 }}>{view === "log" ? "Focus log" : nav.find(n => n.id === view)?.l || ""}</span>
+            <span style={{ fontSize: mobile ? 17 : 16, fontWeight: mobile ? 600 : 500 }}>{view === "log" ? "Focus log" : view === "assistant" ? "Assistant access" : nav.find(n => n.id === view)?.l || ""}</span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {(view === "issues" || view === "tests") && <Input value={searchQ} onChange={setSearchQ} placeholder="Search..." style={{ width: mobile ? 120 : 180, fontSize: 12 }} />}
@@ -393,6 +402,7 @@ export default function App({ session }) {
           {view === "people" && <PeopleView people={people} meetings={meetings} projectId={activeProjectId} reload={reload} />}
           {view === "news" && <NewsView project={activeProject} newsCache={newsCache} projectId={activeProjectId} reload={reload} />}
           {view === "log" && <FocusLogView allSessions={allSessions} issues={issues} tests={testCases} logManual={logManual} />}
+          {view === "assistant" && <AssistantView onChanged={reload} />}
         </div>
         {/* Music dock */}
         {!meetingFocus && !mobile && <div style={{ background: "#161615", borderTop: "1px solid #1A1A18", padding: "4px 20px", flexShrink: 0 }}>
@@ -430,6 +440,7 @@ export default function App({ session }) {
               <div onClick={e => e.stopPropagation()} style={{ position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "80vh", overflowY: "auto", background: "#161615", borderTop: "1px solid #2C2C2A", borderRadius: "18px 18px 0 0", padding: "10px 20px 84px" }}>
                 <div style={{ width: 36, height: 4, borderRadius: 2, background: "#2C2C2A", margin: "0 auto 12px" }} />
                 {rest.map(n => (<button key={n.id} onClick={() => go(n.id)} style={{ ...rowBtn, color: view === n.id ? "#F1EFE8" : "#B4B2A9" }}><span style={{ width: 20, textAlign: "center", opacity: 0.7 }}>{n.ic}</span><span style={{ flex: 1 }}>{n.l}</span>{n.cnt ? <span style={{ fontSize: 10, color: "#888780" }}>{n.cnt}</span> : null}</button>))}
+                <button onClick={() => go("assistant")} style={{ ...rowBtn, color: view === "assistant" ? "#F1EFE8" : "#B4B2A9" }}><span style={{ width: 20, textAlign: "center", opacity: 0.7 }}>✦</span><span style={{ flex: 1 }}>Assistant access</span></button>
                 <div style={{ fontSize: 10, color: "#5F5E5A", textTransform: "uppercase", letterSpacing: 0.5, margin: "14px 0 4px" }}>Projects</div>
                 {projects.map(p => (<button key={p.id} onClick={() => { setActiveProjectId(p.id); setMoreOpen(false); }} style={{ ...rowBtn, color: activeProjectId === p.id ? "#F1EFE8" : "#888780" }}>{activeProjectId === p.id ? "● " : ""}{p.name}</button>))}
                 <button onClick={() => { setModal({ type: "project" }); setMoreOpen(false); }} style={{ ...rowBtn, color: "#5F5E5A", fontSize: 13 }}>+ New project</button>

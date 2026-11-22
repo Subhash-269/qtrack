@@ -18,15 +18,29 @@ supabase/
 
 A remote MCP server (Streamable HTTP) at `https://<project-ref>.supabase.co/functions/v1/mcp`. Each person connects their **own** QTrack account through OAuth. Supabase Auth is the authorization server, and every query runs with that user's token, so RLS applies. No secret key is used.
 
-Read-only tools (P1):
+Tools:
 
-| Tool | Input | Returns |
+| Tool | Kind | What it does |
 |---|---|---|
-| `get_today` | `timezone?` | Up next, due today and overdue, today's meetings and scribbles, across all projects |
-| `search_tasks` | `query`, `include_done?`, `limit?` | Matching tasks, test cases and study topics, with project names |
-| `get_focus_stats` | `range?` (`today`/`week`), `timezone?` | Focus minutes, pomodoros, paused and meeting time, by project and top tasks |
+| `get_today` | read | Up next, due today and overdue, today's meetings and scribbles, across all projects (`timezone?`) |
+| `search_tasks` | read | Find tasks, test cases and study topics by name (`query`, `include_done?`, `limit?`) |
+| `get_focus_stats` | read | Focus minutes, pomodoros, paused and meeting time, by project and top tasks (`range?`, `timezone?`) |
+| `get_timer` | read | What the shared timer is doing right now |
+| `start_focus` | write | Start a Pomodoro on a task (`task_id`, or a `title`; creates the task if nothing matches), or a study topic |
+| `pause_focus` / `resume_focus` | write | Pause with a reason (`waiting`, `interrupted`) and resume |
+| `stop_focus` | write | End the session and log the time; `mark_done` also finishes the task |
+| `add_task` | write | Create a task, optionally queued |
+| `add_to_queue` | write | Put a task at the end of its project's queue |
+| `capture_note` | write | Save a scribble, optionally linked to a task |
+| `undo` | write | Reverse a change from the last 10 minutes by its `undo_id` |
 
-Every call is written to `mcp_calls` (tool, arguments, ok, summary, OAuth client id).
+**Write tools are off until the user turns them on** in QTrack under *Settings → Assistant access*. That switch lives in `mcp_settings`, and its RLS only lets a first-party session change it: OAuth tokens carry a `client_id` claim, so an assistant can't turn on its own writes. Writes are limited to 60 an hour per user.
+
+Every call is written to `mcp_calls` (tool, arguments, ok, summary, OAuth client id). Write calls also store how to reverse them, so the `undo` tool and the Undo button in Settings can put things back within 10 minutes.
+
+Timer writes go to the same `timer_state` row the app already syncs through Realtime, so a `start_focus` starts the timer on every open device.
+
+**Known limit:** Supabase's OAuth server has no custom scopes yet, so a connected client's token has the same database access as the user's own session. RLS still keeps it to that user's data, and the switch above controls what the MCP *tools* will do. But a client that ignored MCP and called the REST API directly with the token could write. Disconnect clients you don't trust from *Settings → Assistant access*.
 
 ## One-time setup
 
@@ -40,7 +54,7 @@ You need the [Supabase CLI](https://supabase.com/docs/guides/local-development) 
    supabase functions download news-feed  # the existing function, so it's versioned too
    ```
    Commit what these produce. The baseline migration sorts **before** `20261121000000_mcp_calls.sql`. If `db pull` names its file with a later timestamp, rename it so the baseline comes first.
-3. **Apply the audit table:** `supabase db push`
+3. **Apply the migrations:** `npx supabase db push --remote` (the CLI targets a local database without `--remote`)
 4. **Turn on the OAuth 2.1 server** in the dashboard under *Authentication → OAuth Server*: enable it, set the authorization path to `/oauth/consent`, and enable **dynamic client registration**. Set the Auth **Site URL** to the deployed app origin (the Vercel URL). `config.toml` has the same settings for local runs.
 5. **Deploy the function:**
    ```sh
@@ -77,7 +91,7 @@ Locally: `supabase start`, `supabase functions serve mcp`, `npm run dev`, and se
 
 ## Tests
 
-`npm test` runs the tool handlers against the demo database (`src/demo/mockSupabase.js`). That covers every tool, isolation between two accounts, and the audit log. It doesn't exercise the OAuth layer; use the curl checks above for that.
+`npm test` runs the tool handlers against the demo database (`src/demo/mockSupabase.js`). That covers every tool, the write switch and hourly limit, undo, isolation between two accounts, and the audit log. It doesn't exercise the OAuth layer or the RLS policies themselves; use the curl checks above for the first.
 
 ## Custom domain
 

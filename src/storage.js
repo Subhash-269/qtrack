@@ -2,6 +2,7 @@
 // Replaces the old localStorage polyfill
 import { supabase } from './supabaseClient'
 import { getToday } from '../supabase/functions/_shared/today.js'
+import { undoCall } from '../supabase/functions/_shared/actions.js'
 
 const uid = async () => {
   const { data: { user } } = await supabase.auth.getUser()
@@ -364,6 +365,7 @@ export async function getTimerState() {
   return data
 }
 
+let timerExtraCols = true
 export async function saveTimerState(state) {
   const user_id = await uid()
   const { data, error } = await supabase
@@ -379,10 +381,16 @@ export async function saveTimerState(state) {
       task_type: state.tType || null,
       task_id: state.tId || null,
       study_topic: state.studyTopic || '',
+      ...(timerExtraCols ? { project_id: state.pid || null, pause_reason: state.pauseReason || null, paused_at: state.pausedAt || null } : {}),
       updated_at: new Date().toISOString()
     }, { onConflict: 'user_id' })
     .select()
     .single()
+  // Before the 20261122 migration these columns don't exist yet: stop sending them and retry
+  if (error && timerExtraCols && (error.code === 'PGRST204' || /project_id|pause_reason|paused_at/.test(error.message || ''))) {
+    timerExtraCols = false
+    return saveTimerState(state)
+  }
   if (error) throw error
   return data
 }
@@ -796,4 +804,47 @@ export async function getTodayAcrossProjects() {
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const start = new Date(now); start.setHours(0, 0, 0, 0)
   return getToday(supabase, user_id, { date, startOfDayISO: start.toISOString() })
+}
+
+// ============================================
+// Assistant access (MCP)
+// ============================================
+
+export const MCP_URL = `${import.meta.env.VITE_SUPABASE_URL || 'https://<project-ref>.supabase.co'}/functions/v1/mcp`
+
+export async function getMcpSettings() {
+  const user_id = await uid()
+  const { data, error } = await supabase.from('mcp_settings').select('*').eq('user_id', user_id).maybeSingle()
+  if (error) throw error
+  return { allow_writes: !!data?.allow_writes }
+}
+
+export async function setAllowWrites(allow) {
+  const user_id = await uid()
+  const { error } = await supabase.from('mcp_settings').upsert({ user_id, allow_writes: !!allow, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+  if (error) throw error
+}
+
+export async function getMcpCalls(limit = 50) {
+  const user_id = await uid()
+  const { data, error } = await supabase.from('mcp_calls').select('*').eq('user_id', user_id).order('created_at', { ascending: false }).limit(limit)
+  if (error) throw error
+  return data || []
+}
+
+export async function undoMcpCall(id) {
+  return undoCall(supabase, await uid(), id)
+}
+
+// Connected MCP clients (OAuth grants). Not available in demo mode.
+export async function listAssistantGrants() {
+  if (!supabase.auth.oauth?.listGrants) return []
+  const { data, error } = await supabase.auth.oauth.listGrants()
+  if (error) throw error
+  return data || []
+}
+
+export async function revokeAssistantGrant(clientId) {
+  const { error } = await supabase.auth.oauth.revokeGrant({ clientId })
+  if (error) throw error
 }
