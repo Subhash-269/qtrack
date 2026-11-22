@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import * as db from "../storage";
+import TaskDetailsPanel from "../components/TaskDetailsPanel";
 
 // Today: the default screen. What's running, what's next, what's due, today's meetings
 // and quick scribbles, across every project.
@@ -30,11 +31,13 @@ function Ring({ size, stroke, left, total, color }) {
   return (<svg width={size} height={size} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}><circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#2C2C2A" strokeWidth={stroke} /><circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={c} strokeDashoffset={c * (1 - p)} strokeLinecap="round" /></svg>);
 }
 
-export default function TodayView({ projects, activeProjectId, tmr, taskName, onStart, onPause, onResume, onDone, onOpenFocus, onFocusMeeting, onAddScribble, refreshOn }) {
+export default function TodayView({ projects, activeProjectId, tmr, taskName, onStart, onPause, onResume, onDone, onOpenFocus, onFocusMeeting, onAddScribble, onOpenItem, onReload, mobile, refreshOn }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [scribble, setScribble] = useState("");
   const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(null);   // { list: "queue" | "due", item } shown in the details panel
+  const [toast, setToast] = useState(null); // { text, undo }
 
   const load = () => db.getTodayAcrossProjects().then(d => { setData(d); setErr(null); }).catch(e => { console.error("Today:", e); setErr(e.message || "Couldn't load today"); });
   // Refetch when the active project's data reloads or the timer changes task/state
@@ -43,6 +46,33 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
   const pname = Object.fromEntries(projects.map(p => [p.id, p.name]));
   const multi = projects.length > 1;
   const proj = (id) => multi && pname[id] ? <span style={{ fontSize: 10, color: "#5F5E5A", whiteSpace: "nowrap", flexShrink: 0, maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis" }}>{pname[id]}</span> : null;
+
+  // Toasts disappear on their own
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 8000); return () => clearTimeout(t); }, [toast]);
+
+  const lists = { queue: (data?.queue || []).slice(0, 8).map(q => q.item), due: (data?.due || []).slice(0, 8) };
+  const openItem = (list, item) => setOpen({ list, item });
+  const isOpen = (list, item) => open && open.list === list && open.item.id === item.id;
+  const step = (dir) => {
+    if (!open) return null;
+    const l = lists[open.list], i = l.findIndex(x => x.id === open.item.id), n = l[i + dir];
+    return i >= 0 && n ? () => setOpen({ list: open.list, item: n }) : null;
+  };
+  const changed = () => { load(); onReload?.(); };
+  const finished = (row, status, prev) => {
+    setOpen(null); changed();
+    const word = status === "skipped" ? "Skipped" : status === "pass" ? "Marked as passing" : "Marked done";
+    setToast({
+      text: `${word}: ${row.title}`,
+      undo: async () => {
+        setToast(null);
+        try { await (row.kind === "test" ? db.updateTestStatus(row.id, prev) : db.updateIssueStatus(row.id, prev)); changed(); }
+        catch (e) { alert("Couldn't undo: " + (e.message || e)); }
+      },
+    });
+  };
+  const titleBtn = (list, item) => ({ ...title, cursor: "pointer", ...(isOpen(list, item) ? { color: "#F1EFE8", textDecoration: "underline", textDecorationColor: "#444441", textUnderlineOffset: 3 } : null) });
+  const rowStyle = (list, item) => isOpen(list, item) ? { ...row, background: "#22221F", margin: "0 -8px", padding: "7px 8px", borderRadius: 6, boxShadow: "inset 2px 0 0 #85B7EB" } : row;
 
   const saveScribble = async () => {
     const t = scribble.trim(); if (!t || saving) return;
@@ -57,7 +87,7 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
   const nowName = taskName || (tmr.type === "work" ? "Focus session" : "Break");
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 1000 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 1000, paddingRight: open && !mobile ? 400 : 0, transition: "padding-right 0.15s ease" }}>
       <div style={{ fontSize: 12, color: "#5F5E5A", marginTop: -8 }}>
         {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}{multi ? " · all projects" : ""}
       </div>
@@ -65,7 +95,7 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
       {/* Now */}
       <div style={{ ...card, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         {running ? (<>
-          <div style={{ position: "relative", width: 64, height: 64 }}>
+          <div onClick={onOpenFocus} title="Open Focus" style={{ position: "relative", width: 64, height: 64, cursor: "pointer" }}>
             <Ring size={64} stroke={4} left={tmr.left} total={tmr.total} color={color} />
             <span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontFamily: "'SF Mono', monospace", fontSize: 13, color }}>{paused ? "II" : FMT(tmr.left)}</span>
           </div>
@@ -80,7 +110,7 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
             <button onClick={onOpenFocus} style={btn(false)}>Open</button>
           </div>
         </>) : (<>
-          <div style={{ position: "relative", width: 64, height: 64 }}>
+          <div onClick={onOpenFocus} title="Open Focus" style={{ position: "relative", width: 64, height: 64, cursor: "pointer" }}>
             <Ring size={64} stroke={4} left={0} total={1} color="#2C2C2A" />
             <span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontFamily: "'SF Mono', monospace", fontSize: 13, color: "#5F5E5A" }}>{FMT(tmr.total || 1500)}</span>
           </div>
@@ -100,9 +130,9 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
           {!data ? <Empty>Loading…</Empty> : data.queue.length === 0 ? <Empty>Queue is empty. Add tasks to it from Tasks or Test cases.</Empty> :
             data.queue.slice(0, 8).map(q => {
               const isNow = running && tmr.tId === q.item.id;
-              return (<div key={q.id} style={row}>
+              return (<div key={q.id} style={rowStyle("queue", q.item)}>
                 <button title="Start focus" onClick={() => onStart(q.item.kind, q.item)} style={{ ...iconBtn, color: isNow ? "#E24B4A" : "#888780" }}>{isNow ? "●" : "▶"}</button>
-                <span style={title}>{q.item.title}</span>
+                <span title="Show details" onClick={() => openItem("queue", q.item)} style={titleBtn("queue", q.item)}>{q.item.title}</span>
                 {proj(q.project_id)}
                 <Chip c={kindOf(q.item)}>{kindOf(q.item).label}</Chip>
               </div>);
@@ -115,9 +145,9 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
           {!data ? <Empty>Loading…</Empty> : data.due.length === 0 ? <Empty>Nothing due today.</Empty> :
             data.due.slice(0, 8).map(it => {
               const over = daysBetween(it.due_date, data.today);
-              return (<div key={it.kind + it.id} style={row}>
+              return (<div key={it.kind + it.id} style={rowStyle("due", it)}>
                 <button title="Start focus" onClick={() => onStart(it.kind, it)} style={iconBtn}>▶</button>
-                <span style={title}>{it.title}</span>
+                <span title="Show details" onClick={() => openItem("due", it)} style={titleBtn("due", it)}>{it.title}</span>
                 {proj(it.project_id)}
                 {over > 0 ? <Chip c={{ bg: "#1F180E", text: "#FAC775", border: "#4A3A1B" }}>{over}d over</Chip> : <span style={{ fontSize: 10, color: "#888780" }}>today</span>}
               </div>);
@@ -148,6 +178,17 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
           </div>))}
         </div>
       </div>
+
+      {open && <TaskDetailsPanel key={open.item.kind + open.item.id} item={open.item} projects={projects} mobile={mobile}
+        inQueue={!!data?.queue.some(q => q.item.id === open.item.id)} focusing={running && tmr.tId === open.item.id}
+        onClose={() => setOpen(null)} onPrev={step(-1)} onNext={step(1)}
+        onStart={(kind, item) => onStart(kind, item)} onFinish={finished} onChanged={changed}
+        onOpenInProject={(kind, item) => { setOpen(null); onOpenItem(kind, item); }} />}
+
+      {toast && <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: mobile ? 132 : 56, zIndex: 130, display: "flex", alignItems: "center", gap: 12, background: "#262624", border: "1px solid #444441", borderRadius: 8, padding: "9px 12px 9px 14px", fontSize: 12, color: "#F1EFE8", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", maxWidth: "calc(100vw - 32px)" }}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast.text}</span>
+        <button onClick={toast.undo} style={{ background: "none", border: "none", color: "#85B7EB", fontSize: 12, fontWeight: 500, cursor: "pointer", padding: 0 }}>Undo</button>
+      </div>}
     </div>
   );
 }

@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Today Task Details</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Palette from the web app (src/App.jsx) */
+  :root {
+    --bg: #111110; --side: #161615; --raise: #1A1A18; --line: #2C2C2A; --line-2: #222220;
+    --dim: #444441; --muted: #5F5E5A; --sub: #888780; --soft: #B4B2A9; --text: #F1EFE8; --title: #D3D1C7;
+    --red: #E24B4A; --green: #5DCAA5; --blue: #85B7EB; --purple: #AFA9EC; --amber: #FAC775; --pink: #F09595;
+    --mono: "DM Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B0B0A; color: var(--text); font-family: "DM Sans", system-ui, sans-serif; font-size: 13px; padding: 44px 24px 56px; }
+  header { max-width: 1320px; margin: 0 auto 28px; }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header p { color: var(--sub); font-size: 13px; margin-top: 6px; max-width: 860px; line-height: 1.55; }
+
+  .row { max-width: 1320px; margin: 0 auto; display: grid; grid-template-columns: 1fr 360px; gap: 26px; align-items: start; }
+  .frame { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .cap { font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  .cap b { color: var(--soft); font-weight: 500; letter-spacing: .04em; }
+  .note { font-size: 11.5px; color: var(--sub); line-height: 1.5; }
+
+  /* ---------- desktop shell ---------- */
+  .app { height: 660px; display: flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); position: relative; }
+  .rail { width: 54px; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 0; flex-shrink: 0; }
+  .rail .logo { width: 24px; height: 24px; border-radius: 6px; background: #D3D1C7; color: var(--bg); font-weight: 700; font-size: 12px; display: grid; place-items: center; margin-bottom: 10px; }
+  .rail i { width: 34px; height: 30px; border-radius: 7px; display: grid; place-items: center; color: var(--muted); font-style: normal; font-size: 13px; }
+  .rail i.on { background: var(--line); color: var(--text); }
+  .rail .badge { width: 28px; height: 28px; border-radius: 7px; background: #26215C; color: var(--purple); font-size: 10px; font-weight: 600; display: grid; place-items: center; margin-top: 8px; }
+
+  .main { flex: 1; padding: 22px 24px; min-width: 0; position: relative; }
+  .h { font-size: 18px; font-weight: 500; }
+  .date { font-size: 12px; color: var(--muted); margin: 2px 0 14px; }
+  .card { background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+  .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .now { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .ring { width: 58px; height: 58px; border-radius: 50%; border: 4px solid var(--line); border-top-color: var(--red); border-right-color: var(--red); display: grid; place-items: center; font-family: var(--mono); font-size: 12px; color: var(--red); flex-shrink: 0; cursor: pointer; position: relative; }
+  .now .t { flex: 1; min-width: 0; }
+  .now .t div:last-child { font-size: 14px; }
+  .btn { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; border: 1px solid var(--dim); color: var(--soft); background: transparent; white-space: nowrap; }
+  .btn.pri { background: #D3D1C7; color: var(--raise); border-color: #D3D1C7; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .it { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line-2); font-size: 12px; min-width: 0; }
+  .it:last-child { border-bottom: none; }
+  .play { width: 22px; height: 22px; border-radius: 5px; border: 1px solid var(--line); color: var(--sub); font-size: 9px; display: grid; place-items: center; flex-shrink: 0; }
+  .it .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--title); }
+  .it.sel { background: #22221F; margin: 0 -8px; padding: 7px 8px; border-radius: 6px; border-bottom-color: transparent; box-shadow: inset 2px 0 0 var(--blue); }
+  .it.sel .tt { color: var(--text); text-decoration: underline; text-decoration-color: var(--dim); text-underline-offset: 3px; }
+  .pn { font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .chip { font-size: 10px; padding: 1px 6px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; border: 1px solid; }
+  .c-bug { background: #1F0E0E; color: var(--pink); border-color: #4A1B1B; }
+  .c-todo { background: var(--raise); color: var(--soft); border-color: var(--line); }
+  .c-over { background: #1F180E; color: var(--amber); border-color: #4A3A1B; }
+  .dimmed { opacity: .55; }
+
+  /* ---------- details panel ---------- */
+  .panel { position: absolute; top: 0; right: 0; bottom: 0; width: 392px; background: var(--side); border-left: 1px solid var(--dim); box-shadow: -18px 0 40px rgba(0,0,0,.45); display: flex; flex-direction: column; }
+  .p-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); }
+  .p-top { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+  .p-top .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--purple); }
+  .p-top .x { margin-left: auto; width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--sub); border: 1px solid var(--line); }
+  .p-title { font-size: 16px; font-weight: 500; line-height: 1.35; margin: 8px 0 10px; }
+  .fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .f { background: var(--raise); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  .f small { display: block; font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .f span { font-size: 12px; display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+  .f span::after { content: "▾"; color: var(--muted); font-size: 9px; }
+  .st-prog { color: var(--blue); }
+  .pr-high { color: var(--amber); }
+  .due-over { color: var(--amber); }
+  .p-body { padding: 14px 16px; overflow: hidden; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+  .sh { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .desc { font-size: 12.5px; color: var(--soft); line-height: 1.55; }
+  .desc code { font-family: var(--mono); font-size: 11.5px; background: var(--raise); border: 1px solid var(--line); padding: 0 4px; border-radius: 4px; color: var(--title); }
+  .ck { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 4px 0; color: var(--title); }
+  .box { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--dim); flex-shrink: 0; display: grid; place-items: center; font-size: 9px; }
+  .ck.done { color: var(--muted); text-decoration: line-through; }
+  .ck.done .box { background: var(--green); border-color: var(--green); color: var(--bg); }
+  .ck.add { color: var(--muted); }
+  .ck.add .box { border-style: dashed; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .stat { background: var(--raise); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; }
+  .stat b { display: block; font-family: var(--mono); font-weight: 500; font-size: 14px; }
+  .stat small { font-size: 10px; color: var(--muted); }
+  .link { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 5px 0; color: var(--title); border-bottom: 1px solid var(--line-2); }
+  .link:last-child { border-bottom: none; }
+  .link .k { font-size: 10px; color: var(--muted); width: 34px; flex-shrink: 0; }
+  .pass { color: var(--green); font-size: 10px; margin-left: auto; }
+  .fail { color: var(--pink); font-size: 10px; margin-left: auto; }
+  .p-foot { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; gap: 6px; align-items: center; }
+  .p-foot .sp { flex: 1; }
+  .ghost { font-size: 12px; color: var(--sub); }
+
+  /* callouts */
+  .tag { position: absolute; background: var(--blue); color: #0B1A29; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 10px; white-space: nowrap; z-index: 5; }
+
+  /* ---------- phone ---------- */
+  .phone { width: 360px; height: 740px; border: 1px solid var(--line); border-radius: 28px; background: var(--bg); position: relative; overflow: hidden; }
+  .ph-main { padding: 18px 16px; }
+  .ph-main .card { padding: 10px 12px; }
+  .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 560px; background: var(--side); border-top: 1px solid var(--dim); border-radius: 18px 18px 0 0; display: flex; flex-direction: column; }
+  .grab { width: 38px; height: 4px; border-radius: 2px; background: var(--dim); margin: 8px auto 2px; }
+  .sheet .p-head { padding: 8px 16px 12px; }
+  .sheet .p-body { padding: 12px 16px; gap: 12px; }
+  .sheet .p-foot { padding: 10px 12px calc(10px + 14px); }
+  .sheet .btn { padding: 8px 10px; flex: 1; text-align: center; }
+
+  .notes { max-width: 1320px; margin: 30px auto 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .notes h3 { font-size: 12px; font-weight: 600; color: var(--soft); margin-bottom: 6px; }
+  .notes ul { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .notes li { font-size: 12px; color: var(--sub); line-height: 1.5; padding-left: 12px; position: relative; }
+  .notes li::before { content: "·"; position: absolute; left: 2px; color: var(--muted); }
+  .notes li b { color: var(--title); font-weight: 500; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Today: task details without leaving Today</h1>
+  <p>Clicking a task title on Today opens its details in a side panel (a bottom sheet on phones). Status, priority and due date change in place, the checklist ticks off, and Focus / Done / Skip are one click away. "Open in project" goes to the full task when you need more. Clicking the timer ring opens Focus.</p>
+</header>
+
+<div class="row">
+  <!-- Desktop -->
+  <section class="frame">
+    <div class="cap"><b>Desktop</b> · clicked "Hourly forecast shows UTC…" in Up next</div>
+    <div class="app">
+      <div class="rail">
+        <div class="logo">Q</div>
+        <i class="on">☀</i><i>◷</i>
+        <div class="badge">WA</div>
+        <i>☰</i><i>✎</i><i>▤</i>
+      </div>
+
+      <div class="main">
+        <div class="h">Today</div>
+        <div class="date">Sunday, November 22 · all projects</div>
+
+        <div class="card now">
+          <div class="ring" title="Open Focus">14:32</div>
+          <div class="t">
+            <div class="lbl"><span>Now · Focus 2 of 4</span></div>
+            <div>Report 5: dashboard with R Shiny</div>
+          </div>
+          <span class="btn pri">Pause</span><span class="btn">✓ Done</span>
+        </div>
+
+        <div class="grid2">
+          <div class="card">
+            <div class="lbl"><span>Up next</span><span>4</span></div>
+            <div class="it sel"><span class="play">▶</span><span class="tt">Hourly forecast shows UTC instead of local time</span><span class="chip c-bug">bug</span></div>
+            <div class="it"><span class="play">▶</span><span class="tt">Draft capstone test plan</span><span class="chip c-todo">todo</span></div>
+            <div class="it"><span class="play">▶</span><span class="tt">Reply to recruiter about on-site</span><span class="chip c-todo">todo</span></div>
+            <div class="it"><span class="play">▶</span><span class="tt">Cache never expires when offline</span><span class="chip c-bug">bug</span></div>
+          </div>
+          <div class="card">
+            <div class="lbl"><span>Due today &amp; overdue</span><span>3</span></div>
+            <div class="it"><span class="play">▶</span><span class="tt">Hourly forecast shows UTC…</span><span class="chip c-over">1d over</span></div>
+            <div class="it"><span class="play">▶</span><span class="tt">Pay gas bill</span><span class="pn">today</span></div>
+            <div class="it"><span class="play">▶</span><span class="tt">Report 5: dashboard with R Shiny</span><span class="pn">today</span></div>
+          </div>
+          <div class="card dimmed">
+            <div class="lbl"><span>Meetings today</span><span>1</span></div>
+            <div class="it"><span class="pn" style="font-family:var(--mono);width:56px">2:00 PM</span><span class="tt">Sprint sync</span></div>
+          </div>
+          <div class="card dimmed">
+            <div class="lbl"><span>Scribbles</span></div>
+            <div class="it"><span class="tt">ask about DST edge case</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Details panel -->
+      <aside class="panel">
+        <div class="p-head">
+          <div class="p-top"><span class="dot"></span>Weather App · bug · in Up next <span class="x">✕</span></div>
+          <div class="p-title">Hourly forecast shows UTC instead of local time</div>
+          <div class="fields">
+            <div class="f"><small>Status</small><span class="st-prog">In progress</span></div>
+            <div class="f"><small>Priority</small><span class="pr-high">Critical</span></div>
+            <div class="f"><small>Due</small><span class="due-over">Yesterday</span></div>
+          </div>
+        </div>
+        <div class="p-body">
+          <div>
+            <div class="sh"><span>Description</span><span>edit</span></div>
+            <div class="desc">API returns <code>dt</code> in UTC seconds. We render it without applying the city timezone offset.</div>
+          </div>
+          <div>
+            <div class="sh"><span>Checklist</span><span>1 / 3</span></div>
+            <div class="ck done"><span class="box">✓</span>Reproduce with Tokyo</div>
+            <div class="ck"><span class="box"></span>Use timezone_offset from response</div>
+            <div class="ck"><span class="box"></span>Add test for DST boundary</div>
+            <div class="ck add"><span class="box"></span>Add an item…</div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>3</b><small>pomodoros</small></div>
+            <div class="stat"><b>1h 15m</b><small>focused</small></div>
+            <div class="stat"><b>3</b><small>estimated</small></div>
+          </div>
+          <div>
+            <div class="sh"><span>Linked</span></div>
+            <div class="link"><span class="k">test</span>Hourly forecast renders in city local time<span class="fail">fail</span></div>
+            <div class="link"><span class="k">note</span>Timezone API notes</div>
+          </div>
+        </div>
+        <div class="p-foot">
+          <span class="btn pri">▶ Focus</span><span class="btn">✓ Done</span><span class="btn">Skip</span>
+          <span class="sp"></span><span class="ghost">Open in project ↗</span>
+        </div>
+      </aside>
+
+      <span class="tag" style="left:108px;top:156px">click ring → Focus</span>
+    </div>
+    <div class="note">Today stays put behind the panel; the clicked row is highlighted. Esc or ✕ closes it, and ↑/↓ moves to the previous or next task in the list. Changes save as you make them, like the rest of the app.</div>
+  </section>
+
+  <!-- Phone -->
+  <section class="frame">
+    <div class="cap"><b>Phone</b> · bottom sheet</div>
+    <div class="phone">
+      <div class="ph-main">
+        <div class="h">Today</div>
+        <div class="date">Sun, Nov 22</div>
+        <div class="card">
+          <div class="lbl"><span>Up next</span><span>4</span></div>
+          <div class="it"><span class="play">▶</span><span class="tt">Hourly forecast shows UTC…</span></div>
+          <div class="it"><span class="play">▶</span><span class="tt">Draft capstone test plan</span></div>
+        </div>
+      </div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="p-head">
+          <div class="p-top"><span class="dot"></span>Weather App · bug <span class="x">✕</span></div>
+          <div class="p-title">Hourly forecast shows UTC instead of local time</div>
+          <div class="fields">
+            <div class="f"><small>Status</small><span class="st-prog">In prog.</span></div>
+            <div class="f"><small>Priority</small><span class="pr-high">Critical</span></div>
+            <div class="f"><small>Due</small><span class="due-over">Yesterday</span></div>
+          </div>
+        </div>
+        <div class="p-body">
+          <div class="desc">API returns <code>dt</code> in UTC seconds. We render it without applying the city timezone offset.</div>
+          <div>
+            <div class="sh"><span>Checklist</span><span>1 / 3</span></div>
+            <div class="ck done"><span class="box">✓</span>Reproduce with Tokyo</div>
+            <div class="ck"><span class="box"></span>Use timezone_offset from response</div>
+            <div class="ck"><span class="box"></span>Add test for DST boundary</div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>3</b><small>poms</small></div>
+            <div class="stat"><b>1h 15m</b><small>focused</small></div>
+            <div class="stat"><b>2</b><small>linked</small></div>
+          </div>
+        </div>
+        <div class="p-foot">
+          <span class="btn pri">▶ Focus</span><span class="btn">✓ Done</span><span class="btn">Skip</span><span class="btn">↗</span>
+        </div>
+      </div>
+    </div>
+    <div class="note">Swipe down or tap outside to close. Same fields and actions; "↗" opens the task in its project.</div>
+  </section>
+</div>
+
+<div class="notes">
+  <div>
+    <h3>What opens it</h3>
+    <ul>
+      <li><b>Task title</b> in Up next or Due today &amp; overdue.</li>
+      <li><b>▶</b> still starts focus right away, without opening anything.</li>
+      <li><b>Now card:</b> the ring and the task name open Focus.</li>
+    </ul>
+  </div>
+  <div>
+    <h3>What it does</h3>
+    <ul>
+      <li><b>Status, priority, due</b> change in place; Today refreshes behind it.</li>
+      <li><b>Done / Skip</b> close the task and the panel; Undo shows briefly.</li>
+      <li><b>Focus</b> starts the timer on it and keeps you on Today.</li>
+      <li><b>Open in project ↗</b> switches to that project's Tasks with this task open.</li>
+    </ul>
+  </div>
+  <div>
+    <h3>Later, same panel</h3>
+    <ul>
+      <li>Test cases (steps, pass/fail) and meetings (agenda, notes).</li>
+      <li>Reused by the Tasks page instead of its own popup.</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>
