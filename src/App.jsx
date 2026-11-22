@@ -15,6 +15,7 @@ const PRIORITIES = ["critical", "high", "medium", "low"];
 const ISSUE_STATUSES = TASK_STATUSES.map(v => ({ value: v, label: TASK_STATUS_LABEL[v] }));
 const ISSUE_TYPES = ["bug", "todo"];
 const DUR = { work: 25 * 60, short_break: 5 * 60, long_break: 15 * 60 };
+const QUICK = 5 * 60; // "Just start": a 5-minute way in; +20 makes it a full pomodoro
 // const DUR = { work: 5, short_break: 5 * 60, long_break: 15 * 60 };
 const PC = { critical: { bg: "var(--tint-red-bg)", text: "var(--pink)", border: "var(--tint-red-bd)" }, high: { bg: "var(--tint-orange-bg)", text: "var(--orange)", border: "var(--tint-orange-bd)" }, medium: { bg: "var(--tint-amber-bg)", text: "var(--amber)", border: "var(--tint-amber-bd)" }, low: { bg: "var(--tint-green-bg)", text: "var(--lime)", border: "var(--tint-green-bd)" } };
 const parseMtags = (v) => { try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch { return v ? [v] : []; } };
@@ -200,6 +201,12 @@ export default function App({ session }) {
   const finishSession = async (p) => {
     try { if (Notification.permission === "granted") new Notification(p.type === "work" ? "Focus done!" : "Break over!", { body: p.type === "work" ? "Time for a break." : "Ready to focus?" }); } catch {}
     try { const ctx = new AudioContext(); const o = ctx.createOscillator(); const g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.value = 800; g.gain.value = 0.3; o.start(); setTimeout(() => { o.frequency.value = 1000; }, 150); setTimeout(() => { o.stop(); ctx.close(); }, 400); } catch {}
+    // A finished "Just start" asks to keep going instead of starting a break
+    if (p.type === "work" && p.total === QUICK) {
+      try { await db.saveFocusSession(p.pid || activeProjectId, p.tType === "issue" ? p.tId : null, p.tType === "test" ? p.tId : null, "work", p.total, "focus", ""); loadToday(); } catch (e) { console.error(e); }
+      setTmr({ st: "idle", left: DUR.work, total: DUR.work, type: "work", done: p.done, tType: p.tType, tId: p.tId, pid: p.pid, startedAt: null, quickDone: true });
+      return;
+    }
     if (p.type === "work") { try { await db.saveFocusSession(p.pid || activeProjectId, p.tType === "issue" ? p.tId : null, p.tType === "test" ? p.tId : null, p.type, p.total, p.tType === "study" ? "study" : "focus", p.studyTopic || ""); loadToday(); } catch (e) { console.error(e); } }
     const nd = p.type === "work" ? p.done + 1 : p.done;
     let nt, nc;
@@ -364,6 +371,13 @@ export default function App({ session }) {
     setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all");
     setView(kind === "test" ? "tests" : "issues");
   };
+  const quickStart = (kind, item) => {
+    if (item) switchTo(item.project_id);
+    setTmr(p => ({ st: "running", left: QUICK, total: QUICK, type: "work", done: p.done, tType: item ? kind : null, tId: item?.id || null, pid: item?.project_id || activeProjectId, startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null, taskOffset: 0, quickDone: false }));
+    if (Notification.permission === "default") Notification.requestPermission();
+  };
+  const keepGoing = () => setTmr(p => ({ ...p, st: "running", left: DUR.work - QUICK, total: DUR.work - QUICK, type: "work", startedAt: new Date().toISOString(), pauseReason: null, pausedAt: null, taskOffset: 0, quickDone: false }));
+  const quickStop = () => setTmr(p => ({ ...p, quickDone: false }));
   const startFromToday = (kind, item) => { switchTo(item.project_id); focusOn(kind, item.id, item.project_id); };
   const focusMeetingFromToday = (m) => { switchTo(m.project_id); setMeetingFocus(m); };
 
@@ -399,7 +413,7 @@ export default function App({ session }) {
           </div>
         </div>
         <div style={{ flex: 1, padding: mobile ? "16px 16px 24px" : "24px 28px", overflowY: "auto", minWidth: 0 }}>
-          {view === "today" && <TodayView projects={projects} activeProjectId={activeProjectId} tmr={tmr} taskName={taskName} onStart={startFromToday} onPause={pauseTmr} onResume={resumeTmr} onDone={markDone} onOpenFocus={() => setView("focus")} onFocusMeeting={focusMeetingFromToday} onAddScribble={async (text) => { await db.createNote(activeProjectId, { content: text, category: "scratch" }); await reload(); }} onOpenItem={openItemInProject} onReload={reload} mobile={mobile} refreshOn={[projects, issues, testCases, queue, notes, meetings, tmr.st, tmr.tId]} />}
+          {view === "today" && <TodayView projects={projects} activeProjectId={activeProjectId} tmr={tmr} taskName={taskName} onStart={startFromToday} onPause={pauseTmr} onResume={resumeTmr} onDone={markDone} onOpenFocus={() => setView("focus")} onFocusMeeting={focusMeetingFromToday} onAddScribble={async (text) => { await db.createNote(activeProjectId, { content: text, category: "scratch" }); await reload(); }} onOpenItem={openItemInProject} onReload={reload} onQuickStart={quickStart} onKeepGoing={keepGoing} onQuickStop={quickStop} mobile={mobile} refreshOn={[projects, issues, testCases, queue, notes, meetings, tmr.st, tmr.tId]} />}
           {view === "dashboard" && !isWorkshop && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} todaySessions={todaySessions} projectId={activeProjectId} />}
           {view === "dashboard" && isWorkshop && <WorkshopDashboard meetings={meetings} notes={notes} people={people} onNav={setView} />}
           {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} mobile={mobile} markDone={markDone} />}

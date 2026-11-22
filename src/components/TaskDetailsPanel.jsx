@@ -36,7 +36,7 @@ const control = { width: "100%", background: "transparent", border: "none", outl
 const btn = (primary) => ({ padding: "7px 12px", borderRadius: 6, fontSize: 12, fontWeight: 500, background: primary ? "var(--title)" : "transparent", color: primary ? "var(--surface)" : C.soft, border: primary ? "1px solid var(--title)" : `1px solid ${C.dim}`, cursor: "pointer", whiteSpace: "nowrap" });
 const linkBtn = { background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6, padding: 0 };
 
-export default function TaskDetailsPanel({ item, projects, inQueue, mobile, focusing, onClose, onPrev, onNext, onStart, onFinish, onOpenInProject, onChanged }) {
+export default function TaskDetailsPanel({ item, projects, inQueue, mobile, focusing, onClose, onPrev, onNext, onStart, onQuick, onFinish, onOpenInProject, onChanged }) {
   const isTest = item.kind === "test";
   const [row, setRow] = useState(item);
   const [extra, setExtra] = useState(null);
@@ -206,6 +206,7 @@ export default function TaskDetailsPanel({ item, projects, inQueue, mobile, focu
         {focusing
           ? <span style={{ ...btn(false), color: "var(--red)", borderColor: "var(--tint-red-bd)", cursor: "default", flex: mobile ? 1 : "none", textAlign: "center" }}>● Focusing</span>
           : <button onClick={() => onStart(row.kind, row)} style={{ ...btn(true), flex: mobile ? 1 : "none" }}>▶ Focus</button>}
+        {!focusing && onQuick && <button onClick={() => onQuick(row.kind, row)} title="Just start: 5 minutes" style={{ ...btn(false), flex: mobile ? 1 : "none" }}>5 min</button>}
         <button onClick={() => finish(isTest ? "pass" : "done")} style={{ ...btn(false), flex: mobile ? 1 : "none" }}>{isTest ? "✓ Pass" : "✓ Done"}</button>
         {!isTest && <button onClick={() => finish("skipped")} style={{ ...btn(false), flex: mobile ? 1 : "none" }}>Skip</button>}
         {!mobile && <span style={{ flex: 1 }} />}

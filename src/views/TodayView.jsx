@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import * as db from "../storage";
 import TaskDetailsPanel from "../components/TaskDetailsPanel";
 import FocusChart from "../components/FocusChart";
+import ReplanDialog from "../components/ReplanDialog";
 
 // Today: the default screen. What's running, what's next, what's due, today's meetings
 // and quick scribbles, across every project.
@@ -32,13 +33,14 @@ function Ring({ size, stroke, left, total, color }) {
   return (<svg width={size} height={size} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}><circle cx={size / 2} cy={size / 2} r={r} fill="none" style={{ stroke: "var(--line)" }} strokeWidth={stroke} /><circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={c} strokeDashoffset={c * (1 - p)} strokeLinecap="round" /></svg>);
 }
 
-export default function TodayView({ projects, activeProjectId, tmr, taskName, onStart, onPause, onResume, onDone, onOpenFocus, onFocusMeeting, onAddScribble, onOpenItem, onReload, mobile, refreshOn }) {
+export default function TodayView({ projects, activeProjectId, tmr, taskName, onStart, onPause, onResume, onDone, onOpenFocus, onFocusMeeting, onAddScribble, onOpenItem, onReload, onQuickStart, onKeepGoing, onQuickStop, mobile, refreshOn }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [scribble, setScribble] = useState("");
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(null);   // { list: "queue" | "due", item } shown in the details panel
   const [toast, setToast] = useState(null); // { text, undo }
+  const [replanning, setReplanning] = useState(false);
 
   const load = () => db.getTodayAcrossProjects().then(d => { setData(d); setErr(null); }).catch(e => { console.error("Today:", e); setErr(e.message || "Couldn't load today"); });
   // Refetch when the active project's data reloads or the timer changes task/state
@@ -51,7 +53,11 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
   // Toasts disappear on their own
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 8000); return () => clearTimeout(t); }, [toast]);
 
-  const lists = { queue: (data?.queue || []).slice(0, 8).map(q => q.item), due: (data?.due || []).slice(0, 8) };
+  const earlier = (data?.due || []).filter(it => it.due_date < data.today);   // leftovers from earlier days
+  const dueToday = (data?.due || []).filter(it => it.due_date >= data.today);
+  const lists = { queue: (data?.queue || []).slice(0, 8).map(q => q.item), due: dueToday.slice(0, 8), earlier: earlier.slice(0, 8) };
+  const fromText = (d) => { const n = daysBetween(d, data.today); if (n === 1) return "from yesterday"; const dt = new Date(d + "T00:00:00"); return n < 7 ? `from ${dt.toLocaleDateString("en-US", { weekday: "short" })}` : `from ${dt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`; };
+  const quickTarget = lists.queue[0] || lists.due[0] || lists.earlier[0] || null;
   const openItem = (list, item) => setOpen({ list, item });
   const isOpen = (list, item) => open && open.list === list && open.item.id === item.id;
   const step = (dir) => {
@@ -83,6 +89,7 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
   };
 
   const running = tmr.st !== "idle";
+  const quick = running && tmr.type === "work" && tmr.total === 300;
   const paused = tmr.st === "paused";
   const color = paused ? "var(--amber)" : SC[tmr.type];
   const nowName = taskName || (tmr.type === "work" ? "Focus session" : "Break");
@@ -95,13 +102,27 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
 
       {/* Now */}
       <div style={{ ...card, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-        {running ? (<>
+        {tmr.quickDone && !running ? (<>
+          <div onClick={onOpenFocus} title="Open Focus" style={{ position: "relative", width: 64, height: 64, cursor: "pointer" }}>
+            <Ring size={64} stroke={4} left={1} total={1} color="var(--green)" />
+            <span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontFamily: "'SF Mono', monospace", fontSize: 13, color: "var(--green)" }}>5:00</span>
+          </div>
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={label}><span>5 minutes done{taskName ? ` · ${taskName}` : ""}</span></div>
+            <div style={{ fontSize: 14, color: "var(--text)" }}>Keep going?</div>
+            <div style={{ fontSize: 11.5, color: "var(--sub)", marginTop: 3 }}>You are already in it. Or stop here, 5 min logged.</div>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={onKeepGoing} style={btn(true)}>+20 min</button>
+            <button onClick={onQuickStop} style={btn(false)}>Stop</button>
+          </div>
+        </>) : running ? (<>
           <div onClick={onOpenFocus} title="Open Focus" style={{ position: "relative", width: 64, height: 64, cursor: "pointer" }}>
             <Ring size={64} stroke={4} left={tmr.left} total={tmr.total} color={color} />
             <span style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", fontFamily: "'SF Mono', monospace", fontSize: 13, color }}>{paused ? "II" : FMT(tmr.left)}</span>
           </div>
           <div style={{ flex: 1, minWidth: 160 }}>
-            <div style={label}><span>Now · {tmr.type === "work" ? `Focus ${Math.min(tmr.done + 1, 4)} of 4` : "Break"}{paused ? " · paused" : ""}</span></div>
+            <div style={label}><span>Now · {quick ? <>just starting <span style={{ fontSize: 10, padding: "0 6px", borderRadius: 10, background: "var(--tint-green-bg)", color: "var(--green)", border: "1px solid var(--tint-green-bd)", textTransform: "none", letterSpacing: 0 }}>5 min</span></> : tmr.type === "work" ? `Focus ${Math.min(tmr.done + 1, 4)} of 4` : "Break"}{paused ? " · paused" : ""}</span></div>
             <div onClick={onOpenFocus} style={{ fontSize: 14, color: "var(--text)", cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nowName}</div>
             {paused && tmr.pauseReason && <div style={{ fontSize: 11, color: "var(--amber)", marginTop: 3 }}>{tmr.pauseReason}</div>}
           </div>
@@ -117,14 +138,28 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
           </div>
           <div style={{ flex: 1, minWidth: 160 }}>
             <div style={label}><span>Now</span></div>
-            <div style={{ fontSize: 13, color: "var(--sub)" }}>Nothing running. Pick something from Up next or Due to start a focus session.</div>
+            <div style={{ fontSize: 13, color: "var(--sub)" }}>{quickTarget ? <>Nothing running. Too much for a full pomodoro? Start <span style={{ color: "var(--title)" }}>{quickTarget.title}</span> for 5 minutes.</> : "Nothing running. Too much for a full pomodoro? Five minutes counts."}</div>
           </div>
+          <button onClick={() => onQuickStart(quickTarget?.kind, quickTarget)} style={btn(true)}>Just start · 5 min</button>
         </>)}
       </div>
 
       <FocusChart projects={projects} mobile={mobile} refreshKey={data} />
 
       {err && <div style={{ ...card, color: "var(--pink)", fontSize: 12 }}>Couldn't load Today: {err} <button onClick={load} style={{ ...btn(false), marginLeft: 8, padding: "2px 10px" }}>Retry</button></div>}
+
+      {lists.earlier.length > 0 && (
+        <div style={{ ...card, background: "color-mix(in srgb, var(--amber) 6%, var(--surface))", borderColor: "color-mix(in srgb, var(--amber) 22%, var(--surface))" }}>
+          <div style={{ ...label, alignItems: "center" }}><span style={{ color: "var(--amber)" }}>From earlier · {earlier.length}</span>
+            <button onClick={() => setReplanning(true)} style={{ ...btn(false), padding: "3px 10px", fontSize: 11.5, textTransform: "none", letterSpacing: 0 }}>Replan</button></div>
+          {lists.earlier.map(it => (<div key={it.kind + it.id} style={rowStyle("earlier", it)}>
+            <button title="Start focus" onClick={() => onStart(it.kind, it)} style={iconBtn}>▶</button>
+            <span title="Show details" onClick={() => openItem("earlier", it)} style={titleBtn("earlier", it)}>{it.title}</span>
+            {proj(it.project_id)}
+            <span style={{ fontSize: 10, color: "var(--amber)", whiteSpace: "nowrap" }}>{fromText(it.due_date)}</span>
+          </div>))}
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         {/* Up next */}
@@ -144,9 +179,9 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
 
         {/* Due today & overdue */}
         <div style={card}>
-          <div style={label}><span>Due today &amp; overdue</span><span>{data?.due.length || ""}</span></div>
-          {!data ? <Empty>Loading…</Empty> : data.due.length === 0 ? <Empty>Nothing due today.</Empty> :
-            data.due.slice(0, 8).map(it => {
+          <div style={label}><span>Due today</span><span>{dueToday.length || ""}</span></div>
+          {!data ? <Empty>Loading…</Empty> : dueToday.length === 0 ? <Empty>Nothing due today.</Empty> :
+            lists.due.map(it => {
               const over = daysBetween(it.due_date, data.today);
               return (<div key={it.kind + it.id} style={rowStyle("due", it)}>
                 <button title="Start focus" onClick={() => onStart(it.kind, it)} style={iconBtn}>▶</button>
@@ -185,8 +220,11 @@ export default function TodayView({ projects, activeProjectId, tmr, taskName, on
       {open && <TaskDetailsPanel key={open.item.kind + open.item.id} item={open.item} projects={projects} mobile={mobile}
         inQueue={!!data?.queue.some(q => q.item.id === open.item.id)} focusing={running && tmr.tId === open.item.id}
         onClose={() => setOpen(null)} onPrev={step(-1)} onNext={step(1)}
-        onStart={(kind, item) => onStart(kind, item)} onFinish={finished} onChanged={changed}
+        onStart={(kind, item) => onStart(kind, item)} onQuick={running ? null : (kind, item) => onQuickStart(kind, item)} onFinish={finished} onChanged={changed}
         onOpenInProject={(kind, item) => { setOpen(null); onOpenItem(kind, item); }} />}
+
+      {replanning && <ReplanDialog items={earlier} mobile={mobile} onClose={() => setReplanning(false)}
+        onApplied={({ summary, undo }) => { setReplanning(false); changed(); setToast({ text: `Replanned: ${summary}`, undo: async () => { setToast(null); try { await undo(); changed(); } catch (e) { alert("Couldn't undo: " + (e.message || e)); } } }); }} />}
 
       {toast && <div style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: mobile ? 132 : 56, zIndex: 130, display: "flex", alignItems: "center", gap: 12, background: "var(--raise2)", border: "1px solid var(--dim)", borderRadius: 8, padding: "9px 12px 9px 14px", fontSize: 12, color: "var(--text)", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", maxWidth: "calc(100vw - 32px)" }}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toast.text}</span>

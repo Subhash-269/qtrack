@@ -412,6 +412,35 @@ export async function updateTask(client, userId, { task_id, status, priority, du
   }
 }
 
+// Replan leftovers: move each task or test case to today (and Up next), tomorrow, later (no date)
+// or let it go (Skipped; tasks only). `today` is the user's local date, YYYY-MM-DD.
+export const REPLAN_TARGETS = ['today', 'tomorrow', 'later', 'let_go']
+const addDay = (ymd, n) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+
+export async function replanDay(client, userId, { moves }, today, now = Date.now()) {
+  if (!moves?.length) throw new UserError('Nothing to replan: pass at least one { task_id, to }.')
+  const undo = [], done = []
+  for (const { task_id, to } of moves) {
+    if (!REPLAN_TARGETS.includes(to)) throw new UserError(`Unknown target "${to}". Use one of: ${REPLAN_TARGETS.join(', ')}.`)
+    const item = await findItem(client, userId, task_id)
+    const table = item.kind === 'test' ? 'test_cases' : 'issues'
+    if (to === 'let_go') {
+      if (item.kind === 'test') throw new UserError(`"${item.title}" is a test case; only tasks can be let go.`)
+      one(await client.from('issues').update({ status: 'skipped', resolved_at: iso(now) }).eq('id', item.id).eq('user_id', userId))
+      undo.push({ op: 'update', table, id: item.id, values: { status: item.status, resolved_at: item.resolved_at ?? null } })
+    } else {
+      const due = to === 'today' ? today : to === 'tomorrow' ? addDay(today, 1) : null
+      one(await client.from(table).update({ due_date: due }).eq('id', item.id).eq('user_id', userId))
+      undo.push({ op: 'update', table, id: item.id, values: { due_date: item.due_date ?? null } })
+      if (to === 'today') { const q = await queueItem(client, userId, item); if (q) undo.push(q) }
+    }
+    done.push({ task_id: item.id, title: item.title, to })
+  }
+  const count = (k) => done.filter(d => d.to === k).length
+  const parts = [['today', 'today'], ['tomorrow', 'tomorrow'], ['later', 'later'], ['let_go', 'let go']].filter(([k]) => count(k)).map(([k, w]) => `${count(k)} ${w}`)
+  return { summary: `Replanned ${done.length}: ${parts.join(', ')}.`, data: { moved: done }, undo }
+}
+
 export async function captureNote(client, userId, { text, project, link_task_id }) {
   let projectId, projectName, linked = null
   if (link_task_id) {
