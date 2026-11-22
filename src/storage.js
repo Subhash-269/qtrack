@@ -837,6 +837,34 @@ export async function getTodayAcrossProjects() {
   return getToday(supabase, user_id, { date, startOfDayISO: start.toISOString() })
 }
 
+// Everything the Today details panel shows for one task or test case: the fresh row, focus time,
+// linked test cases / tasks and linked notes.
+export async function getTaskDetails(kind, id) {
+  const isTest = kind === 'test'
+  const table = isTest ? 'test_cases' : 'issues'
+  const fk = isTest ? 'test_case_id' : 'issue_id'
+  const unwrap = ({ data, error }) => { if (error) throw error; return data }
+  const [row, sessions, links, notes] = await Promise.all([
+    supabase.from(table).select('*').eq('id', id).single().then(unwrap),
+    supabase.from('focus_sessions').select('duration_seconds, session_type, subtype').eq(fk, id).then(unwrap),
+    supabase.from('issue_test_links').select('*').eq(isTest ? 'test_case_id' : 'issue_id', id).then(unwrap),
+    supabase.from('notes').select('id, title, content, category').eq(isTest ? 'linked_test_id' : 'linked_issue_id', id).then(unwrap),
+  ])
+  const otherIds = (links || []).map(l => (isTest ? l.issue_id : l.test_case_id))
+  const linked = otherIds.length
+    ? unwrap(await supabase.from(isTest ? 'issues' : 'test_cases').select('id, title, status').in('id', otherIds))
+    : []
+  const work = (sessions || []).filter(s => s.session_type === 'work')
+  const focused = work.filter(s => !['waiting', 'interrupted', 'meeting'].includes(s.subtype)).reduce((a, s) => a + (s.duration_seconds || 0), 0)
+  return {
+    row: { ...row, kind: isTest ? 'test' : 'issue' },
+    pomodoros: work.length,
+    focusedSeconds: focused,
+    linked: linked.map(r => ({ ...r, kind: isTest ? 'issue' : 'test' })),
+    notes: notes || [],
+  }
+}
+
 // ============================================
 // Assistant access (MCP)
 // ============================================

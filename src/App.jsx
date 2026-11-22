@@ -122,6 +122,7 @@ export default function App({ session }) {
   const [userTier, setUserTier] = useState("free");
   const mobile = useIsMobile(); const [moreOpen, setMoreOpen] = useState(false);
   const [deletingProject, setDeletingProject] = useState(null);
+  const openOnMount = useRef(null); // item id the Tasks / Test cases view opens when it mounts
 
   // Show tutorial once per browser
   useEffect(() => {
@@ -352,6 +353,14 @@ export default function App({ session }) {
   const markDone = async () => { if (tmr.tType === "issue" && tmr.tId) { await updIS(tmr.tId, "done"); } else if (tmr.tType === "test" && tmr.tId) { await updTS(tmr.tId, "pass"); } };
   // Today rows can come from any project: switch to it first so the timer, task name and session log line up
   const switchTo = (pid) => { if (pid && pid !== activeProjectId) setActiveProjectId(pid); };
+  // "Open in project" from Today's details panel: switch project, go to Tasks / Test cases, open the item
+  const takeOpenOnMount = () => { const id = openOnMount.current; openOnMount.current = null; return id; };
+  const openItemInProject = (kind, item) => {
+    openOnMount.current = item.id;
+    switchTo(item.project_id);
+    setSearchQ(""); setFilterType("all"); setFilterFile("all"); setFilterPriority("all");
+    setView(kind === "test" ? "tests" : "issues");
+  };
   const startFromToday = (kind, item) => { switchTo(item.project_id); focusOn(kind, item.id, item.project_id); };
   const focusMeetingFromToday = (m) => { switchTo(m.project_id); setMeetingFocus(m); };
 
@@ -387,12 +396,12 @@ export default function App({ session }) {
           </div>
         </div>
         <div style={{ flex: 1, padding: mobile ? "16px 16px 24px" : "24px 28px", overflowY: "auto", minWidth: 0 }}>
-          {view === "today" && <TodayView projects={projects} activeProjectId={activeProjectId} tmr={tmr} taskName={taskName} onStart={startFromToday} onPause={pauseTmr} onResume={resumeTmr} onDone={markDone} onOpenFocus={() => setView("focus")} onFocusMeeting={focusMeetingFromToday} onAddScribble={async (text) => { await db.createNote(activeProjectId, { content: text, category: "scratch" }); await reload(); }} refreshOn={[projects, issues, testCases, queue, notes, meetings, tmr.st, tmr.tId]} />}
+          {view === "today" && <TodayView projects={projects} activeProjectId={activeProjectId} tmr={tmr} taskName={taskName} onStart={startFromToday} onPause={pauseTmr} onResume={resumeTmr} onDone={markDone} onOpenFocus={() => setView("focus")} onFocusMeeting={focusMeetingFromToday} onAddScribble={async (text) => { await db.createNote(activeProjectId, { content: text, category: "scratch" }); await reload(); }} onOpenItem={openItemInProject} onReload={reload} mobile={mobile} refreshOn={[projects, issues, testCases, queue, notes, meetings, tmr.st, tmr.tId]} />}
           {view === "dashboard" && !isWorkshop && <Dashboard stats={stats} issues={issues} tests={testCases} files={files} fm={fm} onNav={(v, f) => { setView(v); if (f) setFilterFile(f); }} tfm={tfm} tw={tw} focusWork={focusWork} allSessions={allSessions} notes={notes} todaySessions={todaySessions} projectId={activeProjectId} />}
           {view === "dashboard" && isWorkshop && <WorkshopDashboard meetings={meetings} notes={notes} people={people} onNav={setView} />}
           {view === "focus" && <FocusView tmr={tmr} taskName={taskName} issues={issues} tests={testCases} start={startTmr} pause={pauseTmr} pauseWith={pauseWithReason} resume={resumeTmr} reset={resetTmr} focusOn={focusOn} tfm={tfm} tw={tw} queue={queue} projectId={activeProjectId} reload={reload} allSessions={allSessions} todaySessions={todaySessions} logManual={logManual} allNotes={notes} mobile={mobile} markDone={markDone} />}
-          {view === "issues" && <IssuesView issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
-          {view === "tests" && <TestsView tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
+          {view === "issues" && <IssuesView takeOpenId={takeOpenOnMount} issues={fi} files={files} fm={fm} filterType={filterType} setFilterType={setFilterType} filterFile={filterFile} setFilterFile={setFilterFile} filterPriority={filterPriority} setFilterPriority={setFilterPriority} updS={updIS} del={delI} onAdd={() => setModal({ type: "issue" })} onEdit={i => setModal({ type: "issue", edit: i })} links={links} tests={testCases} ulnk={ulnk} openLink={id => setLinkModal({ issueId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
+          {view === "tests" && <TestsView takeOpenId={takeOpenOnMount} tests={ft} files={files} fm={fm} filterFile={filterFile} setFilterFile={setFilterFile} exp={expandedTC} setExp={setExpandedTC} updS={updTS} del={delT} onAdd={() => setModal({ type: "test" })} onEdit={t => setModal({ type: "test", edit: t })} links={links} allIssues={issues} ulnk={ulnk} openLink={id => setLinkModal({ testId: id })} focusOn={focusOn} pomCount={pomCount} fmtDue={fmtDue} notes={notes} onViewNote={setViewingNoteId} queue={queue} addToQ={async (t, id) => { await db.addToQueue(activeProjectId, t, id, queue.length); await reload(); }} />}
           {view === "files" && <FilesView files={files} issues={issues} tests={testCases} del={delF} onAdd={() => setModal({ type: "file" })} onNav={(v, f) => { setView(v); setFilterFile(f); }} />}
           {view === "notes" && <NotesView notes={notes} issues={issues} files={files} testCases={testCases} projectId={activeProjectId} reload={reload} meetingTags={[...new Set(meetings.map(m => m.title))]} usedRepos={[...new Set([...issues, ...testCases].map(x => x.repo_name).filter(Boolean))]} allSessions={allSessions} onStudyStart={startStudy} tmr={tmr} />}
           {view === "calendar" && <CalendarView meetings={meetings} issues={issues} testCases={testCases} projectId={activeProjectId} reload={reload} onFocusMeeting={mt => setMeetingFocus(mt)} allNotes={notes} />}
@@ -1679,8 +1688,8 @@ function WorkshopDashboard({ meetings, notes, people, onNav }) {
   );
 }
 
-function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, setFilterFile, filterPriority, setFilterPriority, updS, del, onAdd, onEdit, links, tests, ulnk, openLink, focusOn, pomCount, fmtDue, notes, onViewNote, queue, addToQ }) {
-  const [viewId, setViewId] = useState(null);
+function IssuesView({ takeOpenId, issues, files, fm, filterType, setFilterType, filterFile, setFilterFile, filterPriority, setFilterPriority, updS, del, onAdd, onEdit, links, tests, ulnk, openLink, focusOn, pomCount, fmtDue, notes, onViewNote, queue, addToQ }) {
+  const [viewId, setViewId] = useState(() => takeOpenId?.() || null);
   const [sortBy, setSortBy] = useState("created");
   const [viewMode, setViewMode] = useState("card");
   const ltIds = (iid) => links.filter(l => l.issue_id === iid).map(l => l.test_case_id);
@@ -1822,8 +1831,8 @@ function IssuesView({ issues, files, fm, filterType, setFilterType, filterFile, 
   </div>);
 }
 
-function TestsView({ tests, files, fm, filterFile, setFilterFile, exp, setExp, updS, del, onAdd, onEdit, links, allIssues, ulnk, openLink, focusOn, pomCount, fmtDue, notes, onViewNote, queue, addToQ }) {
-  const [viewTid, setViewTid] = useState(null);
+function TestsView({ takeOpenId, tests, files, fm, filterFile, setFilterFile, exp, setExp, updS, del, onAdd, onEdit, links, allIssues, ulnk, openLink, focusOn, pomCount, fmtDue, notes, onViewNote, queue, addToQ }) {
+  const [viewTid, setViewTid] = useState(() => takeOpenId?.() || null);
   const [sortBy, setSortBy] = useState("created");
   const [viewMode, setViewMode] = useState("card");
   const liIds = (tid) => links.filter(l => l.test_case_id === tid).map(l => l.issue_id);
