@@ -106,9 +106,11 @@ class Query {
       out = rows.filter(r => this.matches(r))
       out.forEach(r => Object.assign(r, this.payload))
     } else if (this.op === 'upsert') {
-      const existing = rows.find(r => r[this.conflict] === this.payload[this.conflict])
-      if (existing) out = [Object.assign(existing, this.payload)]
-      else { out = [withDefaults(this.name, this.payload)]; rows.push(...out) }
+      out = [].concat(this.payload).map(p => {
+        const existing = rows.find(r => r[this.conflict] === p[this.conflict])
+        if (existing) return Object.assign(existing, p)
+        const row = withDefaults(this.name, p); rows.push(row); return row
+      })
     } else if (this.op === 'delete') {
       out = rows.filter(r => this.matches(r))
       db.tables[this.name] = rows.filter(r => !out.includes(r))

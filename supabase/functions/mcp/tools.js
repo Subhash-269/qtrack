@@ -5,7 +5,7 @@
 import { dayBounds, getToday, searchTasks, getFocusStats } from '../_shared/today.js'
 import {
   UserError, WRITE_LIMIT_PER_HOUR, getTimer, startFocus, pauseFocus, resumeFocus, stopFocus,
-  addTask, addToQueue, captureNote, undoCall, writesAllowed, writesInLastHour,
+  addTask, addToQueue, captureNote, deleteTask, undoCall, writesAllowed, writesInLastHour,
 } from '../_shared/actions.js'
 
 const tzField = (z) => z.string().optional().describe('IANA timezone of the user, e.g. "America/New_York". Defaults to UTC. Decides what "today" means.')
@@ -158,8 +158,18 @@ export const TOOLS = {
     run: ({ client, userId }, args) => captureNote(client, userId, args),
   },
 
+  delete_task: {
+    scope: 'write',
+    destructive: true,
+    title: 'Delete task',
+    description: 'Permanently delete one task (not a test case). Needs its task_id from search_tasks or get_today; confirm with the user first, naming the task. Its focus sessions and notes are kept but unlinked, and it leaves the queue. Refused while the task is being timed. Can be undone for 10 minutes with the returned undo_id.',
+    input: (z) => ({ task_id: z.string().describe('Id of the task to delete') }),
+    run: ({ client, userId }, args) => deleteTask(client, userId, args),
+  },
+
   undo: {
     scope: 'write',
+    destructive: true,
     title: 'Undo',
     description: 'Reverse a change made in the last 10 minutes, using the undo_id that change returned. Puts things back as they were before it (for the timer, its state before that call).',
     input: (z) => ({ undo_id: z.string().describe('undo_id from an earlier write') }),

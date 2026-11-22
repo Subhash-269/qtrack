@@ -37,7 +37,7 @@ Deno.serve(
               title: tool.title,
               description: tool.description,
               inputSchema: z.object(tool.input(z)),
-              annotations: { readOnlyHint: tool.scope === 'read', destructiveHint: name === 'undo', openWorldHint: false },
+              annotations: { readOnlyHint: tool.scope === 'read', destructiveHint: !!tool.destructive, openWorldHint: false },
             },
             async (args: Record<string, unknown>) => {
               try {

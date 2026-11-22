@@ -267,6 +267,45 @@ export async function addToQueue(client, userId, { task_id }) {
   return { summary: `Queued "${item.title}".`, data: { task_id, title: item.title, kind: kindName(item.kind) }, undo: [op] }
 }
 
+// Delete a task. In the database, deleting a task cascades to its issue_test_links and sets
+// focus_sessions.issue_id / notes.linked_issue_id to null; task_queue has no foreign key. So we
+// snapshot all of those first, and undo restores the task with the same id and re-links the rest.
+export async function deleteTask(client, userId, { task_id }, now = Date.now()) {
+  const task = one(await client.from('issues').select('*').eq('user_id', userId).eq('id', task_id).maybeSingle())
+  if (!task) throw new UserError(`No task with id ${task_id}. Use search_tasks to find its id.`)
+  const row = await timerRow(client, userId)
+  if (row?.task_type === 'issue' && row.task_id === task.id && liveTimer(row, now).state !== 'idle') {
+    throw new UserError(`"${task.title}" is being timed right now. Stop the timer first (stop_focus).`)
+  }
+
+  const byUser = (t) => client.from(t).select('*').eq('user_id', userId)
+  const [links, queue, sessions, notes] = (await Promise.all([
+    byUser('issue_test_links').eq('issue_id', task.id),
+    byUser('task_queue').eq('item_type', 'issue').eq('item_id', task.id),
+    byUser('focus_sessions').eq('issue_id', task.id),
+    byUser('notes').eq('linked_issue_id', task.id),
+  ])).map(many)
+
+  for (const q of queue) one(await client.from('task_queue').delete().eq('id', q.id).eq('user_id', userId))
+  one(await client.from('issues').delete().eq('id', task.id).eq('user_id', userId))
+
+  // Undo runs these in reverse: task first, then what hangs off it
+  const undo = []
+  if (notes.length) undo.push({ op: 'relink', table: 'notes', ids: notes.map(n => n.id), values: { linked_issue_id: task.id } })
+  // focus_sessions has no UPDATE policy (sessions never change), so swap the unlinked rows for the originals
+  if (sessions.length) undo.push({ op: 'replace', table: 'focus_sessions', rows: sessions })
+  if (queue.length) undo.push({ op: 'insert', table: 'task_queue', rows: queue })
+  if (links.length) undo.push({ op: 'insert', table: 'issue_test_links', rows: links })
+  undo.push({ op: 'insert', table: 'issues', rows: [task] })
+
+  const kept = [sessions.length && `${sessions.length} focus session${sessions.length === 1 ? '' : 's'}`, notes.length && `${notes.length} note${notes.length === 1 ? '' : 's'}`].filter(Boolean)
+  return {
+    summary: `Deleted task "${task.title}"${kept.length ? ` (its ${kept.join(' and ')} stay, unlinked)` : ''}. Undo within 10 minutes restores it.`,
+    data: { task_id: task.id, title: task.title, removed_from_queue: queue.length > 0, unlinked: { focus_sessions: sessions.length, notes: notes.length, test_links: links.length } },
+    undo,
+  }
+}
+
 export async function captureNote(client, userId, { text, project, link_task_id }) {
   let projectId, projectName, linked = null
   if (link_task_id) {
@@ -295,6 +334,12 @@ export async function applyUndo(client, userId, ops) {
     if (o.op === 'timer') await writeTimer(client, userId, o.row)
     else if (o.op === 'delete') one(await client.from(o.table).delete().eq('id', o.id).eq('user_id', userId))
     else if (o.op === 'update') one(await client.from(o.table).update(o.values).eq('id', o.id).eq('user_id', userId))
+    else if (o.op === 'insert') one(await client.from(o.table).insert(o.rows.map(r => ({ ...r, user_id: userId }))))
+    else if (o.op === 'replace') {
+      one(await client.from(o.table).delete().in('id', o.rows.map(r => r.id)).eq('user_id', userId))
+      one(await client.from(o.table).insert(o.rows.map(r => ({ ...r, user_id: userId }))))
+    }
+    else if (o.op === 'relink') one(await client.from(o.table).update(o.values).in('id', o.ids).eq('user_id', userId))
     else throw new Error(`Unknown undo op: ${o.op}`)
   }
 }

@@ -32,6 +32,7 @@ Tools:
 | `add_task` | write | Create a task, optionally queued |
 | `add_to_queue` | write | Put a task at the end of its project's queue |
 | `capture_note` | write | Save a scribble, optionally linked to a task |
+| `delete_task` | write | Delete a task by id (refused while it's being timed). Its sessions and notes stay, unlinked; undo restores the task and re-links them |
 | `undo` | write | Reverse a change from the last 10 minutes by its `undo_id` |
 
 **Write tools are off until the user turns them on** in QTrack under *Settings → Assistant access*. That switch lives in `mcp_settings`, and its RLS only lets a first-party session change it: OAuth tokens carry a `client_id` claim, so an assistant can't turn on its own writes. Writes are limited to 60 an hour per user.
