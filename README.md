@@ -83,6 +83,9 @@ A Pomodoro timer that knows what you're working on.
 
 QTrack runs a remote [MCP](https://modelcontextprotocol.io) server, so Claude (or any MCP client) can read and change your QTrack with you. You sign in with your own account through OAuth; there are no API keys to copy.
 
+![Asking Claude to plan the day: it reads Today, replans leftovers, splits a report into steps and starts the timer, and QTrack updates with every change undoable](docs/screenshots/claude-plan.png)
+<sub>Illustration with sample data.</sub>
+
 **Connect** from **Assistant access** in the account menu, which shows the URL and the command. For Claude Code:
 
 ```bash

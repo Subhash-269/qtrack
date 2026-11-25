@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Planning With Claude</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#1B1B19; --side:#1F1F1D; --surface:#222220; --line2:#292926; --line:#34342F; --dim:#6E6D66; --muted:#9C9A92; --sub:#ABA9A1; --soft:#C4C2B9; --title:#DAD8CF; --text:#E6E4DC; --red:#D98880; --green:#7FBFA0; --blue:#8FB8D6; --amber:#E0B872; --purple:#B3AEDF; --mono:"DM Mono", ui-monospace, monospace; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #121211; color: var(--text); font-family: "DM Sans", system-ui, sans-serif; font-size: 13px; padding: 28px; width: 1420px; }
+  .wrap { display: grid; grid-template-columns: 560px 1fr; gap: 22px; }
+  .cap { font-size: 11px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+  .cap b { color: var(--soft); font-weight: 500; }
+
+  /* chat */
+  .chat { background: #191917; border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; height: 760px; }
+  .msg { max-width: 92%; line-height: 1.55; font-size: 13px; }
+  .you { align-self: flex-end; background: #2C2B27; border-radius: 12px 12px 4px 12px; padding: 10px 13px; color: var(--text); }
+  .ai { align-self: flex-start; color: var(--title); }
+  .who { font-size: 11px; color: var(--muted); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 16px; height: 16px; border-radius: 50%; background: #C8846A; display: inline-block; }
+  .tool { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 7px 10px; font-size: 12px; color: var(--sub); display: flex; gap: 8px; align-items: baseline; margin: 6px 0; }
+  .tool code { font-family: var(--mono); font-size: 11.5px; color: var(--purple); white-space: nowrap; }
+  .tool span { color: var(--muted); }
+  .ai ul { margin: 6px 0 6px 18px; } .ai li { margin: 2px 0; }
+  .ai b { color: var(--text); font-weight: 500; }
+  .input { margin-top: auto; border: 1px solid var(--dim); border-radius: 10px; padding: 10px 12px; color: var(--muted); font-size: 12.5px; }
+
+  /* qtrack today */
+  .app { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; height: 760px; display: flex; flex-direction: column; gap: 12px; }
+  .top { display: flex; justify-content: space-between; align-items: baseline; }
+  .top h2 { font-size: 18px; font-weight: 500; } .top span { font-size: 12px; color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .now { display: flex; align-items: center; gap: 14px; }
+  .ring { width: 58px; height: 58px; border-radius: 50%; border: 4px solid var(--line); border-top-color: var(--red); display: grid; place-items: center; font-family: var(--mono); font-size: 12px; color: var(--red); }
+  .btn { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; border: 1px solid var(--dim); color: var(--soft); }
+  .btn.pri { background: var(--title); color: var(--bg); border-color: var(--title); }
+  .it { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line2); font-size: 12px; }
+  .it:last-child { border-bottom: none; }
+  .play { width: 22px; height: 22px; border-radius: 5px; border: 1px solid var(--dim); color: var(--sub); font-size: 9px; display: grid; place-items: center; }
+  .tt { flex: 1; color: var(--title); } .pn { font-size: 10px; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; } .pn i { width: 6px; height: 6px; border-radius: 50%; }
+  .chip { font-size: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--sub); }
+  .new { font-size: 9.5px; color: var(--purple); border: 1px solid #3B3666; background: #24223A; border-radius: 10px; padding: 0 6px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ck { display: flex; gap: 8px; align-items: center; font-size: 12px; padding: 3px 0; color: var(--title); }
+  .box { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--dim); }
+  .min { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+  .toast { align-self: flex-start; font-size: 11.5px; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 6px 10px; }
+  .toast b { color: var(--purple); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section>
+    <div class="cap"><b>Claude</b> · with the QTrack connector</div>
+    <div class="chat">
+      <div class="msg you">Plan my day in QTrack. I have about 4 hours. Yesterday's stuff can wait unless it's urgent, and break the Shiny report into small steps.</div>
+      <div class="msg ai">
+        <div class="who"><span class="dot"></span>Claude</div>
+        <div class="tool"><code>get_today</code><span>3 up next · 2 due today · 2 from earlier · Sprint sync at 4 pm</span></div>
+        <div class="tool"><code>replan_day</code><span>Job referral → today · Capstone notes → tomorrow</span></div>
+        <div class="tool"><code>break_down_task</code><span>5 steps added to “Stats report” · about 2h</span></div>
+        <div class="tool"><code>add_to_queue</code><span>Stats report added to Up next</span></div>
+        <div class="tool"><code>start_focus</code><span>25 min on “Open the dataset and pick 2 charts”</span></div>
+        <p style="margin-top:8px">Here's your afternoon (about 4h, Sprint sync kept free):</p>
+        <ul>
+          <li><b>1:00–3:00</b> · Stats report, split into 5 steps. The first one is running now.</li>
+          <li><b>3:00–3:25</b> · Follow up on the job referral (it closes today).</li>
+          <li><b>4:00</b> · Sprint sync.</li>
+          <li><b>4:30–5:00</b> · Pay the gas bill, then wrap up.</li>
+        </ul>
+        <p>I moved the Capstone notes to tomorrow. Say “undo” within 10 minutes to reverse any of this.</p>
+      </div>
+      <div class="input">Reply to Claude…</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="cap"><b>QTrack</b> · Today updates on every device</div>
+    <div class="app">
+      <div class="top"><h2>Today</h2><span>Tuesday, November 24 · all projects</span></div>
+      <div class="card now">
+        <div class="ring">24:41</div>
+        <div style="flex:1"><div class="lbl" style="margin:0"><span>Now · Focus 1 of 4</span></div><div style="font-size:14px;margin-top:3px">Open the dataset and pick 2 charts</div></div>
+        <span class="btn pri">Pause</span><span class="btn">✓ Done</span>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="lbl"><span>Up next</span><span>3</span></div>
+          <div class="it"><span class="play">●</span><span class="tt">Stats report: R Shiny dashboard</span><span class="pn"><i style="background:#AFA9EC"></i>Academic</span><span class="chip">todo</span></div>
+          <div class="it"><span class="play">▶</span><span class="tt">Follow up on job referral</span><span class="pn"><i style="background:#FAC775"></i>Jobs</span><span class="chip">todo</span></div>
+          <div class="it"><span class="play">▶</span><span class="tt">Pay gas bill</span><span class="pn"><i style="background:#5DCAA5"></i>Personal</span><span class="chip">todo</span></div>
+        </div>
+        <div class="card">
+          <div class="lbl"><span>Stats report · checklist</span><span>0 / 5</span></div>
+          <div class="ck"><span class="box"></span>Open the dataset and pick 2 charts<span class="min">15m</span></div>
+          <div class="ck"><span class="box"></span>Sketch the app layout<span class="min">10m</span></div>
+          <div class="ck"><span class="box"></span>Build the first chart in Shiny<span class="min">35m</span></div>
+          <div class="ck"><span class="box"></span>Add the filter input<span class="min">25m</span></div>
+          <div class="ck"><span class="box"></span>Write the 1-page report<span class="min">30m</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="lbl"><span>Assistant access · activity</span><span>recent changes</span></div>
+        <div class="it"><span class="tt" style="font-family:var(--mono);font-size:11.5px;color:var(--purple)">start_focus</span><span class="pn">just now</span><span class="chip">Undo</span></div>
+        <div class="it"><span class="tt" style="font-family:var(--mono);font-size:11.5px;color:var(--purple)">add_to_queue</span><span class="pn">just now</span><span class="chip">Undo</span></div>
+        <div class="it"><span class="tt" style="font-family:var(--mono);font-size:11.5px;color:var(--purple)">break_down_task</span><span class="pn">just now</span><span class="chip">Undo</span></div>
+        <div class="it"><span class="tt" style="font-family:var(--mono);font-size:11.5px;color:var(--purple)">replan_day</span><span class="pn">just now</span><span class="chip">Undo</span></div>
+      </div>
+      <div class="toast">Every change is logged and can be undone for 10 minutes · <b>changes allowed</b> in Assistant access</div>
+    </div>
+  </section>
+</div>
+</body>
+</html>
